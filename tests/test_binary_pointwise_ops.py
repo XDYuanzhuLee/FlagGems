@@ -2540,3 +2540,66 @@ def test_accuracy_atan2_out(shape, dtype):
         res_out = torch.ops.aten.atan2.out(x, y, out=res_out_buf)
 
     gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.xlogy
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_xlogy(shape, dtype):
+    inp1 = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    inp2 = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp1 = to_reference(inp1, True)
+    ref_inp2 = to_reference(inp2, True)
+
+    ref_out = torch.special.xlogy(ref_inp1, ref_inp2)
+    with flag_gems.use_gems():
+        res_out = torch.special.xlogy(inp1, inp2)
+
+    gems_assert_close(res_out, ref_out, dtype, equal_nan=True)
+
+
+@pytest.mark.inplace
+@pytest.mark.xlogy_
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_xlogy_(shape, dtype):
+    inp1 = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    inp2 = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp1 = to_reference(inp1.clone(), True)
+    ref_inp2 = to_reference(inp2, True)
+
+    ref_out = ref_inp1.special_xlogy_(ref_inp2)
+    with flag_gems.use_gems():
+        res_out = inp1.special_xlogy_(inp2)
+
+    gems_assert_close(res_out, ref_out, dtype, equal_nan=True)
+
+
+@pytest.mark.xlogy
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_xlogy_tensor_scalar(shape, dtype):
+    inp1 = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    scalar = 2.0
+    ref_inp1 = to_reference(inp1, True)
+
+    ref_out = torch.special.xlogy(ref_inp1, scalar)
+    with flag_gems.use_gems():
+        res_out = torch.special.xlogy(inp1, scalar)
+
+    gems_assert_close(res_out, ref_out, dtype, equal_nan=True)
+
+
+@pytest.mark.xlogy
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_xlogy_scalar_tensor(shape, dtype):
+    scalar = 2.0
+    inp2 = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp2 = to_reference(inp2, True)
+
+    ref_out = torch.special.xlogy(scalar, ref_inp2)
+    with flag_gems.use_gems():
+        res_out = torch.special.xlogy(scalar, inp2)
+
+    gems_assert_close(res_out, ref_out, dtype, equal_nan=True)
