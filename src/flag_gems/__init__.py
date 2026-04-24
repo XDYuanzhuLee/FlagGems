@@ -392,6 +392,7 @@ _FULL_CONFIG = (
     ("std.correction", std),
     ("sub.Tensor", sub),
     ("sub_.Tensor", sub_),
+    ("subtract_.Tensor", subtract_),
     ("sum", sum),
     ("sum.dim_IntList", sum_dim),
     ("sum.IntList_out", sum_dim_out),

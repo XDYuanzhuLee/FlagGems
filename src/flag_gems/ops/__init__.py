@@ -266,6 +266,7 @@ from flag_gems.ops.sqrt import sqrt, sqrt_
 from flag_gems.ops.stack import stack
 from flag_gems.ops.std import std
 from flag_gems.ops.sub import sub, sub_
+from flag_gems.ops.subtract_ import subtract_
 from flag_gems.ops.sum import sum, sum_dim, sum_dim_out, sum_out
 from flag_gems.ops.t_copy import t_copy, t_copy_out
 from flag_gems.ops.tan import tan, tan_
@@ -642,6 +643,7 @@ __all__ = [
     "std",
     "sub",
     "sub_",
+    "subtract_",
     "sum",
     "sum_dim",
     "sum_dim_out",
