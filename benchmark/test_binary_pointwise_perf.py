@@ -105,6 +105,7 @@ def test_general_binary_pointwise_perf(op_name, torch_op, dtypes):
             ("div_", lambda a, b: a.div_(b), FLOAT_DTYPES),
             ("mul_", lambda a, b: a.mul_(b), FLOAT_DTYPES),
             ("sub_", lambda a, b: a.sub_(b), FLOAT_DTYPES),
+            ("subtract_", lambda a, b: a.subtract_(b), FLOAT_DTYPES),
             ("pow_", lambda a, b: a.pow_(b), FLOAT_DTYPES),
             ("floor_divide_", lambda a, b: a.floor_divide_(b), INT_DTYPES),
             ("remainder_", lambda a, b: a.remainder_(b), INT_DTYPES),
