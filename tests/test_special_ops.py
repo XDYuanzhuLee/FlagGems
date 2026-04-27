@@ -2777,3 +2777,100 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+# Slice operator tests
+SLICE_SHAPES = [
+    (16,),
+    (16, 32),
+    (8, 16, 32),
+    (4, 8, 16, 32),
+]
+
+
+@pytest.mark.Slice
+@pytest.mark.parametrize("shape", SLICE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_slice_basic(shape, dtype):
+    """Test basic slice functionality on different dimensions"""
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+
+    # Test slicing on dim 0
+    start, end = 2, shape[0] - 2 if shape[0] > 4 else shape[0]
+    if end > start:
+        ref_out = torch.ops.aten.slice.Tensor(ref_inp, 0, start, end)
+        with flag_gems.use_gems():
+            res_out = torch.ops.aten.slice.Tensor(inp, 0, start, end)
+        gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.Slice
+@pytest.mark.parametrize("shape", SLICE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_slice_dim(shape, dtype):
+    """Test slicing on different dimensions"""
+    if len(shape) < 2:
+        pytest.skip("Need at least 2D tensor")
+
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+
+    # Test slicing on dim 1
+    dim = 1
+    start, end = 1, shape[dim] - 1
+    ref_out = torch.ops.aten.slice.Tensor(ref_inp, dim, start, end)
+    with flag_gems.use_gems():
+        res_out = torch.ops.aten.slice.Tensor(inp, dim, start, end)
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.Slice
+@pytest.mark.parametrize("shape", [(16,), (16, 32), (8, 16, 32)])
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_slice_with_step(shape, dtype):
+    """Test slice with step > 1"""
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+
+    # Use step=2
+    ref_out = torch.ops.aten.slice.Tensor(ref_inp, 0, 0, shape[0], 2)
+    with flag_gems.use_gems():
+        res_out = torch.ops.aten.slice.Tensor(inp, 0, 0, shape[0], 2)
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.Slice
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_slice_none_start_end(dtype):
+    """Test slice with None start/end (defaults)"""
+    shape = (16, 32)
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+
+    # Test with None start (default 0)
+    ref_out = torch.ops.aten.slice.Tensor(ref_inp, 0, None, 8)
+    with flag_gems.use_gems():
+        res_out = torch.ops.aten.slice.Tensor(inp, 0, None, 8)
+    gems_assert_close(res_out, ref_out, dtype)
+
+    # Test with None end (default shape[dim])
+    ref_out = torch.ops.aten.slice.Tensor(ref_inp, 0, 8, None)
+    with flag_gems.use_gems():
+        res_out = torch.ops.aten.slice.Tensor(inp, 0, 8, None)
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.Slice
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_slice_negative_index(dtype):
+    """Test slice with negative indices"""
+    shape = (16, 32)
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+
+    # Test negative start
+    ref_out = torch.ops.aten.slice.Tensor(ref_inp, 0, -12, -4)
+    with flag_gems.use_gems():
+        res_out = torch.ops.aten.slice.Tensor(inp, 0, -12, -4)
+    gems_assert_close(res_out, ref_out, dtype)

@@ -375,6 +375,7 @@ _FULL_CONFIG = (
     ("sin", sin),
     ("sin_", sin_),
     ("sinh_", sinh_),
+    ("slice.Tensor", slice),
     ("slice_backward", slice_backward),
     ("slice_scatter", slice_scatter),
     ("soft_margin_loss", soft_margin_loss),
