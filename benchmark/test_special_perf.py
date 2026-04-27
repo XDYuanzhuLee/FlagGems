@@ -205,12 +205,22 @@ def resolve_conj_input_fn(shape, dtype, device):
     yield x.conj(),
 
 
+def slice_input_fn(shape, dtype, device):
+    x = torch.randn(shape, device=device, dtype=dtype)
+    dim = 0 if len(shape) > 0 else -1
+    start = 0
+    end = shape[dim] // 2 if len(shape) > 0 and shape[dim] > 1 else 1
+    yield x, dim, start, end
+
+
 special_operations = [
     # Sorting Operations
     ("topk", torch.topk, FLOAT_DTYPES, topk_input_fn),
     # Complex Operations
     ("resolve_neg", torch.resolve_neg, [torch.cfloat], resolve_neg_input_fn),
     ("resolve_conj", torch.resolve_conj, [torch.cfloat], resolve_conj_input_fn),
+    # Slice Operations
+    ("slice", torch.ops.aten.slice.Tensor, FLOAT_DTYPES, slice_input_fn),
 ]
 
 
