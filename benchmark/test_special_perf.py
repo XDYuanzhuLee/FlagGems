@@ -1470,20 +1470,7 @@ def test_perf_pdist_backward():
 
 
 # Benchmark for _dyn_quant_pack_4bit_weight
-DYN_QUANT_4BIT_SHAPES = [
-    (16, 128),
-    (32, 256),
-    (64, 512),
-    (128, 1024),
-    (1, 128),
-    (8, 256),
-]
-
-
 class DynQuantPack4BitWeightBenchmark(Benchmark):
-    def set_shapes(self, shape_file_path=None):
-        self.shapes = DYN_QUANT_4BIT_SHAPES
-
     def get_input_iter(self, cur_dtype):
         for shape in self.shapes:
             n, m = shape

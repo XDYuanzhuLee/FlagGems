@@ -330,3 +330,13 @@ ReshapeAndCacheFlashBenchmark:
     - [21, 4, 80, 16, 10000]
     - [42, 8, 64, 8, 1024]
     - [42, 8, 80, 16, 10000]
+
+_dyn_quant_pack_4bit_weight:
+  shapes:
+    - [16, 128]
+    - [32, 256]
+    - [64, 512]
+    - [128, 1024]
+    - [1, 128]
+    - [8, 256]
+  shape_desc: "M, N"
