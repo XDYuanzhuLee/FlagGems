@@ -2777,3 +2777,78 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+# Tests for embeddingSpMDM operator
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is not available")
+@pytest.mark.skipif(TO_CPU, reason="Unsupported in CPU mode")
+@pytest.mark.embeddingSpMDM
+@pytest.mark.parametrize("EmbeddingSize", [1024] if TO_CPU else [4096])
+@pytest.mark.parametrize("Batch", [2] if TO_CPU else [2, 4])
+@pytest.mark.parametrize("M", [4] if TO_CPU else [4, 8])
+@pytest.mark.parametrize("N", [8] if TO_CPU else [128, 256, 4096])
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_embeddingSpMDM(EmbeddingSize, Batch, M, N, dtype):
+    """Test accuracy for embeddingSpMDM forward pass."""
+    if flag_gems.vendor_name == "kunlunxin":
+        torch.manual_seed(0)
+        torch.cuda.manual_seed_all(0)
+
+    # Create input tensors
+    res_indices = torch.randint(
+        0, EmbeddingSize, (Batch, M), device=flag_gems.device, requires_grad=False
+    )
+    res_embedding = torch.randn(
+        (EmbeddingSize, N), device=flag_gems.device, dtype=dtype, requires_grad=True
+    )
+    ref_embedding = to_reference(res_embedding)
+    ref_indices = to_reference(res_indices)
+
+    # Reference implementation using standard embedding
+    ref_out = torch.nn.functional.embedding(ref_indices, ref_embedding)
+
+    # Test implementation using embedding_spdm from Metax backend
+    from flag_gems.runtime.backend._metax.ops import embedding_spdm
+
+    with flag_gems.use_gems():
+        res_out = embedding_spdm(res_embedding, res_indices)
+
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is not available")
+@pytest.mark.skipif(TO_CPU, reason="Unsupported in CPU mode")
+@pytest.mark.embeddingSpMDM
+@pytest.mark.parametrize("EmbeddingSize", [1024] if TO_CPU else [4096])
+@pytest.mark.parametrize("Batch", [2] if TO_CPU else [2, 4])
+@pytest.mark.parametrize("M", [4] if TO_CPU else [4, 8])
+@pytest.mark.parametrize("N", [8] if TO_CPU else [128, 256])
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_embeddingSpMDM_backward(EmbeddingSize, Batch, M, N, dtype):
+    """Test accuracy for embeddingSpMDM backward pass."""
+    if flag_gems.vendor_name == "kunlunxin":
+        torch.manual_seed(0)
+        torch.cuda.manual_seed_all(0)
+
+    # Create input tensors
+    res_grad = torch.randn((Batch, M, N), device=flag_gems.device, dtype=dtype)
+    res_indices = torch.randint(0, EmbeddingSize, (Batch, M), device=flag_gems.device)
+    num_weights = EmbeddingSize
+
+    ref_grad = to_reference(res_grad)
+    ref_indices = to_reference(res_indices)
+
+    # Reference implementation
+    ref_in_grad = torch.ops.aten.embedding_backward(
+        ref_grad, ref_indices, num_weights, -1, False, False
+    )
+
+    # Test implementation
+    from flag_gems.runtime.backend._metax.ops import embedding_spdm_backward
+
+    with flag_gems.use_gems():
+        res_in_grad = embedding_spdm_backward(
+            res_grad, res_indices, num_weights, -1, False, False
+        )
+
+    gems_assert_close(res_in_grad, ref_in_grad, dtype)
