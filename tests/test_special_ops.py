@@ -2777,3 +2777,89 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+# Attention shapes for testing
+ATTENTION_SHAPES = [
+    (1, 2, 8, 16),    # (batch, heads, seq_len, head_dim)
+    (2, 4, 16, 32),
+    (4, 8, 32, 64),
+]
+
+
+@pytest.mark.scaled_dot_product_efficient_attention
+@pytest.mark.parametrize("shape", ATTENTION_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_accuracy_scaled_dot_product_efficient_attention(shape, dtype):
+    """Test _scaled_dot_product_efficient_attention accuracy against torch.nn.functional.scaled_dot_product_attention"""
+    batch, num_heads, seq_len, head_dim = shape
+
+    # Create test tensors
+    query = torch.randn(batch, num_heads, seq_len, head_dim, dtype=dtype, device=flag_gems.device)
+    key = torch.randn(batch, num_heads, seq_len, head_dim, dtype=dtype, device=flag_gems.device)
+    value = torch.randn(batch, num_heads, seq_len, head_dim, dtype=dtype, device=flag_gems.device)
+
+    # Reference: use torch.nn.functional.scaled_dot_product_attention
+    ref_out = torch.nn.functional.scaled_dot_product_attention(
+        query, key, value, is_causal=False
+    )
+
+    # Test with compute_log_sumexp=False
+    with flag_gems.use_gems():
+        res_out, _, _, _ = flag_gems._scaled_dot_product_efficient_attention(
+            query, key, value, None, False
+        )
+
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.scaled_dot_product_efficient_attention
+@pytest.mark.parametrize("shape", ATTENTION_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_accuracy_scaled_dot_product_efficient_attention_causal(shape, dtype):
+    """Test _scaled_dot_product_efficient_attention with causal masking"""
+    batch, num_heads, seq_len, head_dim = shape
+
+    # Create test tensors
+    query = torch.randn(batch, num_heads, seq_len, head_dim, dtype=dtype, device=flag_gems.device)
+    key = torch.randn(batch, num_heads, seq_len, head_dim, dtype=dtype, device=flag_gems.device)
+    value = torch.randn(batch, num_heads, seq_len, head_dim, dtype=dtype, device=flag_gems.device)
+
+    # Reference: use torch.nn.functional.scaled_dot_product_attention with causal=True
+    ref_out = torch.nn.functional.scaled_dot_product_attention(
+        query, key, value, is_causal=True
+    )
+
+    # Test with compute_log_sumexp=False
+    with flag_gems.use_gems():
+        res_out, _, _, _ = flag_gems._scaled_dot_product_efficient_attention(
+            query, key, value, None, False, is_causal=True
+        )
+
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.scaled_dot_product_efficient_attention
+@pytest.mark.parametrize("shape", ATTENTION_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_accuracy_scaled_dot_product_efficient_attention_with_logsumexp(shape, dtype):
+    """Test _scaled_dot_product_efficient_attention with compute_log_sumexp=True"""
+    batch, num_heads, seq_len, head_dim = shape
+
+    # Create test tensors
+    query = torch.randn(batch, num_heads, seq_len, head_dim, dtype=dtype, device=flag_gems.device)
+    key = torch.randn(batch, num_heads, seq_len, head_dim, dtype=dtype, device=flag_gems.device)
+    value = torch.randn(batch, num_heads, seq_len, head_dim, dtype=dtype, device=flag_gems.device)
+
+    # Reference: use torch.nn.functional.scaled_dot_product_attention
+    ref_out = torch.nn.functional.scaled_dot_product_attention(
+        query, key, value, is_causal=False
+    )
+
+    # Test with compute_log_sumexp=True
+    with flag_gems.use_gems():
+        res_out, res_log_sumexp, res_seed, res_offset = flag_gems._scaled_dot_product_efficient_attention(
+            query, key, value, None, True
+        )
+
+    gems_assert_close(res_out, ref_out, dtype)
