@@ -1,6 +1,7 @@
 import pytest
 import torch
 
+import flag_gems
 from benchmark.attri_util import FLOAT_DTYPES, INT_DTYPES
 from benchmark.conftest import BenchLevel, Config
 from benchmark.performance_utils import (
@@ -77,6 +78,13 @@ def addcdiv_input_fn(shape, cur_dtype, device):
     yield inp1, inp2, inp3, {"value": 0.5}
 
 
+def cudnn_activation_backward_input_fn(shape, cur_dtype, device):
+    """Input function for cudnnActivateionbwd: x (forward output) and grad_output"""
+    x = generate_tensor_input(shape, cur_dtype, device)
+    grad_output = generate_tensor_input(shape, cur_dtype, device)
+    yield x, grad_output
+
+
 @pytest.mark.parametrize(
     "op_name, torch_op, input_fn, dtypes",
     [
@@ -131,6 +139,13 @@ def addcdiv_input_fn(shape, cur_dtype, device):
             addcmul_input_fn,
             FLOAT_DTYPES,
             marks=pytest.mark.addcdiv,
+        ),
+        pytest.param(
+            "cudnnActivateionbwd",
+            flag_gems.cudnnActivateionbwd,
+            cudnn_activation_backward_input_fn,
+            FLOAT_DTYPES,
+            marks=pytest.mark.cudnnActivateionbwd,
         ),
     ],
 )
