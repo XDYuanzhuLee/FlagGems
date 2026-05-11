@@ -1771,3 +1771,72 @@ def test_scheduler_metadata_correctness(
         )
 
     gems_assert_close(gems_metadata, ref_metadata, dtype=torch.int32)
+
+
+# Metax specialized Grouped Query Attention test
+@pytest.mark.skipif(
+    torch.__version__ < "2.5", reason="Low Pytorch Version: enable_gqa not supported"
+)
+@pytest.mark.Grouped_Query_Attention_GQA
+@pytest.mark.parametrize(
+    "batch, num_q_head, num_kv_head, q_seq_len, kv_seq_len, head_size",
+    [
+        (2, 4, 2, 512, 512, 64),
+        (2, 4, 1, 1024, 1024, 128),
+        (1, 8, 2, 256, 256, 64),
+    ],
+)
+@pytest.mark.parametrize("is_causal", [False, True])
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_gqa_metax(
+    batch,
+    num_q_head,
+    num_kv_head,
+    q_seq_len,
+    kv_seq_len,
+    head_size,
+    is_causal,
+    dtype,
+):
+    """Test for Metax specialized Grouped Query Attention (GQA)."""
+    device = torch_device_fn.current_device()
+    q, k, v = make_input(
+        batch,
+        num_q_head,
+        num_kv_head,
+        q_seq_len,
+        kv_seq_len,
+        head_size,
+        dtype,
+        device,
+        requires_grad=True,
+    )
+    ref_q = to_reference(q, False)
+    ref_k = to_reference(k, False)
+    ref_v = to_reference(v, False)
+    scale = float(1.0 / np.sqrt(head_size))
+
+    # Reference (PyTorch) implementation
+    torch_result = torch_sdpa(
+        ref_q,
+        ref_k,
+        ref_v,
+        scale=scale,
+        is_causal=is_causal,
+        enable_gqa=True,
+    )
+
+    # GEMS implementation
+    with flag_gems.use_gems():
+        gems_result = torch.nn.functional.scaled_dot_product_attention(
+            q,
+            k,
+            v,
+            attn_mask=None,
+            dropout_p=0.0,
+            is_causal=is_causal,
+            scale=scale,
+            enable_gqa=True,
+        )
+
+    gems_assert_close(gems_result, torch_result, dtype)
