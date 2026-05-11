@@ -335,6 +335,7 @@ _FULL_CONFIG = (
     ("reflection_pad1d.out", reflection_pad1d_out),
     ("relu", relu),
     ("relu_", relu_),
+    ("reduce_l2", reduce_l2),
     ("relu6", relu6),
     ("remainder.Scalar", remainder),
     ("remainder.Scalar_Tensor", remainder),

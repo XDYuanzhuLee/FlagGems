@@ -85,6 +85,25 @@ def test_accuracy_amax(shape, dim, keepdim, dtype):
     gems_assert_equal(res_out, ref_out)
 
 
+@pytest.mark.reduce_l2
+@pytest.mark.parametrize("keepdim, dim, shape", KEEPDIM_DIMS_SHAPE)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_reduce_l2(shape, dim, keepdim, dtype):
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+
+    # Compute reference in float32 to avoid overflow in float16
+    ref_inp_f32 = ref_inp.to(torch.float32)
+    ref_out = torch.sqrt(torch.sum(ref_inp_f32 * ref_inp_f32, dim=dim, keepdim=keepdim))
+    if dtype != torch.float32:
+        ref_out = ref_out.to(dtype)
+
+    with flag_gems.use_gems():
+        res_out = flag_gems.reduce_l2(inp, dim=dim, keepdim=keepdim)
+
+    gems_assert_close(res_out, ref_out, dtype)
+
+
 EMPTY_SHAPES = [(0, 5), (3, 0, 4), (2, 5, 0), (0,)]
 
 
