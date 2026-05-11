@@ -7,6 +7,7 @@ from .full import full
 from .full_like import full_like
 from .groupnorm import group_norm
 from .index import index
+from .LayerNorm_GeLU import layer_norm_gelu
 from .index_put import index_put, index_put_
 from .index_select import index_select
 from .isin import isin
@@ -41,6 +42,7 @@ __all__ = [
     "full_like",
     "group_norm",
     "index",
+    "layer_norm_gelu",
     "index_put",
     "index_put_",
     "index_select",

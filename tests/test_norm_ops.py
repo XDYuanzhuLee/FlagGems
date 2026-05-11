@@ -594,6 +594,52 @@ def test_accuracy_skip_layernorm(shape, dtype):
     gems_assert_close(res_out, ref_out, dtype)
 
 
+@pytest.mark.layer_norm_gelu
+@pytest.mark.parametrize(
+    "shape",
+    [
+        (1, 2),
+        (4096, 256),
+    ],
+)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_layer_norm_gelu(shape, dtype):
+    # LayerNorm_GeLU applies LayerNorm to the last dimension(s) followed by GeLU
+    # Using a higher atol to account for numerical precision issues in the fused operation
+    # For float16: rtol=1e-3, for float32: rtol=1e-5, for bfloat16: rtol=2e-2
+    # We use a higher atol to handle numerical precision differences
+    atol = 1e-2
+
+    N = shape[-1]  # Last dimension is the normalized dimension
+    layer_shape = [N]
+
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    weight = torch.randn(layer_shape, dtype=dtype, device=flag_gems.device)
+    bias = torch.randn(layer_shape, dtype=dtype, device=flag_gems.device)
+    eps = 1e-5
+
+    ref_inp = to_reference(inp, True)
+    ref_weight = to_reference(weight, True)
+    ref_bias = to_reference(bias, True)
+
+    # Reference: Apply LayerNorm then GeLU
+    ref_ln_out = torch.layer_norm(
+        ref_inp,
+        list(layer_shape),
+        weight=ref_weight,
+        bias=ref_bias,
+        eps=eps,
+    )
+    ref_out = torch.nn.functional.gelu(ref_ln_out)
+
+    # Test the fused operation
+    res_out = flag_gems.layer_norm_gelu(
+        inp, list(layer_shape), weight=weight, bias=bias, eps=eps
+    )
+
+    gems_assert_close(res_out, ref_out, dtype, atol=atol)
+
+
 @pytest.mark.fused_add_rms_norm
 @pytest.mark.parametrize("shape", REDUCTION_SHAPES)
 @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
