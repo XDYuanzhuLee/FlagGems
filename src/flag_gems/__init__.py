@@ -61,6 +61,7 @@ _FULL_CONFIG = (
     ("addmv.out", addmv_out),
     ("addmm", addmm),
     ("addmm.out", addmm_out),
+    ("matmul_bias_residual", matmul_bias_residual),
     ("addr", addr),
     ("alias_copy", alias_copy),
     ("all", all),

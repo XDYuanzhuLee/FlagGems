@@ -562,3 +562,38 @@ def test_accuracy_addr(M, N, dtype):
         res_out = torch.addr(input_tensor, vec1, vec2, alpha=alpha, beta=beta)
 
     gems_assert_close(res_out, ref_out, dtype, equal_nan=True)
+
+
+@pytest.mark.Matmul_Bias_Residual
+@pytest.mark.parametrize("M, N, K", MNK_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_Matmul_Bias_Residual(M, N, K, dtype):
+    if flag_gems.vendor_name == "tsingmicro" and dtype == torch.float32:
+        pytest.skip("Skipping fp32 Matmul_Bias_Residual test on tsingmicro platform")
+
+    if flag_gems.vendor_name == "mthreads":
+        os.environ["MUSA_ENABLE_SQMMA"] = "1"
+
+    mat1 = torch.randn((M, K), dtype=dtype, device=flag_gems.device)
+    mat2 = torch.randn((K, N), dtype=dtype, device=flag_gems.device)
+    bias = torch.randn((N,), dtype=dtype, device=flag_gems.device)
+    residual = torch.randn((M, N), dtype=dtype, device=flag_gems.device)
+
+    ref_mat1 = to_reference(mat1, True)
+    ref_mat2 = to_reference(mat2, True)
+    ref_bias = to_reference(bias, True)
+    ref_residual = to_reference(residual, True)
+
+    alpha = 1.0
+    beta = 1.0
+
+    # Reference: output = alpha * (mat1 @ mat2) + beta * bias + residual
+    ref_out = torch.addmm(ref_bias, ref_mat1, ref_mat2, alpha=alpha, beta=beta)
+    ref_out = ref_out + ref_residual
+
+    with flag_gems.use_gems():
+        res_out = flag_gems.matmul_bias_residual(
+            mat1, mat2, bias, residual, alpha=alpha, beta=beta
+        )
+
+    gems_assert_close(res_out, ref_out, dtype)

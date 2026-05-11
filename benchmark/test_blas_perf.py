@@ -161,6 +161,14 @@ def mm_input_fn(b, m, n, k, cur_dtype, device, b_column_major):
         yield inp1, inp2
 
 
+def matmul_bias_residual_input_fn(b, m, n, k, cur_dtype, device, b_column_major):
+    mat1 = torch.randn([m, k], dtype=cur_dtype, device=device)
+    mat2 = torch.randn([k, n], dtype=cur_dtype, device=device)
+    bias = torch.randn([n], dtype=cur_dtype, device=device)
+    residual = torch.randn([m, n], dtype=cur_dtype, device=device)
+    yield mat1, mat2, bias, residual
+
+
 W8A8_BLOCK_FP8_MNK_SHAPES = [
     (64, 128, 128),
     (128, 256, 512),
@@ -280,6 +288,13 @@ class W8A8BlockFP8MatmulBenchmark(Benchmark):
             baddbmm_input_fn,
             BaddbmmBenchmark,
             marks=pytest.mark.baddbmm,
+        ),
+        pytest.param(
+            "matmul_bias_residual",
+            flag_gems.matmul_bias_residual,
+            matmul_bias_residual_input_fn,
+            BlasBenchmark,
+            marks=pytest.mark.Matmul_Bias_Residual,
         ),
     ],
 )
