@@ -5,6 +5,7 @@ import torch
 from packaging import version
 
 import flag_gems
+from flag_gems.ops.constant_of_shape import constant_of_shape
 
 from .accuracy_utils import (
     ALL_FLOAT_DTYPES,
@@ -393,3 +394,37 @@ def test_accuracy_zero_out(shape, dtype):
         act_out = torch.ops.aten.zero.out(act_x, out=act_x)
 
     gems_assert_close(act_out, ref_out, dtype)
+
+
+@pytest.mark.constant_of_shape
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", BOOL_TYPES + ALL_INT_DTYPES + ALL_FLOAT_DTYPES)
+@pytest.mark.parametrize("fill_value", [3.1415926, 2, False])
+def test_accuracy_constant_of_shape(shape, dtype, fill_value):
+    if isinstance(fill_value, float) and (
+        math.isinf(fill_value) or math.isnan(fill_value)
+    ):
+        if dtype not in ALL_FLOAT_DTYPES:
+            pytest.skip("Skipping inf/nan test for non-float dtypes")
+
+    shape_tensor = torch.tensor(shape, dtype=torch.int64, device="cpu")
+    ref_out = torch.full(shape, fill_value, dtype=dtype, device="cpu" if TO_CPU else device)
+
+    with flag_gems.use_gems():
+        res_out = constant_of_shape(shape_tensor, fill_value=fill_value, dtype=dtype, device=device if not TO_CPU else "cpu")
+
+    gems_assert_equal(res_out, ref_out)
+
+
+@pytest.mark.constant_of_shape
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_constant_of_shape_default(shape, dtype):
+    # Test with default fill_value=0
+    shape_tensor = torch.tensor(shape, dtype=torch.int64, device="cpu")
+    ref_out = torch.zeros(shape, dtype=dtype, device="cpu" if TO_CPU else device)
+
+    with flag_gems.use_gems():
+        res_out = constant_of_shape(shape_tensor, dtype=dtype, device=device if not TO_CPU else "cpu")
+
+    gems_assert_equal(res_out, ref_out)
