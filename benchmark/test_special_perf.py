@@ -205,12 +205,38 @@ def resolve_conj_input_fn(shape, dtype, device):
     yield x.conj(),
 
 
+def scatter_nd_input_fn(shape, dtype, device):
+    """Input function for scatter_nd benchmark."""
+    M = 8  # Number of updates
+    rank = len(shape)
+
+    # Generate unique indices
+    num_elements = 1
+    for s in shape:
+        num_elements *= s
+
+    all_indices = torch.randperm(num_elements, device=device)[:M]
+    indices = torch.zeros((M, rank), dtype=torch.long, device=device)
+    temp = all_indices
+    for i in range(rank):
+        dim_size = shape[rank - 1 - i]
+        indices[:, rank - 1 - i] = temp % dim_size
+        temp = temp // dim_size
+
+    values = torch.randn(M, dtype=dtype, device=device)
+    inp = torch.zeros(shape, dtype=dtype, device=device)
+
+    yield inp, indices, values
+
+
 special_operations = [
     # Sorting Operations
     ("topk", torch.topk, FLOAT_DTYPES, topk_input_fn),
     # Complex Operations
     ("resolve_neg", torch.resolve_neg, [torch.cfloat], resolve_neg_input_fn),
     ("resolve_conj", torch.resolve_conj, [torch.cfloat], resolve_conj_input_fn),
+    # ScatterND Operations
+    ("scatter_nd", flag_gems.scatter_nd, FLOAT_DTYPES, scatter_nd_input_fn),
 ]
 
 
