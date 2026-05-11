@@ -14,6 +14,7 @@ from .log_softmax import log_softmax, log_softmax_backward
 from .masked_fill import masked_fill, masked_fill_
 from .min import min, min_dim
 from .mm import mm, mm_out
+from .MoE_Gate_TopK_Routing import moe_gate_topk_routing
 from .nonzero import nonzero
 from .ones import ones
 from .ones_like import ones_like
@@ -53,6 +54,7 @@ __all__ = [
     "min",
     "mm",
     "mm_out",
+    "moe_gate_topk_routing",
     "nonzero",
     "ones",
     "ones_like",

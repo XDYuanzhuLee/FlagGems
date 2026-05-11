@@ -2777,3 +2777,31 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+# MoE Gate Top-K Routing tests
+@pytest.mark.MoE_Gate_TopK_Routing
+@pytest.mark.parametrize("num_tokens", [1, 8, 16, 128])
+@pytest.mark.parametrize("num_experts", [8, 16, 32])
+@pytest.mark.parametrize("top_k", [1, 2, 4])
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_moe_gate_topk_routing(num_tokens, num_experts, top_k, dtype):
+    """Test MoE Gate Top-K Routing accuracy against PyTorch reference."""
+    if top_k > num_experts:
+        pytest.skip("top_k must be <= num_experts")
+
+    # Generate random gate logits
+    gate_logits = torch.randn(num_tokens, num_experts, dtype=dtype, device=flag_gems.device)
+
+    # Reference implementation using PyTorch
+    probs = torch.softmax(gate_logits, dim=-1)
+    ref_topk_weights, ref_topk_ids = torch.topk(probs, top_k, dim=-1)
+    ref_topk_weights = ref_topk_weights / ref_topk_weights.sum(dim=-1, keepdim=True)
+
+    # Test the metax specialized implementation
+    from flag_gems.runtime.backend._metax.ops import moe_gate_topk_routing
+    res_topk_weights, res_topk_ids = moe_gate_topk_routing(gate_logits, top_k)
+
+    # Compare results
+    gems_assert_close(res_topk_weights, ref_topk_weights, dtype)
+    gems_assert_equal(res_topk_ids, ref_topk_ids)
