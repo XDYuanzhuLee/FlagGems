@@ -562,3 +562,33 @@ def test_accuracy_addr(M, N, dtype):
         res_out = torch.addr(input_tensor, vec1, vec2, alpha=alpha, beta=beta)
 
     gems_assert_close(res_out, ref_out, dtype, equal_nan=True)
+
+
+@pytest.mark.Matmul_Bias_Activation
+@pytest.mark.parametrize("M, N, K", MNK_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_Matmul_Bias_Activation(M, N, K, dtype):
+    if flag_gems.vendor_name == "tsingmicro" and dtype == torch.float32:
+        pytest.skip("Skipping fp32 Matmul_Bias_Activation test on tsingmicro platform")
+
+    # Create input, weight, and bias tensors
+    # Matmul_Bias_Activation: output = activation(input @ weight.T + bias)
+    input_tensor = torch.randn((M, K), dtype=dtype, device=flag_gems.device)
+    weight = torch.randn((N, K), dtype=dtype, device=flag_gems.device)
+    bias = torch.randn((N,), dtype=dtype, device=flag_gems.device)
+
+    # Reference implementation: torch.matmul + bias + ReLU
+    ref_input = to_reference(input_tensor, True)
+    ref_weight = to_reference(weight, True)
+    ref_bias = to_reference(bias, True)
+
+    # Compute reference: input @ weight.T + bias, then apply ReLU
+    ref_out = torch.matmul(ref_input, ref_weight.t())
+    ref_out = ref_out + ref_bias
+    ref_out = torch.relu(ref_out)
+
+    # Compute result using flag_gems
+    with flag_gems.use_gems():
+        res_out = flag_gems.matmul_bias_activation(input_tensor, weight, bias)
+
+    gems_assert_close(res_out, ref_out, dtype, reduce_dim=K)

@@ -257,6 +257,7 @@ _FULL_CONFIG = (
     ("lt.Scalar", lt_scalar),
     ("lt.Tensor", lt),
     ("margin_ranking_loss", margin_ranking_loss),
+    ("matmul_bias_activation", matmul_bias_activation),
     ("masked_fill.Scalar", masked_fill),
     ("masked_fill.Tensor", masked_fill),
     ("masked_fill_.Scalar", masked_fill_),

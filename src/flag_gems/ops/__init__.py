@@ -163,6 +163,7 @@ from flag_gems.ops.logit_ import logit_
 from flag_gems.ops.logspace import logspace
 from flag_gems.ops.lt import lt, lt_scalar
 from flag_gems.ops.margin_ranking_loss import margin_ranking_loss
+from flag_gems.ops.Matmul_Bias_Activation import matmul_bias_activation
 from flag_gems.ops.masked_fill import masked_fill, masked_fill_
 from flag_gems.ops.masked_scatter import masked_scatter, masked_scatter_
 from flag_gems.ops.masked_select import masked_select
@@ -511,6 +512,7 @@ __all__ = [
     "lt",
     "lt_scalar",
     "margin_ranking_loss",
+    "matmul_bias_activation",
     "masked_fill",
     "masked_fill_",
     "masked_scatter",
