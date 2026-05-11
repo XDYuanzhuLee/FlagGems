@@ -1771,3 +1771,46 @@ def test_scheduler_metadata_correctness(
         )
 
     gems_assert_close(gems_metadata, ref_metadata, dtype=torch.int32)
+
+
+# Test for _cudnn_attention_forward
+@pytest.mark.cudnn_attention_forward
+@pytest.mark.parametrize("batch_size", [1, 2])
+@pytest.mark.parametrize("num_heads", [4, 8])
+@pytest.mark.parametrize("seq_len", [8, 16])
+@pytest.mark.parametrize("head_dim", [32, 64])
+@pytest.mark.parametrize("is_causal", [False, True])
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_accuracy_cudnn_attention_forward(
+    batch_size, num_heads, seq_len, head_dim, is_causal, dtype
+):
+    if TO_CPU:
+        pytest.skip("Skipping CUDA test in CPU mode.")
+
+    device = torch_device_fn.current_device()
+    init_seed(1234567890)
+
+    # Create Q, K, V tensors
+    q = torch.randn(
+        batch_size, num_heads, seq_len, head_dim, device=device, dtype=dtype
+    )
+    k = torch.randn(
+        batch_size, num_heads, seq_len, head_dim, device=device, dtype=dtype
+    )
+    v = torch.randn(
+        batch_size, num_heads, seq_len, head_dim, device=device, dtype=dtype
+    )
+
+    # Reference implementation using torch.nn.functional.scaled_dot_product_attention
+    ref_q = to_reference(q)
+    ref_k = to_reference(k)
+    ref_v = to_reference(v)
+    ref_out = torch.nn.functional.scaled_dot_product_attention(
+        ref_q, ref_k, ref_v, is_causal=is_causal
+    )
+
+    # GEMS implementation
+    with flag_gems.use_gems():
+        gems_out = flag_gems._cudnn_attention_forward(q, k, v, is_causal=is_causal)
+
+    gems_assert_close(gems_out, ref_out, dtype)
