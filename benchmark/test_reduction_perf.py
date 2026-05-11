@@ -662,3 +662,62 @@ def test_perf_bincount_weighted(dtype):
     )
     bench.set_gems(flag_gems.bincount)
     bench.run()
+
+
+@pytest.mark.fused_softmax
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_perf_fused_softmax(dtype):
+    """Benchmark fused_softmax on Metax backend with controlled shapes."""
+    from flag_gems.runtime.backend._metax.ops import fused_softmax
+
+    # Use controlled shapes similar to accuracy tests
+    shapes = [(1, 256), (4096, 256), (200, 2560, 3)]
+
+    def fused_softmax_input_fn(shape, cur_dtype, device):
+        inp = torch.randn(shape, dtype=cur_dtype, device=device)
+        dim = len(shape) - 1 if len(shape) > 1 else 0
+        yield inp, dim
+
+    bench = GenericBenchmark(
+        input_fn=fused_softmax_input_fn,
+        op_name=f"fused_softmax_{str(dtype).split('.')[-1]}",
+        torch_op=torch.nn.functional.softmax,
+        dtypes=[dtype],
+        shapes=shapes,
+    )
+    bench.set_gems(fused_softmax)
+    bench.run()
+
+
+@pytest.mark.fused_softmax
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_perf_fused_softmax_backward(dtype):
+    """Benchmark fused_softmax backward on Metax backend with controlled shapes."""
+    from flag_gems.runtime.backend._metax.ops import (
+        fused_softmax,
+        fused_softmax_backward,
+    )
+
+    # Use controlled shapes similar to accuracy tests
+    shapes = [(1, 256), (4096, 256), (200, 2560, 3)]
+
+    def fused_softmax_backward_input_fn(shape, cur_dtype, device):
+        inp = torch.randn(shape, dtype=cur_dtype, device=device)
+        dim = len(shape) - 1 if len(shape) > 1 else 0
+        # First compute softmax output
+        out = fused_softmax(inp, dim=dim)
+        grad = torch.ones_like(out)
+        yield out, grad, dim, cur_dtype  # output, grad_output, dim, input_dtype
+
+    def torch_softmax_backward(ref_out, ref_grad, dim, dtype):
+        return torch.ops.aten._softmax_backward_data(ref_grad, ref_out, dim, dtype)
+
+    bench = GenericBenchmark(
+        input_fn=fused_softmax_backward_input_fn,
+        op_name=f"fused_softmax_backward_{str(dtype).split('.')[-1]}",
+        torch_op=torch_softmax_backward,
+        dtypes=[dtype],
+        shapes=shapes,
+    )
+    bench.set_gems(fused_softmax_backward)
+    bench.run()
