@@ -8,6 +8,7 @@ from flag_gems.ops.abs import abs, abs_
 from flag_gems.ops.absolute import absolute
 from flag_gems.ops.acos import acos
 from flag_gems.ops.add import add, add_
+from flag_gems.ops.add_rms_norm import add_rms_norm
 from flag_gems.ops.addcdiv import addcdiv
 from flag_gems.ops.addcmul import addcmul
 from flag_gems.ops.addmm import addmm, addmm_out
@@ -325,6 +326,7 @@ __all__ = [
     "addmm_out",
     "addmv",
     "addmv_out",
+    "add_rms_norm",
     "addr",
     "alias_copy",
     "alias_copy_out",

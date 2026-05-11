@@ -796,3 +796,44 @@ def test_accuracy_batch_norm_backward(shape, dtype, affine):
             res_weight_grad, ref_weight_grad, dtype, reduce_dim=reduce_dim
         )
         gems_assert_close(res_bias_grad, ref_bias_grad, dtype, reduce_dim=reduce_dim)
+
+
+@pytest.mark.add_rms_norm
+@pytest.mark.parametrize("shape", REDUCTION_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_add_rms_norm(shape, dtype):
+    """Test Add_RMSNorm: RMSNorm(x + residual)"""
+    res_x = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    res_residual = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    normalized_shape = shape[-1]
+    res_weight = torch.ones(normalized_shape, dtype=dtype, device=flag_gems.device)
+    eps = 1e-5
+
+    # Reference: x + residual, then RMSNorm
+    ref_x = to_reference(res_x)
+    ref_residual = to_reference(res_residual)
+    ref_weight = to_reference(res_weight)
+
+    # Compute reference: x + residual
+    ref_sum = ref_x + ref_residual
+    # RMSNorm: normalize then multiply by weight
+    ref_var = torch.mean(ref_sum * ref_sum, dim=-1, keepdim=True)
+    ref_rrms = 1.0 / torch.sqrt(ref_var + eps)
+    ref_out = ref_sum * ref_rrms * ref_weight
+
+    # Use appropriate tolerance based on dtype
+    # float16: 0.01, bfloat16: 0.02, float32: 1e-5
+    if dtype == torch.float16:
+        atol = 0.01
+    elif dtype == torch.bfloat16:
+        atol = 0.02
+    else:
+        atol = 1e-5
+
+    # Compute with GEMS
+    with flag_gems.use_gems():
+        res_out = flag_gems.add_rms_norm(
+            res_x, res_residual, [normalized_shape], res_weight, eps
+        )
+
+    gems_assert_close(res_out, ref_out, dtype, atol=atol)

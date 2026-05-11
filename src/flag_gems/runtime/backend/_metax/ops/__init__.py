@@ -1,3 +1,4 @@
+from .Add_RMSNorm import add_rms_norm
 from .addmm import addmm
 from .amax import amax
 from .arange import arange, arange_start
@@ -28,9 +29,11 @@ from .unique import _unique2
 from .upsample_nearest2d import upsample_nearest2d
 from .zeros import zeros
 from .zeros_like import zeros_like
+from .Add_RMSNorm import add_rms_norm
 
 __all__ = [
     "_unique2",
+    "add_rms_norm",
     "addmm",
     "amax",
     "arange",
