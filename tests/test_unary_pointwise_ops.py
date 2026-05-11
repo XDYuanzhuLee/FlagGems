@@ -2232,3 +2232,21 @@ def test_accuracy_special_i0e_out(shape, dtype):
         act_out = torch.ops.aten.special_i0e.out(x, out=out_act)
     gems_assert_close(act_out, ref_out, dtype)
     gems_assert_close(out_act, out_ref, dtype)
+
+
+# acosh_ tests - acosh requires input >= 1
+@pytest.mark.acosh_
+@pytest.mark.inplace
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_acosh_(shape, dtype):
+    # acosh(x) = ln(x + sqrt(x^2 - 1)), requires x >= 1
+    # Generate input in range [1, 10] to ensure valid acosh input
+    inp = torch.rand(shape, dtype=dtype, device=flag_gems.device) * 9 + 1
+    ref_inp = to_reference(inp.clone())
+
+    ref_out = torch.acosh_(ref_inp)
+    with flag_gems.use_gems():
+        res_out = torch.acosh_(inp)
+
+    gems_assert_close(res_out, ref_out, dtype, True)

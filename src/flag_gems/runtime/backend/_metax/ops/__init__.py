@@ -1,3 +1,4 @@
+from .acosh_ import acosh, acosh_
 from .addmm import addmm
 from .amax import amax
 from .arange import arange, arange_start
@@ -31,6 +32,8 @@ from .zeros_like import zeros_like
 
 __all__ = [
     "_unique2",
+    "acosh",
+    "acosh_",
     "addmm",
     "amax",
     "arange",
