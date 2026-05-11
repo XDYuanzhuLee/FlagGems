@@ -392,4 +392,15 @@ def test_accuracy_zero_out(shape, dtype):
     with flag_gems.use_gems():
         act_out = torch.ops.aten.zero.out(act_x, out=act_x)
 
-    gems_assert_close(act_out, ref_out, dtype)
+
+@pytest.mark.Shape
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+def test_accuracy_shape(shape):
+    x = torch.randn(shape, dtype=torch.float32, device=flag_gems.device)
+    ref_x = to_reference(x)
+    # Reference: use torch._shape_as_tensor directly without gems
+    ref_out = torch._shape_as_tensor(ref_x)
+    with flag_gems.use_gems():
+        act_out = flag_gems.shape(x)
+    # Shape returns int64 tensor, compare on CPU
+    gems_assert_equal(act_out.cpu(), ref_out)

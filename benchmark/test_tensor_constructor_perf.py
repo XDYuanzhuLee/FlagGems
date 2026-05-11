@@ -107,6 +107,11 @@ def logspace_input_fn(shape, dtype, device):
     },
 
 
+def shape_input_fn(shape, dtype, device):
+    inp = torch.empty(shape, dtype=dtype, device=device)
+    yield inp,
+
+
 def _2D_input_fn(shape, dtype, device):
     """
     Generate input for 2D input
@@ -163,6 +168,8 @@ tensor_constructor_operations = [
     ("eye", torch.eye, _2D_input_fn),
     # logspace
     ("logspace", torch.logspace, logspace_input_fn),
+    # shape
+    ("Shape", flag_gems.shape, shape_input_fn),
 ]
 
 
