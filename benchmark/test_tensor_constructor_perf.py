@@ -8,6 +8,7 @@ import torch
 import torch.nn.functional as F
 
 import flag_gems
+from flag_gems.ops.constant_of_shape import constant_of_shape
 from benchmark.attri_util import FLOAT_DTYPES, BenchLevel
 from benchmark.performance_utils import (
     Benchmark,
@@ -26,6 +27,11 @@ def generic_constructor_input_fn(shape, dtype, device):
 
 def full_input_fn(shape, dtype, device):
     yield {"size": shape, "fill_value": 3.1415926, "dtype": dtype, "device": device},
+
+
+def constant_of_shape_input_fn(shape, dtype, device):
+    shape_tensor = torch.tensor(shape, dtype=torch.int64, device="cpu")
+    yield {"shape_tensor": shape_tensor, "fill_value": 3.1415926, "dtype": dtype, "device": device},
 
 
 def masked_fill_input_fn(shape, dtype, device):
@@ -155,6 +161,7 @@ tensor_constructor_operations = [
     ("masked_fill", torch.masked_fill, masked_fill_input_fn),
     ("full", torch.full, full_input_fn),
     ("full_like", torch.full_like, full_like_input_fn),
+    ("constant_of_shape", constant_of_shape, constant_of_shape_input_fn),
     # arange
     ("arange", torch.arange, arange_input_fn),
     # linspace
