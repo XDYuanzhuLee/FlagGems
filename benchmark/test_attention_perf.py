@@ -1118,4 +1118,91 @@ def test_perf_reshape_and_cache():
         dtypes=FLOAT_DTYPES,
     )
     bench.set_gems(flag_gems.reshape_and_cache)
+
+
+class GQABenchmark(GenericBenchmark):
+    """
+    benchmark for Grouped Query Attention (GQA)
+    """
+
+    # Custom shapes for GQA: (batch, num_q_head, num_kv_head, seq_len, head_size)
+    # Note: for GQA, num_q_head > num_kv_head
+    GQA_SHAPES = [
+        (2, 8, 2, 512, 64),
+        (2, 8, 2, 1024, 128),
+        (4, 16, 4, 512, 64),
+        (4, 16, 4, 1024, 128),
+        (1, 32, 8, 256, 64),
+    ]
+
+    def set_shapes(self, shape_file_path=None):
+        # Try to load from file first
+        import os
+        import yaml
+
+        if shape_file_path and os.path.isfile(shape_file_path):
+            try:
+                with open(shape_file_path, "r") as file:
+                    yaml_config = yaml.safe_load(file)
+                    if self.op_name in yaml_config:
+                        self.shapes = yaml_config[self.op_name].get(
+                            "shapes", self.GQA_SHAPES
+                        )
+                        return
+            except Exception:
+                pass
+        # Fall back to custom shapes
+        self.shapes = self.GQA_SHAPES
+
+    def set_more_shapes(self):
+        return None
+
+    def unpack_to_args_kwargs(self, input):
+        # Override to properly handle GQA input format
+        # Input is already (args, kwargs) tuple from input_fn
+        args, kwargs = input
+        return args, kwargs
+
+
+# Benchmark for Metax specialized Grouped Query Attention (GQA)
+@pytest.mark.Grouped_Query_Attention_GQA
+@pytest.mark.parametrize("is_causal", [False, True])
+def test_perf_gqa_metax(is_causal):
+    """Benchmark for Metax specialized Grouped Query Attention (GQA)."""
+
+    def gqa_attention_kwargs(shape, dtype, device):
+        # shape is (batch, num_q_head, num_kv_head, seq_len, head_size)
+        batch, num_q_head, num_kv_head, seq_len, head_size = shape
+        query = torch.randn(batch, num_q_head, seq_len, head_size, device=device, dtype=dtype)
+        key = torch.randn(batch, num_kv_head, seq_len, head_size, device=device, dtype=dtype)
+        value = torch.randn(batch, num_kv_head, seq_len, head_size, device=device, dtype=dtype)
+        # Yield as a single tuple that unpack_to_args_kwargs will unpack
+        yield (query, key, value), {"attn_mask": None, "dropout_p": 0.0, "is_causal": is_causal, "enable_gqa": True}
+
+    def torch_gqa(
+        query, key, value, attn_mask=None, dropout_p=0.0, is_causal=False, enable_gqa=False
+    ):
+        scale = 1.0 / query.shape[-1] ** 0.5
+        return torch.nn.functional.scaled_dot_product_attention(
+            query,
+            key,
+            value,
+            attn_mask=attn_mask,
+            dropout_p=dropout_p,
+            is_causal=is_causal,
+            scale=scale,
+            enable_gqa=enable_gqa,
+        )
+
+    bench = GQABenchmark(
+        op_name="Grouped_Query_Attention_GQA",
+        input_fn=gqa_attention_kwargs,
+        torch_op=torch_gqa,
+        dtypes=[
+            torch.float16,
+            torch.bfloat16,
+        ],
+    )
+    bench.set_gems(flag_gems.scaled_dot_product_attention)
+    bench.run()
     bench.run()
