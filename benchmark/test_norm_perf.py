@@ -98,6 +98,23 @@ def batchnorm_input_fn(shape, dtype, device):
         yield inp, weight, bias, running_mean, running_var, training, momentum, eps, cudnn_enabled
 
 
+def batchnorm_with_update_input_fn(shape, dtype, device):
+    C = shape[1]
+    inp = torch.randn(shape, dtype=dtype, device=device)
+    weight = torch.randn((C,), dtype=dtype, device=device)
+    bias = torch.randn((C,), dtype=dtype, device=device)
+    running_mean = torch.zeros((C,), dtype=dtype, device=device)
+    running_var = torch.ones((C,), dtype=dtype, device=device)
+    momentum = 0.1
+    eps = 1e-5
+    yield inp, weight, bias, running_mean, running_var, momentum, eps
+
+    if Config.bench_level == BenchLevel.COMPREHENSIVE:
+        running_mean = torch.randn((C,), dtype=dtype, device=device)
+        running_var = torch.randn((C,), dtype=dtype, device=device)
+        yield inp, weight, bias, running_mean, running_var, momentum, eps
+
+
 @pytest.mark.parametrize(
     "op_name, torch_op, input_fn",
     [
@@ -124,6 +141,12 @@ def batchnorm_input_fn(shape, dtype, device):
             torch.batch_norm,
             batchnorm_input_fn,
             marks=pytest.mark.batch_norm,
+        ),
+        pytest.param(
+            "batch_norm_with_update_functional",
+            torch.ops.aten._batch_norm_with_update_functional,
+            batchnorm_with_update_input_fn,
+            marks=pytest.mark.batch_norm_with_update_functional,
         ),
     ],
 )
