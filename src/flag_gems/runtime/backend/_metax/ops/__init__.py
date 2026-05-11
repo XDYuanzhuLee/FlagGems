@@ -1,3 +1,4 @@
+from ._to_copy import to_copy
 from .addmm import addmm
 from .amax import amax
 from .arange import arange, arange_start
@@ -64,6 +65,7 @@ __all__ = [
     "resolve_conj",
     "sigmoid",
     "tanh",
+    "to_copy",
     "upsample_nearest2d",
     "zeros",
     "zeros_like",
