@@ -98,6 +98,22 @@ def batchnorm_input_fn(shape, dtype, device):
         yield inp, weight, bias, running_mean, running_var, training, momentum, eps, cudnn_enabled
 
 
+def native_batch_norm_legit_input_fn(shape, dtype, device):
+    C = shape[1]
+    inp = torch.randn(shape, dtype=dtype, device=device)
+    weight = torch.randn((C,), dtype=dtype, device=device)
+    bias = torch.randn((C,), dtype=dtype, device=device)
+    running_mean = torch.zeros((C,), dtype=dtype, device=device)
+    running_var = torch.ones((C,), dtype=dtype, device=device)
+    training = True
+    momentum = 0.1
+    eps = 1e-5
+    yield inp, weight, bias, running_mean, running_var, training, momentum, eps
+
+    if Config.bench_level == BenchLevel.COMPREHENSIVE:
+        yield inp, weight, bias, running_mean, running_var, training, momentum, eps
+
+
 @pytest.mark.parametrize(
     "op_name, torch_op, input_fn",
     [
@@ -197,6 +213,17 @@ def test_perf_batch_norm_backward():
         dtypes=[torch.float32] if vendor_name == "mthreads" else FLOAT_DTYPES,
     )
     bench.set_gems(flag_gems.batch_norm_backward)
+    bench.run()
+
+
+@pytest.mark.native_batch_norm_legit
+def test_perf_native_batch_norm_legit():
+    bench = NormBenchmark(
+        input_fn=native_batch_norm_legit_input_fn,
+        op_name="native_batch_norm_legit",
+        torch_op=torch._native_batch_norm_legit,
+        dtypes=FLOAT_DTYPES,
+    )
     bench.run()
 
 
