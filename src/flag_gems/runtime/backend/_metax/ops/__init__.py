@@ -6,6 +6,7 @@ from .exponential_ import exponential_
 from .full import full
 from .full_like import full_like
 from .groupnorm import group_norm
+from ._grouped_mm import _grouped_mm
 from .index import index
 from .index_put import index_put, index_put_
 from .index_select import index_select
@@ -31,6 +32,7 @@ from .zeros_like import zeros_like
 
 __all__ = [
     "_unique2",
+    "_grouped_mm",
     "addmm",
     "amax",
     "arange",

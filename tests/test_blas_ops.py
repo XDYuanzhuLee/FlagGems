@@ -562,3 +562,86 @@ def test_accuracy_addr(M, N, dtype):
         res_out = torch.addr(input_tensor, vec1, vec2, alpha=alpha, beta=beta)
 
     gems_assert_close(res_out, ref_out, dtype, equal_nan=True)
+
+
+# _grouped_mm tests
+# Since torch._grouped_mm requires compute capability 9.0 (not available on MetaX),
+# we use a custom implementation that delegates to bmm for 3D inputs
+
+
+@pytest.mark.grouped_mm
+@pytest.mark.parametrize("M, N, K", MNK_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy__grouped_mm_3d(M, N, K, dtype):
+    if flag_gems.vendor_name == "tsingmicro" and dtype == torch.float32:
+        pytest.skip("Skipping fp32 _grouped_mm test on tsingmicro platform")
+
+    batch = 4
+    mat1 = torch.randn((batch, M, K), dtype=dtype, device=flag_gems.device)
+    mat2 = torch.randn((batch, K, N), dtype=dtype, device=flag_gems.device)
+    ref_mat1 = to_reference(mat1, True)
+    ref_mat2 = to_reference(mat2, True)
+
+    # Reference: use bmm which is mathematically equivalent for 3D inputs
+    ref_out = torch.bmm(ref_mat1, ref_mat2)
+
+    # Test via flag_gems - this will use our Metax implementation
+    with flag_gems.use_gems():
+        # Import and call the metax implementation directly
+        from flag_gems.runtime.backend._metax.ops._grouped_mm import _grouped_mm
+
+        res_out = _grouped_mm(mat1, mat2)
+
+    gems_assert_close(res_out, ref_out, dtype, reduce_dim=K)
+
+
+@pytest.mark.grouped_mm
+@pytest.mark.parametrize("M, N, K", MNK_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy__grouped_mm_2d(M, N, K, dtype):
+    if flag_gems.vendor_name == "tsingmicro" and dtype == torch.float32:
+        pytest.skip("Skipping fp32 _grouped_mm test on tsingmicro platform")
+
+    # 2D case without offsets - should fall back to mm
+    mat1 = torch.randn((M, K), dtype=dtype, device=flag_gems.device)
+    mat2 = torch.randn((K, N), dtype=dtype, device=flag_gems.device)
+    ref_mat1 = to_reference(mat1, True)
+    ref_mat2 = to_reference(mat2, True)
+
+    # Reference: use mm
+    ref_out = torch.mm(ref_mat1, ref_mat2)
+
+    # Test via flag_gems
+    with flag_gems.use_gems():
+        from flag_gems.runtime.backend._metax.ops._grouped_mm import _grouped_mm
+
+        res_out = _grouped_mm(mat1, mat2)
+
+    gems_assert_close(res_out, ref_out, dtype, reduce_dim=K)
+
+
+@pytest.mark.grouped_mm
+@pytest.mark.parametrize("M, N, K", MNK_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy__grouped_mm_2d_with_bias(M, N, K, dtype):
+    if flag_gems.vendor_name == "tsingmicro" and dtype == torch.float32:
+        pytest.skip("Skipping fp32 _grouped_mm test on tsingmicro platform")
+
+    # 2D case with bias - should fall back to addmm
+    mat1 = torch.randn((M, K), dtype=dtype, device=flag_gems.device)
+    mat2 = torch.randn((K, N), dtype=dtype, device=flag_gems.device)
+    bias = torch.randn((N,), dtype=dtype, device=flag_gems.device)
+    ref_mat1 = to_reference(mat1, True)
+    ref_mat2 = to_reference(mat2, True)
+    ref_bias = to_reference(bias, True)
+
+    # Reference: use addmm
+    ref_out = torch.addmm(ref_bias, ref_mat1, ref_mat2)
+
+    # Test via flag_gems
+    with flag_gems.use_gems():
+        from flag_gems.runtime.backend._metax.ops._grouped_mm import _grouped_mm
+
+        res_out = _grouped_mm(mat1, mat2, bias=bias)
+
+    gems_assert_close(res_out, ref_out, dtype, reduce_dim=K)
