@@ -101,6 +101,31 @@ def test_perf_fused_add_rms_norm():
     bench.run()
 
 
+@pytest.mark.layer_norm_gelu
+def test_perf_layer_norm_gelu():
+    def layer_norm_gelu_input_fn(shape, dtype, device):
+        inp = torch.randn(shape, dtype=dtype, device=device)
+        layer_shape = (shape[-1],)
+        weight = torch.randn(layer_shape, dtype=dtype, device=device)
+        bias = torch.randn(layer_shape, dtype=dtype, device=device)
+        yield inp, layer_shape, weight, bias, 1e-5
+
+    def torch_op(inp, layer_shape, weight, bias, eps):
+        ln_out = torch.layer_norm(inp, layer_shape, weight=weight, bias=bias, eps=eps)
+        return torch.nn.functional.gelu(ln_out)
+
+    gems_op = flag_gems.layer_norm_gelu
+
+    bench = GenericBenchmarkExcluse1D(
+        input_fn=layer_norm_gelu_input_fn,
+        op_name="layer_norm_gelu",
+        torch_op=torch_op,
+        dtypes=FLOAT_DTYPES,
+    )
+    bench.set_gems(gems_op)
+    bench.run()
+
+
 def get_rope_cos_sin(max_seq_len, dim, dtype, base=10000, device=flag_gems.device):
     inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2).float().to(device) / dim))
     t = torch.arange(max_seq_len, device=device, dtype=inv_freq.dtype)
