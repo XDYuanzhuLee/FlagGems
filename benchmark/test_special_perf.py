@@ -1467,3 +1467,36 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+CDIST_BACKWARD_SHAPES = [
+    (1, 4, 8, 4),
+    (1, 8, 16, 8),
+    (1, 16, 32, 16),
+    (1, 32, 64, 32),
+    (1, 64, 128, 64),
+]
+
+
+class CdistBackwardBenchmark(Benchmark):
+    def set_shapes(self, shape_file_path=None):
+        self.shapes = CDIST_BACKWARD_SHAPES
+
+    def get_input_iter(self, cur_dtype):
+        for shape in self.shapes:
+            batch, n, p, m = shape
+            x1 = torch.randn(batch, n, m, dtype=cur_dtype, device=self.device)
+            x2 = torch.randn(batch, p, m, dtype=cur_dtype, device=self.device)
+            cdist_out = torch.cdist(x1, x2, p=2.0)
+            grad = torch.ones(batch, n, p, dtype=cur_dtype, device=self.device)
+            yield grad, x1, x2, 2.0, cdist_out
+
+
+@pytest.mark.cdist_backward
+def test_perf_cdist_backward():
+    bench = CdistBackwardBenchmark(
+        op_name="_cdist_backward",
+        torch_op=torch.ops.aten._cdist_backward,
+        dtypes=[torch.float32],
+    )
+    bench.run()
