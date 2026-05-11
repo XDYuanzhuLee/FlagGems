@@ -26,6 +26,7 @@ from .sigmoid import sigmoid
 from .tanh import tanh
 from .unique import _unique2
 from .upsample_nearest2d import upsample_nearest2d
+from .vector_norm import vector_norm
 from .zeros import zeros
 from .zeros_like import zeros_like
 
@@ -65,6 +66,7 @@ __all__ = [
     "sigmoid",
     "tanh",
     "upsample_nearest2d",
+    "vector_norm",
     "zeros",
     "zeros_like",
 ]
