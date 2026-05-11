@@ -2,6 +2,17 @@ from .addmm import addmm
 from .amax import amax
 from .arange import arange, arange_start
 from .bmm import bmm
+from .div import (
+    div_mode,
+    div_mode_,
+    floor_divide,
+    floor_divide_,
+    true_divide,
+    true_divide_,
+    true_divide_out,
+    trunc_divide,
+    trunc_divide_,
+)
 from .exponential_ import exponential_
 from .full import full
 from .full_like import full_like
@@ -36,6 +47,15 @@ __all__ = [
     "arange",
     "arange_start",
     "bmm",
+    "div_mode",
+    "div_mode_",
+    "floor_divide",
+    "floor_divide_",
+    "true_divide",
+    "true_divide_",
+    "true_divide_out",
+    "trunc_divide",
+    "trunc_divide_",
     "exponential_",
     "full",
     "full_like",
