@@ -5,6 +5,7 @@ from .bmm import bmm
 from .exponential_ import exponential_
 from .full import full
 from .full_like import full_like
+from .Fused_RoPE import apply_rotary_pos_emb
 from .groupnorm import group_norm
 from .index import index
 from .index_put import index_put, index_put_
@@ -33,6 +34,7 @@ __all__ = [
     "_unique2",
     "addmm",
     "amax",
+    "apply_rotary_pos_emb",
     "arange",
     "arange_start",
     "bmm",
