@@ -2777,3 +2777,100 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+# Causal Convolution Tests
+CAUSAL_CONV_SHAPES = [
+    (2, 4, 16),  # (batch, channels, length)
+    (1, 8, 32),
+    (4, 16, 64),
+    (2, 32, 128),
+]
+
+
+@pytest.mark.Causal_Convolution
+@pytest.mark.parametrize("shape", CAUSAL_CONV_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+@pytest.mark.parametrize("kernel_size", [2, 3, 5])
+def test_accuracy_Causal_Convolution(shape, dtype, kernel_size):
+    if flag_gems.vendor_name == "kunlunxin":
+        torch.manual_seed(0)
+        torch.cuda.manual_seed_all(0)
+
+    batch, in_channels, length = shape
+    out_channels = in_channels  # Keep same for simplicity
+    stride = 1
+    padding = 0
+    dilation = 1
+
+    # Create input and weight tensors
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    weight = torch.randn(
+        (out_channels, in_channels, kernel_size), dtype=dtype, device=flag_gems.device
+    )
+
+    ref_inp = to_reference(inp)
+    ref_weight = to_reference(weight)
+
+    # Reference implementation using torch.nn.functional.conv1d with causal padding
+    causal_padding = (kernel_size - 1) * dilation
+    ref_out = torch.nn.functional.conv1d(
+        torch.nn.functional.pad(ref_inp, (causal_padding + padding, 0), value=0.0),
+        ref_weight,
+        bias=None,
+        stride=stride,
+        padding=0,
+        dilation=dilation,
+    )
+
+    # GEMS implementation
+    res_out = flag_gems.causal_convolution(
+        inp, weight, bias=None, stride=stride, padding=padding, dilation=dilation
+    )
+
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.Causal_Convolution
+@pytest.mark.parametrize("shape", CAUSAL_CONV_SHAPES[:2])  # Use smaller shapes for bias test
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES[:2])  # float32 and float16
+@pytest.mark.parametrize("kernel_size", [3])
+def test_accuracy_Causal_Convolution_with_bias(shape, dtype, kernel_size):
+    if flag_gems.vendor_name == "kunlunxin":
+        torch.manual_seed(0)
+        torch.cuda.manual_seed_all(0)
+
+    batch, in_channels, length = shape
+    out_channels = in_channels
+    stride = 1
+    padding = 0
+    dilation = 1
+
+    # Create input, weight, and bias tensors
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    weight = torch.randn(
+        (out_channels, in_channels, kernel_size), dtype=dtype, device=flag_gems.device
+    )
+    bias = torch.randn(out_channels, dtype=dtype, device=flag_gems.device)
+
+    ref_inp = to_reference(inp)
+    ref_weight = to_reference(weight)
+    ref_bias = to_reference(bias)
+
+    # Reference implementation
+    causal_padding = (kernel_size - 1) * dilation
+    ref_out = torch.nn.functional.conv1d(
+        torch.nn.functional.pad(ref_inp, (causal_padding + padding, 0), value=0.0),
+        ref_weight,
+        bias=ref_bias,
+        stride=stride,
+        padding=0,
+        dilation=dilation,
+    )
+
+    # GEMS implementation
+    res_out = flag_gems.causal_convolution(
+        inp, weight, bias=bias, stride=stride, padding=padding, dilation=dilation
+    )
+
+    gems_assert_close(res_out, ref_out, dtype)

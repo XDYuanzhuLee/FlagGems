@@ -73,6 +73,7 @@ from flag_gems.ops.conv1d import conv1d
 from flag_gems.ops.conv2d import conv2d
 from flag_gems.ops.conv3d import conv3d
 from flag_gems.ops.conv_depthwise2d import _conv_depthwise2d
+from flag_gems.ops.Causal_Convolution import causal_convolution
 from flag_gems.ops.copy import copy, copy_
 from flag_gems.ops.copysign import copysign, copysign_out
 from flag_gems.ops.cos import cos, cos_
@@ -354,6 +355,7 @@ __all__ = [
     "avg_pool2d_backward",
     "baddbmm",
     "batch_norm",
+    "causal_convolution",
     "batch_norm_backward",
     "bitwise_and_scalar",
     "bitwise_and_scalar_",
