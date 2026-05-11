@@ -1,6 +1,7 @@
 from .addmm import addmm
 from .amax import amax
 from .arange import arange, arange_start
+from .argmin import argmin
 from .bmm import bmm
 from .exponential_ import exponential_
 from .full import full
@@ -35,6 +36,7 @@ __all__ = [
     "amax",
     "arange",
     "arange_start",
+    "argmin",
     "bmm",
     "exponential_",
     "full",
