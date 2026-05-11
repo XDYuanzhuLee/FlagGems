@@ -168,3 +168,75 @@ def test_perf_conv3d():
     )
     bench.set_gems(flag_gems.conv3d)
     bench.run()
+
+
+class Conv2dActivationBenchmark(GenericBenchmark):
+    """Benchmark class specifically for Conv2d + Activation operations."""
+
+    CONV_ACTIVATION_SHAPES = [
+        (32, 64, 128, 128, 32, 3, 3, 1, 2, 1),
+        (32, 64, 210, 210, 16, 5, 5, 2, 1, 1),
+        (16, 32, 12, 12, 24, 3, 3, 2, 1, 1),
+        (16, 32, 24, 24, 24, 3, 3, 2, 2, 2),
+        (16, 32, 24, 24, 24, 3, 3, 1, 2, 2),
+        (16, 32, 12, 12, 24, 3, 3, 2, "valid", 1),
+        (32, 64, 128, 128, 32, 3, 3, 1, "valid", 1),
+        (16, 32, 24, 24, 24, 3, 3, 1, "same", 2),
+        (32, 64, 210, 210, 16, 5, 5, 1, "same", 1),
+    ]
+
+    def set_shapes(self, shape_file_path=None):
+        """Override to use only conv_activation specific shapes."""
+        self.shapes = self.CONV_ACTIVATION_SHAPES
+
+
+@pytest.mark.conv_activation
+def test_perf_conv_activation():
+    def conv_activation_input_fn(shape, dtype, device):
+        (
+            batch,
+            input_c,
+            input_h,
+            input_w,
+            out_c,
+            kernel_h,
+            kernel_w,
+            stride,
+            padding,
+            groups,
+        ) = shape
+        input_shape = (batch, input_c, input_h, input_w)
+        weight_shape = (out_c, input_c // groups, kernel_h, kernel_w)
+        input = torch.randn(size=input_shape, device=device, dtype=dtype)
+        weight = torch.randn(size=weight_shape, device=device, dtype=dtype)
+
+        yield {
+            "input": input,
+            "weight": weight,
+            "bias": None,
+            "groups": groups,
+            "stride": stride,
+            "padding": padding,
+        },
+
+    if flag_gems.vendor_name == "hygon":
+        os.environ["TRITON_HIP_USE_NEW_STREAM_PIPELINE"] = "0"
+    torch.backends.cudnn.allow_tf32 = False
+
+    # Reference: conv2d followed by relu
+    def torch_conv_activation(input, weight, bias=None, stride=1, padding=0, groups=1):
+        conv_out = torch.nn.functional.conv2d(
+            input, weight, bias=bias, stride=stride, padding=padding, groups=groups
+        )
+        return torch.nn.functional.relu(conv_out)
+
+    bench = Conv2dActivationBenchmark(
+        input_fn=conv_activation_input_fn,
+        op_name="conv_activation",
+        torch_op=torch_conv_activation,
+        dtypes=FLOAT_DTYPES,
+    )
+    bench.set_gems(flag_gems.conv_activation)
+    bench.run()
+    if flag_gems.vendor_name == "hygon":
+        del os.environ["TRITON_HIP_USE_NEW_STREAM_PIPELINE"]
