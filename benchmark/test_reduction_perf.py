@@ -61,6 +61,7 @@ forward_operations = [
     ("mean", torch.mean, FLOAT_DTYPES),
     ("min", torch.min, FLOAT_DTYPES),
     ("prod", torch.prod, FLOAT_DTYPES),
+    ("reduce_l2", lambda x, dim=None, keepdim=False: torch.sqrt(torch.sum(x * x, dim=dim, keepdim=keepdim)), FLOAT_DTYPES),
     ("softmax", torch.nn.functional.softmax, FLOAT_DTYPES),
     ("std", torch.std, FLOAT_DTYPES),
     ("sum", torch.sum, FLOAT_DTYPES),
@@ -77,6 +78,10 @@ forward_operations = [
 )
 def test_general_reduction_perf(op_name, torch_op, dtypes):
     bench = UnaryReductionBenchmark(op_name=op_name, torch_op=torch_op, dtypes=dtypes)
+    # For reduce_l2, we need to explicitly set the gems_op since it's not a torch operator
+    if op_name == "reduce_l2":
+        import flag_gems
+        bench.set_gems(flag_gems.reduce_l2)
     bench.run()
 
 
