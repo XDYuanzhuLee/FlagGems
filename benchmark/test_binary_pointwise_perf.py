@@ -3,6 +3,7 @@ from typing import Generator
 import pytest
 import torch
 
+import flag_gems
 from benchmark.attri_util import (
     BOOL_DTYPES,
     COMPLEX_DTYPES,
@@ -49,6 +50,8 @@ class BinaryPointwiseBenchmark(Benchmark):
         for name, op, dtype in [
             # Arithmetic operations
             ("add", torch.add, FLOAT_DTYPES + COMPLEX_DTYPES),
+            # _add_relu: use flag_gems wrapper since torch._add_relu is not available on CUDA
+            ("add_relu", flag_gems.add_relu, FLOAT_DTYPES),
             ("atan2", torch.atan2, FLOAT_DTYPES),
             ("copysign", torch.copysign, FLOAT_DTYPES),
             ("div", torch.div, FLOAT_DTYPES),
