@@ -1396,8 +1396,8 @@ def test_reshape_and_cache(
         for i in range(num_tokens):
             block_idx = block_indicies_lst[i]
             block_offset = block_offsets_lst[i]
-            cloned_key_cache[block_idx, :, :, block_offset, :] = reshaped_key[i]
-            cloned_value_cache[block_idx, :, :, block_offset] = value[i]
+            cloned_key_cache[block_idx, :, :, block_offset, :] = reshaped_key[i] * k_scale
+            cloned_value_cache[block_idx, :, :, block_offset] = value[i] * v_scale
 
         torch.testing.assert_close(key_cache.cpu(), cloned_key_cache.cpu())
         torch.testing.assert_close(value_cache.cpu(), cloned_value_cache.cpu())
@@ -1771,3 +1771,79 @@ def test_scheduler_metadata_correctness(
         )
 
     gems_assert_close(gems_metadata, ref_metadata, dtype=torch.int32)
+
+
+# Test KV_Cache_Update metax specialized operator
+@pytest.mark.KV_Cache_Update
+@pytest.mark.parametrize("num_tokens", [42])
+@pytest.mark.parametrize("num_heads", [8])
+@pytest.mark.parametrize("head_size", [64])
+@pytest.mark.parametrize("block_size", [16])
+@pytest.mark.parametrize("num_blocks", [1024])
+@pytest.mark.parametrize("dtype", [torch.half, torch.bfloat16, torch.float])
+@pytest.mark.parametrize("kv_cache_dtype", ["auto"])
+@pytest.mark.parametrize("seed", [2025])
+def test_KV_Cache_Update(
+    num_tokens: int,
+    num_heads: int,
+    head_size: int,
+    block_size: int,
+    num_blocks: int,
+    dtype: torch.dtype,
+    kv_cache_dtype: str,
+    seed: int,
+) -> None:
+    """Test KV_Cache_Update metax specialized operator."""
+    init_seed(seed)
+    with torch.device(device):
+        # Create a random slot mapping.
+        num_slots = block_size * num_blocks
+        slot_mapping_lst = random.sample(range(num_slots), num_tokens)
+        slot_mapping = torch.tensor(slot_mapping_lst, dtype=torch.long, device=device)
+
+        qkv = torch.randn(num_tokens, 3, num_heads, head_size, dtype=dtype)
+        _, key, value = qkv.unbind(dim=1)
+
+        # Create the KV caches.
+        key_caches, value_caches = create_kv_caches_with_random(
+            num_blocks, block_size, 1, num_heads, head_size, kv_cache_dtype, dtype, seed
+        )
+        key_cache, value_cache = key_caches[0], value_caches[0]
+
+        # Using default kv_scale
+        k_scale = (key.amax() / 64.0).to(torch.float32)
+        v_scale = (value.amax() / 64.0).to(torch.float32)
+
+        # Clone the KV caches.
+        cloned_key_cache = key_cache.clone()
+        cloned_value_cache = value_cache.clone()
+
+        # Call the KV_Cache_Update kernel (metax specialized version).
+        # Note: This uses the metax specialized kv_cache_update function
+        from flag_gems.runtime.backend._metax.ops import KV_Cache_Update as metax_kv
+
+        metax_kv.kv_cache_update(
+            key,
+            value,
+            key_cache,
+            value_cache,
+            slot_mapping,
+            kv_cache_dtype,
+            k_scale,
+            v_scale,
+        )
+
+        # Run the reference implementation.
+        reshaped_key = key.reshape(num_tokens, *key_cache[0, :, :, 0, :].shape)
+        block_indicies = torch.div(slot_mapping, block_size, rounding_mode="floor")
+        block_indicies_lst = block_indicies.cpu().tolist()
+        block_offsets = slot_mapping % block_size
+        block_offsets_lst = block_offsets.cpu().tolist()
+        for i in range(num_tokens):
+            block_idx = block_indicies_lst[i]
+            block_offset = block_offsets_lst[i]
+            cloned_key_cache[block_idx, :, :, block_offset, :] = reshaped_key[i] * k_scale
+            cloned_value_cache[block_idx, :, :, block_offset] = value[i] * v_scale
+
+        torch.testing.assert_close(key_cache.cpu(), cloned_key_cache.cpu())
+        torch.testing.assert_close(value_cache.cpu(), cloned_value_cache.cpu())
