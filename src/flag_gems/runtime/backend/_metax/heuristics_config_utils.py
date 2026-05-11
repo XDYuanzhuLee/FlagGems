@@ -288,6 +288,10 @@ HEURISTICS_CONFIGS = {
         "BLOCK_M": lambda args: 4,
         "BLOCK_N": lambda args: 1024,
     },
+    "amin": {
+        "BLOCK_M": lambda args: 4,
+        "BLOCK_N": lambda args: 1024,
+    },
     "argmax": {
         "BLOCK_M": argmax_heur_block_m,
         "BLOCK_N": argmax_heur_block_n,

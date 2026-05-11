@@ -1,5 +1,6 @@
 from .addmm import addmm
 from .amax import amax
+from .amin import amin
 from .arange import arange, arange_start
 from .bmm import bmm
 from .exponential_ import exponential_
@@ -33,6 +34,7 @@ __all__ = [
     "_unique2",
     "addmm",
     "amax",
+    "amin",
     "arange",
     "arange_start",
     "bmm",
