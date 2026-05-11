@@ -1119,3 +1119,39 @@ def test_perf_reshape_and_cache():
     )
     bench.set_gems(flag_gems.reshape_and_cache)
     bench.run()
+
+
+# Benchmark for _cudnn_attention_forward
+@pytest.mark.cudnn_attention_forward
+@pytest.mark.parametrize("is_causal", [True, False])
+def test_perf_cudnn_attention_forward(is_causal):
+    def cudnn_attention_kwargs(shape, dtype, device):
+        batch_size, num_heads, seq_len, head_size = shape
+        query = torch.randn(shape, device=device, dtype=dtype)
+        key = torch.randn(shape, device=device, dtype=dtype)
+        value = torch.randn(shape, device=device, dtype=dtype)
+        yield query, key, value, None, 0.0, is_causal
+
+    def torch_cudnn_attention(
+        query, key, value, attn_mask=None, dropout_p=0.0, is_causal=is_causal
+    ):
+        return torch.nn.functional.scaled_dot_product_attention(
+            query,
+            key,
+            value,
+            attn_mask=attn_mask,
+            dropout_p=dropout_p,
+            is_causal=is_causal,
+        )
+
+    bench = AttentionBenchmark(
+        op_name="cudnn_attention_forward",
+        input_fn=cudnn_attention_kwargs,
+        torch_op=torch_cudnn_attention,
+        dtypes=[
+            torch.float16,
+            torch.bfloat16,
+        ],
+    )
+    bench.set_gems(flag_gems._cudnn_attention_forward)
+    bench.run()
