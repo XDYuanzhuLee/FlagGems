@@ -70,6 +70,7 @@ from flag_gems.ops.clamp import (
 from flag_gems.ops.conj_physical import conj_physical
 from flag_gems.ops.contiguous import contiguous
 from flag_gems.ops.conv1d import conv1d
+from flag_gems.ops.conv_activation import conv_activation
 from flag_gems.ops.conv2d import conv2d
 from flag_gems.ops.conv3d import conv3d
 from flag_gems.ops.conv_depthwise2d import _conv_depthwise2d
@@ -386,6 +387,7 @@ __all__ = [
     "constant_pad_nd",
     "contiguous",
     "conv1d",
+    "conv_activation",
     "conv2d",
     "conv3d",
     "copy",

@@ -473,3 +473,65 @@ def test_accuracy_depthwise2d(
         inp, weight, kernel, bias=None, stride=stride, padding=padding, dilation=1
     )
     gems_assert_close(res_out, ref_out, dtype)
+
+
+# Test for conv_activation: conv2d followed by relu
+SHAPE_CONV_ACTIVATION = [
+    ((1, 2, 5, 5), (1, 2, 3, 3), 1),
+    ((2, 3, 9, 9), (1, 3, 3, 3), 1),
+    ((32, 8, 8, 8), (32, 8, 2, 2), 1),
+]
+
+
+@pytest.mark.conv_activation
+@pytest.mark.parametrize("shape, kernel, groups", SHAPE_CONV_ACTIVATION)
+@pytest.mark.parametrize("stride", [1, 2])
+@pytest.mark.parametrize("padding", [0, 1])
+@pytest.mark.parametrize("dtype", [torch.float16, torch.float32])
+@pytest.mark.parametrize("bias", [True, False])
+def test_accuracy_conv_activation(shape, kernel, stride, padding, groups, dtype, bias):
+    if flag_gems.vendor_name == "mthreads" and dtype == torch.float16:
+        os.environ["MUSA_ENABLE_SQMMA"] = "1"
+
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device, requires_grad=True)
+    ref_inp = to_reference(inp, True)
+    torch.backends.cudnn.allow_tf32 = False
+    weight = torch.randn(
+        kernel, dtype=dtype, device=flag_gems.device, requires_grad=True
+    )
+    if bias is True:
+        bias_tensor = torch.randn(
+            [weight.shape[0]], dtype=dtype, device=flag_gems.device, requires_grad=True
+        )
+        bias_ref = to_reference(bias_tensor, True)
+    else:
+        bias_tensor = None
+        bias_ref = None
+
+    ref_weight = to_reference(weight, True)
+
+    # Reference: conv2d followed by relu
+    ref_conv = torch.nn.functional.conv2d(
+        ref_inp,
+        ref_weight,
+        bias=bias_ref,
+        groups=groups,
+        stride=stride,
+        padding=padding,
+        dilation=1,
+    )
+    ref_out = torch.nn.functional.relu(ref_conv)
+
+    res_out = flag_gems.conv_activation(
+        inp,
+        weight,
+        bias=bias_tensor,
+        groups=groups,
+        stride=stride,
+        padding=padding,
+        dilation=1,
+    )
+    gems_assert_close(res_out, ref_out, dtype)
+
+    if flag_gems.vendor_name == "mthreads" and dtype == torch.float16:
+        del os.environ["MUSA_ENABLE_SQMMA"]

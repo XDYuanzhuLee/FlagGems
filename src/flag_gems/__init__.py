@@ -122,6 +122,7 @@ _FULL_CONFIG = (
     # ("contiguous", contiguous),
     ("conv1d", conv1d),
     ("conv1d.padding", conv1d),
+    ("conv_activation", conv_activation),
     ("conv2d", conv2d),
     ("conv2d.padding", conv2d),
     ("conv3d", conv3d),
