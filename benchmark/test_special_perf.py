@@ -1467,3 +1467,39 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+# MoE Gate Top-K Routing Benchmark
+MOE_GATE_TOPK_ROUTING_SHAPES = [
+    (8, 16, 2),
+    (16, 16, 2),
+    (32, 32, 4),
+    (64, 32, 4),
+    (128, 64, 8),
+    (256, 64, 8),
+]
+
+
+class MoEGateTopKRoutingBenchmark(Benchmark):
+    def set_shapes(self, shape_file_path=None):
+        self.shapes = MOE_GATE_TOPK_ROUTING_SHAPES
+
+    def get_input_iter(self, cur_dtype):
+        from flag_gems.runtime.backend._metax.ops import moe_gate_topk_routing
+
+        for shape in self.shapes:
+            num_tokens, num_experts, top_k = shape
+            gate_logits = torch.randn(
+                num_tokens, num_experts, dtype=cur_dtype, device=self.device
+            )
+            yield gate_logits, top_k
+
+
+@pytest.mark.MoE_Gate_TopK_Routing
+def test_perf_moe_gate_topk_routing():
+    bench = MoEGateTopKRoutingBenchmark(
+        op_name="MoE_Gate_TopK_Routing",
+        torch_op=None,  # Custom op, no direct torch equivalent
+        dtypes=FLOAT_DTYPES,
+    )
+    bench.run()
