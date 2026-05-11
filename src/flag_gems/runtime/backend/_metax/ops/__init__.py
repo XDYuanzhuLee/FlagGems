@@ -1,3 +1,4 @@
+from ._native_batch_norm_legit_no_training import native_batch_norm_legit_no_training
 from .addmm import addmm
 from .amax import amax
 from .arange import arange, arange_start
@@ -53,6 +54,7 @@ __all__ = [
     "min",
     "mm",
     "mm_out",
+    "native_batch_norm_legit_no_training",
     "nonzero",
     "ones",
     "ones_like",
