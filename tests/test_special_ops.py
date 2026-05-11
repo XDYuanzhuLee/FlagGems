@@ -2777,3 +2777,40 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.Linear_GeLU_Linear
+@pytest.mark.parametrize("shape", [(16, 32), (32, 64), (64, 128), (128, 256)])
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_linear_gelu_linear(shape, dtype):
+    """Test for fused Linear -> GeLU -> Linear operation."""
+    M, K = shape
+    N1 = K * 2  # First linear expands dimension
+    N2 = K  # Second linear projects back
+
+    # Create inputs and weights
+    input_tensor = torch.randn(M, K, dtype=dtype, device=flag_gems.device)
+    weight1 = torch.randn(K, N1, dtype=dtype, device=flag_gems.device)
+    bias1 = torch.randn(N1, dtype=dtype, device=flag_gems.device)
+    weight2 = torch.randn(N1, N2, dtype=dtype, device=flag_gems.device)
+    bias2 = torch.randn(N2, dtype=dtype, device=flag_gems.device)
+
+    # Reference implementation: Linear -> GeLU -> Linear
+    ref_input = to_reference(input_tensor)
+    ref_weight1 = to_reference(weight1)
+    ref_bias1 = to_reference(bias1)
+    ref_weight2 = to_reference(weight2)
+    ref_bias2 = to_reference(bias2)
+
+    # Compute reference
+    ref_intermediate = torch.nn.functional.linear(ref_input, ref_weight1.T, ref_bias1)
+    ref_gelu = torch.nn.functional.gelu(ref_intermediate)
+    ref_out = torch.nn.functional.linear(ref_gelu, ref_weight2.T, ref_bias2)
+
+    # Compute with metax implementation
+    from flag_gems.runtime.backend._metax.ops import linear_gelu_linear
+
+    with flag_gems.use_gems():
+        res_out = linear_gelu_linear(input_tensor, weight1, bias1, weight2, bias2)
+
+    gems_assert_close(res_out, ref_out, dtype)
