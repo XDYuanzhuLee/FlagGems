@@ -257,3 +257,28 @@ def test_perf_rms_norm():
         torch_op=torch.nn.functional.rms_norm,
     )
     bench.run()
+
+
+@pytest.mark.add_rms_norm
+def test_perf_add_rms_norm():
+    def add_rms_norm_input_fn(shape, dtype, device):
+        M, N = shape
+        x = torch.randn(shape, dtype=dtype, device=device)
+        residual = torch.randn(shape, dtype=dtype, device=device)
+        weight = torch.randn(N, dtype=dtype, device=device)
+        yield x, residual, (N,), weight
+
+    # Reference implementation: RMSNorm(x + residual)
+    def add_rms_norm_ref(x, residual, normalized_shape, weight):
+        sum_val = x + residual
+        var = torch.mean(sum_val * sum_val, dim=-1, keepdim=True)
+        rrms = 1.0 / torch.sqrt(var + 1e-5)
+        return sum_val * rrms * weight
+
+    bench = GenericBenchmark2DOnly(
+        input_fn=add_rms_norm_input_fn,
+        op_name="add_rms_norm",
+        torch_op=add_rms_norm_ref,
+    )
+    bench.set_gems(flag_gems.add_rms_norm)
+    bench.run()
