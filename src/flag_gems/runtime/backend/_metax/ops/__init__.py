@@ -1,3 +1,4 @@
+from .LayerNorm import layer_norm
 from .addmm import addmm
 from .amax import amax
 from .arange import arange, arange_start
@@ -40,6 +41,7 @@ __all__ = [
     "full",
     "full_like",
     "group_norm",
+    "layer_norm",
     "index",
     "index_put",
     "index_put_",
