@@ -6,6 +6,7 @@ from flag_gems.ops._upsample_nearest_exact1d import _upsample_nearest_exact1d
 from flag_gems.ops._pdist_backward import _pdist_backward
 from flag_gems.ops.abs import abs, abs_
 from flag_gems.ops.absolute import absolute
+from flag_gems.ops.adaptive_attention_span import adaptive_attention_span
 from flag_gems.ops.acos import acos
 from flag_gems.ops.add import add, add_
 from flag_gems.ops.addcdiv import addcdiv
@@ -316,6 +317,7 @@ __all__ = [
     "abs",
     "abs_",
     "absolute",
+    "adaptive_attention_span",
     "acos",
     "add",
     "add_",

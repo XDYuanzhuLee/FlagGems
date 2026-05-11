@@ -52,6 +52,7 @@ _FULL_CONFIG = (
     ("abs", abs),
     ("abs_", abs_),
     ("absolute", absolute),
+    ("adaptive_attention_span", adaptive_attention_span),
     ("acos", acos),
     ("add.Tensor", add),
     ("add_.Tensor", add_),
