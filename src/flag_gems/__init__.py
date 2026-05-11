@@ -329,6 +329,7 @@ _FULL_CONFIG = (
     ("randperm", randperm),
     ("reciprocal", reciprocal),
     ("reciprocal_", reciprocal_),
+    ("reduce_norm", reduce_norm),
     ("reflection_pad2d", reflection_pad2d),
     ("reflection_pad2d.out", reflection_pad2d_out),
     ("reflection_pad1d", reflection_pad1d),

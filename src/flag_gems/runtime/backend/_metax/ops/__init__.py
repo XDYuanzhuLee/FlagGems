@@ -20,6 +20,7 @@ from .ones_like import ones_like
 from .outer import outer
 from .polar import polar
 from .prod import prod, prod_dim
+from .ReduceNorm import reduce_norm
 from .repeat_interleave import repeat_interleave_self_tensor
 from .resolve_conj import resolve_conj
 from .sigmoid import sigmoid
@@ -60,6 +61,7 @@ __all__ = [
     "polar",
     "prod",
     "prod_dim",
+    "reduce_norm",
     "repeat_interleave_self_tensor",
     "resolve_conj",
     "sigmoid",

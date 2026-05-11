@@ -2513,3 +2513,20 @@ def test_accuracy_bincount_minlength(shape, num_classes, minlength):
     ref_out_w = torch.bincount(ref_inp, weights=ref_weights, minlength=minlength)
     res_out_w = flag_gems.bincount(inp, weights=weights, minlength=minlength)
     _assert_bincount(res_out_w, ref_out_w, dtype, shape, num_classes)
+
+
+# ReduceNorm tests
+@pytest.mark.reduce_norm
+@pytest.mark.parametrize("shape", REDUCTION_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_reduce_norm(shape, dtype):
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+
+    ref_out = torch.linalg.vector_norm(ref_inp, ord=2)
+    with flag_gems.use_gems():
+        res_out = flag_gems.reduce_norm(inp)
+
+    gems_assert_close(res_out, ref_out, dtype)
+
+    gems_assert_close(res_out, ref_out, dtype)
