@@ -1366,3 +1366,28 @@ polar:
   - 1
   - 2
   - 4
+rms_norm_loop:
+- gen: true
+  param_map:
+    META:
+      TILE_N: tile_n
+    num_warps: warps
+  tile_n:
+  - 1024
+  - 2048
+  - 4096
+  warps:
+  - 4
+  - 8
+rms_norm_grad_dx_loop:
+- gen: true
+  param_map:
+    META:
+      TILE_N: tile_n
+    num_warps: warps
+  tile_n:
+  - 512
+  - 1024
+  warps:
+  - 4
+  - 8
