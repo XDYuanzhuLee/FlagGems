@@ -20,6 +20,7 @@ from .ones_like import ones_like
 from .outer import outer
 from .polar import polar
 from .prod import prod, prod_dim
+from .ReduceMean import mean, mean_dim
 from .repeat_interleave import repeat_interleave_self_tensor
 from .resolve_conj import resolve_conj
 from .sigmoid import sigmoid
@@ -49,6 +50,8 @@ __all__ = [
     "log_softmax_backward",
     "masked_fill",
     "masked_fill_",
+    "mean",
+    "mean_dim",
     "min_dim",
     "min",
     "mm",
