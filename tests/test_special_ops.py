@@ -2777,3 +2777,74 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+# ScatterND test shapes
+SCATTER_ND_SHAPES = [(4, 4, 4), (8, 8), (16, 16, 16), (32, 32)]
+
+
+def scatter_nd_reference(inp, indices, values, accumulate=False):
+    """Reference implementation for scatter_nd using torch.index_put"""
+    indices_list = indices.unbind(-1)
+    if accumulate:
+        return torch.index_put(inp, indices_list, values, accumulate=True)
+    else:
+        return torch.index_put(inp, indices_list, values, accumulate=False)
+
+
+@pytest.mark.ScatterND
+@pytest.mark.parametrize("shape", SCATTER_ND_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_scatter_nd(shape, dtype):
+    # Generate unique indices to avoid race conditions in non-accumulate mode
+    M = 8  # Number of updates
+    rank = len(shape)
+
+    # Generate indices using random permutation to ensure uniqueness
+    num_elements = 1
+    for s in shape:
+        num_elements *= s
+
+    # Get unique indices
+    all_indices = torch.randperm(num_elements, device=device)[:M]
+    # Convert flat indices to multi-dimensional
+    indices = torch.zeros((M, rank), dtype=torch.long, device=device)
+    temp = all_indices
+    for i in range(rank):
+        dim_size = shape[rank - 1 - i]
+        indices[:, rank - 1 - i] = temp % dim_size
+        temp = temp // dim_size
+
+    values = torch.randn(M, dtype=dtype, device=device)
+
+    inp = torch.zeros(shape, dtype=dtype, device=device)
+
+    ref_out = scatter_nd_reference(inp, indices, values, accumulate=False)
+    with flag_gems.use_gems():
+        res_out = flag_gems.scatter_nd(inp, indices, values)
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.ScatterND
+@pytest.mark.parametrize("shape", SCATTER_ND_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_scatter_nd_accumulate(shape, dtype):
+    # bfloat16 does not support atomic_add in Triton
+    if dtype == torch.bfloat16:
+        pytest.skip("bfloat16 accumulate not supported")
+
+    # Generate random indices with some duplicates to test accumulate
+    M = 8
+    rank = len(shape)
+
+    # Use smaller range to increase chance of duplicate indices
+    indices = torch.randint(0, max(1, min(shape) // 2), (M, rank), dtype=torch.long, device=device)
+    values = torch.randn(M, dtype=dtype, device=device)
+
+    # Initialize with non-zero values
+    inp = torch.ones(shape, dtype=dtype, device=device)
+
+    ref_out = scatter_nd_reference(inp, indices, values, accumulate=True)
+    with flag_gems.use_gems():
+        res_out = flag_gems.scatter_nd(inp, indices, values, accumulate=True)
+    gems_assert_close(res_out, ref_out, dtype)
