@@ -432,13 +432,28 @@ min:
   num_warps: 8
 prod:
 - META:
+    BLOCK_M: 4
+    BLOCK_N: 64
+  num_warps: 4
+- META:
     BLOCK_M: 8
+    BLOCK_N: 128
   num_warps: 8
 - META:
     BLOCK_M: 16
+    BLOCK_N: 256
   num_warps: 8
 - META:
     BLOCK_M: 32
+    BLOCK_N: 256
+  num_warps: 8
+- META:
+    BLOCK_M: 64
+    BLOCK_N: 128
+  num_warps: 8
+- META:
+    BLOCK_M: 128
+    BLOCK_N: 64
   num_warps: 8
 max:
 - META:

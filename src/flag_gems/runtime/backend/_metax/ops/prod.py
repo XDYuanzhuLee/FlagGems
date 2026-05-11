@@ -67,7 +67,8 @@ def prod(inp, *, dtype=None):
 
 
 def heur_block_n(args):
-    return triton.next_power_of_2(args["N"])
+    # Limit BLOCK_N to 256 to avoid private memory overflow on Metax
+    return min(triton.next_power_of_2(args["N"]), 256)
 
 
 @libentry()
