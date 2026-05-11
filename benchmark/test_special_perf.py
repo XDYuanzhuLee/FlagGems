@@ -1467,3 +1467,51 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+# Causal Convolution Benchmark
+CAUSAL_CONV_SHAPES = [
+    (2, 4, 16),
+    (1, 8, 32),
+    (4, 16, 64),
+    (2, 32, 128),
+    (1, 64, 256),
+]
+
+
+def causal_convolution_input_fn(shape, cur_dtype, device):
+    """Input function for causal convolution benchmark.
+
+    Args:
+        shape: tuple of (batch, channels, length)
+        cur_dtype: data type
+        device: device to create tensors on
+    """
+    batch, in_channels, length = shape
+    out_channels = in_channels
+    kernel_size = 3
+    stride = 1
+    padding = 0
+    dilation = 1
+
+    inp = torch.randn(batch, in_channels, length, dtype=cur_dtype, device=device)
+    weight = torch.randn(
+        out_channels, in_channels, kernel_size, dtype=cur_dtype, device=device
+    )
+    yield {"input": inp, "weight": weight, "bias": None, "stride": stride, "padding": padding, "dilation": dilation}
+
+
+class CausalConvolutionBenchmark(GenericBenchmark):
+    def set_more_shapes(self):
+        return CAUSAL_CONV_SHAPES
+
+
+@pytest.mark.Causal_Convolution
+def test_perf_causal_convolution():
+    bench = CausalConvolutionBenchmark(
+        op_name="causal_convolution",
+        torch_op=flag_gems.causal_convolution,
+        dtypes=FLOAT_DTYPES,
+        input_fn=causal_convolution_input_fn,
+    )
+    bench.run()
