@@ -414,6 +414,125 @@ def test_accuracy_bitwiseor_scalar_tensor(shape, dtype):
     gems_assert_equal(res_out, ref_out)
 
 
+@pytest.mark.bitwise_xor
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", INT_DTYPES + BOOL_TYPES)
+def test_accuracy_bitwisexor(shape, dtype):
+    if dtype in BOOL_TYPES:
+        inp1 = torch.randint(0, 2, size=shape, dtype=dtype, device="cpu").to(
+            flag_gems.device
+        )
+        inp2 = torch.randint(0, 2, size=shape, dtype=dtype, device="cpu").to(
+            flag_gems.device
+        )
+    else:
+        inp1 = torch.randint(
+            low=-0x7FFF, high=0x7FFF, size=shape, dtype=dtype, device="cpu"
+        ).to(flag_gems.device)
+        inp2 = torch.randint(
+            low=-0x7FFF, high=0x7FFF, size=shape, dtype=dtype, device="cpu"
+        ).to(flag_gems.device)
+    ref_inp1 = to_reference(inp1)
+    ref_inp2 = to_reference(inp2)
+
+    ref_out = torch.bitwise_xor(ref_inp1, ref_inp2)
+    with flag_gems.use_gems():
+        res_out = torch.bitwise_xor(inp1, inp2)
+
+    gems_assert_equal(res_out, ref_out)
+
+
+@pytest.mark.inplace
+@pytest.mark.bitwise_xor
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", INT_DTYPES + BOOL_TYPES)
+def test_accuracy_bitwisexor_(shape, dtype):
+    if dtype in BOOL_TYPES:
+        inp1 = torch.randint(0, 2, size=shape, dtype=dtype, device=flag_gems.device)
+        inp2 = torch.randint(0, 2, size=shape, dtype=dtype, device=flag_gems.device)
+    else:
+        inp1 = torch.randint(
+            low=-0x7FFF, high=0x7FFF, size=shape, dtype=dtype, device="cpu"
+        ).to(flag_gems.device)
+        inp2 = torch.randint(
+            low=-0x7FFF, high=0x7FFF, size=shape, dtype=dtype, device="cpu"
+        ).to(flag_gems.device)
+    ref_inp1 = to_reference(inp1.clone())
+    ref_inp2 = to_reference(inp2)
+
+    ref_out = ref_inp1.bitwise_xor_(ref_inp2)
+    with flag_gems.use_gems():
+        res_out = inp1.bitwise_xor_(inp2)
+
+    gems_assert_equal(res_out, ref_out)
+
+
+@pytest.mark.bitwise_xor
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", INT_DTYPES + BOOL_TYPES)
+def test_accuracy_bitwisexor_scalar(shape, dtype):
+    if dtype in BOOL_TYPES:
+        inp1 = torch.randint(0, 2, size=shape, dtype=dtype, device="cpu").to(
+            flag_gems.device
+        )
+        inp2 = bool(random.randint(0, 2))
+    else:
+        inp1 = torch.randint(
+            low=-0x7FFF, high=0x7FFF, size=shape, dtype=dtype, device="cpu"
+        ).to(flag_gems.device)
+        inp2 = 0x00FF
+    ref_inp1 = to_reference(inp1)
+
+    ref_out = torch.bitwise_xor(ref_inp1, inp2)
+    with flag_gems.use_gems():
+        res_out = torch.bitwise_xor(inp1, inp2)
+
+    gems_assert_equal(res_out, ref_out)
+
+
+@pytest.mark.inplace
+@pytest.mark.bitwise_xor
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", INT_DTYPES + BOOL_TYPES)
+def test_accuracy_bitwisexor_scalar_(shape, dtype):
+    if dtype in BOOL_TYPES:
+        inp1 = torch.randint(0, 2, size=shape, dtype=dtype, device=flag_gems.device)
+        inp2 = bool(random.randint(0, 2))
+    else:
+        inp1 = torch.randint(
+            low=-0x7FFF, high=0x7FFF, size=shape, dtype=dtype, device="cpu"
+        ).to(flag_gems.device)
+        inp2 = 0x00FF
+    ref_inp1 = to_reference(inp1.clone())
+
+    ref_out = ref_inp1.bitwise_xor_(inp2)
+    with flag_gems.use_gems():
+        res_out = inp1.bitwise_xor_(inp2)
+
+    gems_assert_equal(res_out, ref_out)
+
+
+@pytest.mark.bitwise_xor
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", INT_DTYPES + BOOL_TYPES)
+def test_accuracy_bitwisexor_scalar_tensor(shape, dtype):
+    if dtype in BOOL_TYPES:
+        inp1 = bool(random.randint(0, 2))
+        inp2 = torch.randint(0, 2, size=shape, dtype=dtype, device=flag_gems.device)
+    else:
+        inp1 = 0x00FF
+        inp2 = torch.randint(
+            low=-0x7FFF, high=0x7FFF, size=shape, dtype=dtype, device="cpu"
+        ).to(flag_gems.device)
+    ref_inp2 = to_reference(inp2)
+
+    ref_out = torch.bitwise_xor(inp1, ref_inp2)
+    with flag_gems.use_gems():
+        res_out = torch.bitwise_xor(inp1, inp2)
+
+    gems_assert_equal(res_out, ref_out)
+
+
 @pytest.mark.clamp
 @pytest.mark.parametrize("shape", POINTWISE_SHAPES)
 @pytest.mark.parametrize("maxi", SCALARS)

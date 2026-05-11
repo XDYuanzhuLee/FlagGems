@@ -10,6 +10,7 @@ from .index import index
 from .index_put import index_put, index_put_
 from .index_select import index_select
 from .isin import isin
+from .__ixor__ import bitwise_xor, bitwise_xor_, bitwise_xor_scalar, bitwise_xor_scalar_, bitwise_xor_scalar_tensor, bitwise_xor_tensor, bitwise_xor_tensor_
 from .log_softmax import log_softmax, log_softmax_backward
 from .masked_fill import masked_fill, masked_fill_
 from .min import min, min_dim
@@ -36,6 +37,13 @@ __all__ = [
     "arange",
     "arange_start",
     "bmm",
+    "bitwise_xor",
+    "bitwise_xor_",
+    "bitwise_xor_scalar",
+    "bitwise_xor_scalar_",
+    "bitwise_xor_scalar_tensor",
+    "bitwise_xor_tensor",
+    "bitwise_xor_tensor_",
     "exponential_",
     "full",
     "full_like",
