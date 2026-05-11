@@ -161,6 +161,19 @@ def mm_input_fn(b, m, n, k, cur_dtype, device, b_column_major):
         yield inp1, inp2
 
 
+def grouped_mm_input_fn(b, m, n, k, cur_dtype, device, b_column_major):
+    # For grouped_mm, we use 3D inputs similar to bmm
+    # b represents the batch (number of groups)
+    batch = b
+    inp1 = torch.randn([batch, m, k], dtype=cur_dtype, device=device)
+    if b_column_major:
+        inp2 = torch.randn([batch, n, k], dtype=cur_dtype, device=device)
+        yield inp1, inp2.transpose(1, 2)
+    else:
+        inp2 = torch.randn([batch, k, n], dtype=cur_dtype, device=device)
+        yield inp1, inp2
+
+
 W8A8_BLOCK_FP8_MNK_SHAPES = [
     (64, 128, 128),
     (128, 256, 512),
@@ -281,6 +294,13 @@ class W8A8BlockFP8MatmulBenchmark(Benchmark):
             BaddbmmBenchmark,
             marks=pytest.mark.baddbmm,
         ),
+        pytest.param(
+            "grouped_mm",
+            torch.bmm,  # Use bmm as reference (mathematically equivalent)
+            grouped_mm_input_fn,
+            BlasBenchmark,
+            marks=pytest.mark.grouped_mm,
+        ),
     ],
 )
 def test_blas_benchmark(op_name, torch_op, input_fn, bench_cls):
@@ -290,6 +310,13 @@ def test_blas_benchmark(op_name, torch_op, input_fn, bench_cls):
     bench = bench_cls(
         input_fn=input_fn, op_name=op_name, torch_op=torch_op, dtypes=FLOAT_DTYPES
     )
+
+    # For grouped_mm, use custom implementation
+    if op_name == "grouped_mm":
+        from flag_gems.runtime.backend._metax.ops._grouped_mm import _grouped_mm as gems_grouped_mm
+
+        bench.set_gems(gems_grouped_mm)
+
     bench.run()
 
     if flag_gems.vendor_name == "mthreads" and op_name != "baddbmm":
