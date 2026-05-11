@@ -796,3 +796,75 @@ def test_accuracy_batch_norm_backward(shape, dtype, affine):
             res_weight_grad, ref_weight_grad, dtype, reduce_dim=reduce_dim
         )
         gems_assert_close(res_bias_grad, ref_bias_grad, dtype, reduce_dim=reduce_dim)
+
+
+@pytest.mark.batch_norm_with_update_functional
+@pytest.mark.parametrize(
+    "shape",
+    [
+        (16, 3),
+        (32, 32, 32),
+        (8, 32, 224, 224),
+        (2050, 16, 32, 32),
+    ],
+)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+@pytest.mark.parametrize("affine", [True, False])
+def test_accuracy_batch_norm_with_update_functional(shape, dtype, affine):
+    C = shape[1]
+    inp = torch.randn(size=shape, dtype=dtype, device=flag_gems.device)
+    weight = (
+        torch.randn(size=(C,), dtype=dtype, device=flag_gems.device) if affine else None
+    )
+    bias = (
+        torch.randn(size=(C,), dtype=dtype, device=flag_gems.device) if affine else None
+    )
+
+    running_mean = torch.zeros(size=(C,), dtype=dtype, device=flag_gems.device)
+    running_var = torch.ones(size=(C,), dtype=dtype, device=flag_gems.device)
+
+    momentum = 0.1
+    eps = 1e-5
+
+    # Create separate tensors for reference to avoid dtype conversion issues
+    ref_running_mean = running_mean.clone()
+    ref_running_var = running_var.clone()
+    ref_inp = inp.clone()
+    ref_weight = weight.clone() if weight is not None else None
+    ref_bias = bias.clone() if bias is not None else None
+
+    # Run reference implementation using torch.ops.aten
+    ref_out = torch.ops.aten._batch_norm_with_update_functional(
+        ref_inp,
+        ref_weight,
+        ref_bias,
+        ref_running_mean,
+        ref_running_var,
+        momentum,
+        eps,
+    )
+
+    # Reset running mean/var for GEMS implementation
+    running_mean.zero_()
+    running_var.fill_(1.0)
+
+    with flag_gems.use_gems():
+        res_out = torch.ops.aten._batch_norm_with_update_functional(
+            inp,
+            weight,
+            bias,
+            running_mean,
+            running_var,
+            momentum,
+            eps,
+        )
+
+    # Check output, mean, invstd, save_var (flag)
+    gems_assert_close(res_out[0], ref_out[0], dtype)
+    gems_assert_close(res_out[1], ref_out[1], dtype)
+    gems_assert_close(res_out[2], ref_out[2], dtype)
+    # ref_out[3] and res_out[3] are empty tensors (save_var flag), no need to check
+
+    # Check updated running_mean and running_var (returned as output 4 and 5)
+    gems_assert_close(res_out[4], ref_out[4], dtype)
+    gems_assert_close(res_out[5], ref_out[5], dtype)
