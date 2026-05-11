@@ -1,3 +1,4 @@
+from flag_gems.ops._add_relu import add_relu
 from flag_gems.ops._functional_sym_constrain_range_for_size import (
     _functional_sym_constrain_range_for_size,
 )

@@ -2540,3 +2540,21 @@ def test_accuracy_atan2_out(shape, dtype):
         res_out = torch.ops.aten.atan2.out(x, y, out=res_out_buf)
 
     gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.add_relu
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("alpha", SCALARS)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy__add_relu(shape, alpha, dtype):
+    inp1 = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    inp2 = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp1 = to_reference(inp1, True)
+    ref_inp2 = to_reference(inp2, True)
+
+    # Compute reference: relu(self + alpha * other)
+    ref_out = torch.relu(ref_inp1 + ref_inp2 * alpha)
+    with flag_gems.use_gems():
+        res_out = torch._add_relu(inp1, inp2, alpha=alpha)
+
+    gems_assert_close(res_out, ref_out, dtype)

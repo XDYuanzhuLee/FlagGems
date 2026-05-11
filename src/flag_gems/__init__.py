@@ -45,6 +45,8 @@ _FULL_CONFIG = (
     ),
     ("_pdist_backward", _pdist_backward),
     ("_unique2", _unique2),
+    ("_add_relu.Tensor", add_relu),
+    ("_add_relu.Scalar", add_relu),
     ("_upsample_bicubic2d_aa", _upsample_bicubic2d_aa),
     ("_upsample_nearest_exact1d", _upsample_nearest_exact1d),
     ("_weight_norm_interface", weight_norm_interface),
