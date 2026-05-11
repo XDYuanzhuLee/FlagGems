@@ -44,6 +44,7 @@ _FULL_CONFIG = (
         lambda: version.parse(torch.__version__) >= version.parse("2.4"),
     ),
     ("_pdist_backward", _pdist_backward),
+    ("_cdist_backward", _cdist_backward),
     ("_unique2", _unique2),
     ("_upsample_bicubic2d_aa", _upsample_bicubic2d_aa),
     ("_upsample_nearest_exact1d", _upsample_nearest_exact1d),

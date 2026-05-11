@@ -2696,6 +2696,15 @@ PDIST_SHAPES = [
 ]
 
 
+CDIST_SHAPES = [
+    (1, 4, 8, 4),
+    (1, 8, 16, 8),
+    (1, 16, 32, 16),
+    (1, 32, 64, 32),
+    (1, 64, 128, 64),
+]
+
+
 @pytest.mark.pdist_backward
 @pytest.mark.parametrize("shape", PDIST_SHAPES)
 @pytest.mark.parametrize("dtype", [torch.float32])
@@ -2740,6 +2749,93 @@ def test_accuracy_pdist_backward_p1(shape, dtype):
     ref_out = torch.ops.aten._pdist_backward(grad_output, ref_inp, p, pdist_out)
     with flag_gems.use_gems():
         res_out = torch.ops.aten._pdist_backward(grad_output, inp, p, pdist_out_gems)
+
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.cdist_backward
+@pytest.mark.parametrize("shape", CDIST_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy_cdist_backward(shape, dtype):
+    batch, n, p, m = shape
+    x1 = torch.randn(batch, n, m, dtype=dtype, device=flag_gems.device)
+    x2 = torch.randn(batch, p, m, dtype=dtype, device=flag_gems.device)
+    ref_x1 = to_reference(x1)
+    ref_x2 = to_reference(x2)
+
+    # Compute cdist forward
+    cdist_p = 2.0
+    cdist_out = torch.cdist(ref_x1, ref_x2, p=cdist_p)
+    cdist_out_gems = torch.cdist(x1, x2, p=cdist_p)
+
+    # Compute backward with gradient of ones
+    grad_output = torch.ones_like(cdist_out)
+
+    ref_out = torch.ops.aten._cdist_backward(
+        grad_output, ref_x1, ref_x2, cdist_p, cdist_out
+    )
+    with flag_gems.use_gems():
+        res_out = torch.ops.aten._cdist_backward(
+            grad_output, x1, x2, cdist_p, cdist_out_gems
+        )
+
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.cdist_backward
+@pytest.mark.parametrize("shape", CDIST_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy_cdist_backward_p1(shape, dtype):
+    batch, n, p, m = shape
+    x1 = torch.randn(batch, n, m, dtype=dtype, device=flag_gems.device)
+    x2 = torch.randn(batch, p, m, dtype=dtype, device=flag_gems.device)
+    ref_x1 = to_reference(x1)
+    ref_x2 = to_reference(x2)
+
+    # Compute cdist forward with p=1
+    cdist_p = 1.0
+    cdist_out = torch.cdist(ref_x1, ref_x2, p=cdist_p)
+    cdist_out_gems = torch.cdist(x1, x2, p=cdist_p)
+
+    # Compute backward with gradient of ones
+    grad_output = torch.ones_like(cdist_out)
+
+    ref_out = torch.ops.aten._cdist_backward(
+        grad_output, ref_x1, ref_x2, cdist_p, cdist_out
+    )
+    with flag_gems.use_gems():
+        res_out = torch.ops.aten._cdist_backward(
+            grad_output, x1, x2, cdist_p, cdist_out_gems
+        )
+
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.cdist_backward
+@pytest.mark.parametrize("shape", CDIST_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy_cdist_backward_inf(shape, dtype):
+    batch, n, p, m = shape
+    x1 = torch.randn(batch, n, m, dtype=dtype, device=flag_gems.device)
+    x2 = torch.randn(batch, p, m, dtype=dtype, device=flag_gems.device)
+    ref_x1 = to_reference(x1)
+    ref_x2 = to_reference(x2)
+
+    # Compute cdist forward with p=inf
+    cdist_p = float("inf")
+    cdist_out = torch.cdist(ref_x1, ref_x2, p=cdist_p)
+    cdist_out_gems = torch.cdist(x1, x2, p=cdist_p)
+
+    # Compute backward with gradient of ones
+    grad_output = torch.ones_like(cdist_out)
+
+    ref_out = torch.ops.aten._cdist_backward(
+        grad_output, ref_x1, ref_x2, cdist_p, cdist_out
+    )
+    with flag_gems.use_gems():
+        res_out = torch.ops.aten._cdist_backward(
+            grad_output, x1, x2, cdist_p, cdist_out_gems
+        )
 
     gems_assert_close(res_out, ref_out, dtype)
 
