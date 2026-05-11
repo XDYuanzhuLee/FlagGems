@@ -5,6 +5,7 @@ from .bmm import bmm
 from .exponential_ import exponential_
 from .full import full
 from .full_like import full_like
+from .Fused_Softmax import fused_softmax, fused_softmax_backward
 from .groupnorm import group_norm
 from .index import index
 from .index_put import index_put, index_put_
@@ -39,6 +40,8 @@ __all__ = [
     "exponential_",
     "full",
     "full_like",
+    "fused_softmax",
+    "fused_softmax_backward",
     "group_norm",
     "index",
     "index_put",

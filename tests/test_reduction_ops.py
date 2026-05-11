@@ -2513,3 +2513,54 @@ def test_accuracy_bincount_minlength(shape, num_classes, minlength):
     ref_out_w = torch.bincount(ref_inp, weights=ref_weights, minlength=minlength)
     res_out_w = flag_gems.bincount(inp, weights=weights, minlength=minlength)
     _assert_bincount(res_out_w, ref_out_w, dtype, shape, num_classes)
+
+
+@pytest.mark.fused_softmax
+@pytest.mark.parametrize(
+    "shape",
+    [(1, 256)]
+    if QUICK_MODE
+    else [(1, 256), (4096, 256), (200, 2560, 3)],
+)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+@pytest.mark.parametrize("dim", DIM_LIST)
+def test_accuracy_fused_softmax(shape, dtype, dim):
+    """Test fused_softmax accuracy against PyTorch softmax."""
+    from flag_gems.runtime.backend._metax.ops import fused_softmax as metax_fused_softmax
+
+    torch.manual_seed(42)
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp, True)
+
+    ref_out = torch.nn.functional.softmax(ref_inp, dim=dim)
+    res_out = metax_fused_softmax(inp, dim=dim)
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.fused_softmax
+@pytest.mark.parametrize(
+    "shape",
+    [(1, 256)]
+    if QUICK_MODE
+    else [(1, 256), (4096, 256), (200, 2560, 3)],
+)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+@pytest.mark.parametrize("dim", DIM_LIST)
+def test_accuracy_fused_softmax_backward(shape, dtype, dim):
+    """Test fused_softmax backward pass accuracy."""
+    from flag_gems.runtime.backend._metax.ops import (
+        fused_softmax,
+        fused_softmax_backward,
+    )
+
+    torch.manual_seed(42)
+    res_grad = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    res_out = torch.randn_like(res_grad)
+    ref_grad = to_reference(res_grad, True)
+    ref_out = to_reference(res_out, True)
+
+    ref_in_grad = torch.ops.aten._softmax_backward_data(
+        ref_grad, ref_out, dim, ref_grad.dtype
+    )
+    res_in_grad = fused_softmax_backward(res_grad, res_out, dim, dtype)
+    gems_assert_close(res_in_grad, ref_in_grad, dtype, reduce_dim=shape[dim])
