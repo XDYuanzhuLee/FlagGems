@@ -1467,3 +1467,21 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+# FFT/IFFT benchmark
+def fft_ifft_input_fn(shape, dtype, device):
+    """Generate complex input for fft_ifft"""
+    inp = torch.randn(shape, dtype=dtype, device=device)
+    yield inp
+
+
+@pytest.mark.fft_ifft
+def test_perf_fft_ifft():
+    bench = GenericBenchmark(
+        input_fn=fft_ifft_input_fn,
+        op_name="fft_ifft",
+        torch_op=flag_gems.fft_ifft,
+        dtypes=COMPLEX_DTYPES,
+    )
+    bench.run()
