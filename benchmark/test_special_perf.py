@@ -1467,3 +1467,32 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+class MaxUnpool3dBenchmark(Benchmark):
+    def set_shapes(self, shape_file_path=None):
+        self.shapes = [
+            (1, 1, 4, 4, 4),
+            (1, 1, 8, 8, 8),
+            (2, 4, 4, 4, 4),
+            (2, 8, 8, 8, 8),
+        ]
+
+    def get_input_iter(self, cur_dtype):
+        for shape in self.shapes:
+            N, C, D, H, W = shape
+            # Create input and do max pooling to get pooled output and indices
+            input_orig = torch.randn(shape, dtype=cur_dtype, device=self.device)
+            pool = torch.nn.MaxPool3d(kernel_size=2, stride=2, return_indices=True)
+            pooled, indices = pool(input_orig)
+            yield pooled, indices
+
+
+@pytest.mark.max_unpool3d
+def test_perf_max_unpool3d():
+    bench = MaxUnpool3dBenchmark(
+        op_name="max_unpool3d",
+        torch_op=torch.nn.functional.max_unpool3d,
+        dtypes=[torch.float16, torch.float32],
+    )
+    bench.run()
