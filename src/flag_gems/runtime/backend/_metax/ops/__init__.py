@@ -12,6 +12,7 @@ from .index_select import index_select
 from .isin import isin
 from .log_softmax import log_softmax, log_softmax_backward
 from .masked_fill import masked_fill, masked_fill_
+from .median import median
 from .min import min, min_dim
 from .mm import mm, mm_out
 from .nonzero import nonzero
@@ -49,6 +50,7 @@ __all__ = [
     "log_softmax_backward",
     "masked_fill",
     "masked_fill_",
+    "median",
     "min_dim",
     "min",
     "mm",

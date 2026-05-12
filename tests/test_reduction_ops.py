@@ -2513,3 +2513,43 @@ def test_accuracy_bincount_minlength(shape, num_classes, minlength):
     ref_out_w = torch.bincount(ref_inp, weights=ref_weights, minlength=minlength)
     res_out_w = flag_gems.bincount(inp, weights=weights, minlength=minlength)
     _assert_bincount(res_out_w, ref_out_w, dtype, shape, num_classes)
+
+
+# Median tests
+MEDIAN_SHAPES = [(16, 32), (32, 16), (4, 8, 16)]
+
+
+@pytest.mark.median
+@pytest.mark.parametrize("shape", MEDIAN_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_median_global(shape, dtype):
+    """Test median without dim argument (global median)."""
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+
+    ref_out = torch.median(ref_inp)
+    with flag_gems.use_gems():
+        res_out = torch.median(inp)
+
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.median
+@pytest.mark.parametrize("shape", MEDIAN_SHAPES)
+@pytest.mark.parametrize("dim", [0, 1, -1])
+@pytest.mark.parametrize("keepdim", [True, False])
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_median_dim(shape, dim, keepdim, dtype):
+    """Test median along a specific dimension."""
+    if dim >= len(shape):
+        pytest.skip(f"dim {dim} is out of bounds for shape {shape}")
+
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+
+    ref_out = torch.median(ref_inp, dim=dim, keepdim=keepdim)
+    with flag_gems.use_gems():
+        res_out = torch.median(inp, dim=dim, keepdim=keepdim)
+
+    gems_assert_close(res_out.values, ref_out.values, dtype)
+    gems_assert_equal(res_out.indices, ref_out.indices)
