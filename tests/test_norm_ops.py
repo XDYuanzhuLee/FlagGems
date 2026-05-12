@@ -796,3 +796,64 @@ def test_accuracy_batch_norm_backward(shape, dtype, affine):
             res_weight_grad, ref_weight_grad, dtype, reduce_dim=reduce_dim
         )
         gems_assert_close(res_bias_grad, ref_bias_grad, dtype, reduce_dim=reduce_dim)
+
+
+@pytest.mark.batch_norm_with_update
+@pytest.mark.parametrize(
+    "shape",
+    [
+        (16, 3),
+        (32, 32, 32),
+        (8, 32, 224, 224),
+        (2050, 16, 32, 32),
+    ],
+)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+@pytest.mark.parametrize("affine", [True, False])
+def test_accuracy_batch_norm_with_update(shape, dtype, affine):
+    C = shape[1]
+    inp = torch.randn(size=shape, dtype=dtype, device=flag_gems.device)
+    weight = (
+        torch.randn(size=(C,), dtype=dtype, device=flag_gems.device) if affine else None
+    )
+    bias = (
+        torch.randn(size=(C,), dtype=dtype, device=flag_gems.device) if affine else None
+    )
+    running_mean = torch.zeros(size=(C,), dtype=dtype, device=flag_gems.device)
+    running_var = torch.ones(size=(C,), dtype=dtype, device=flag_gems.device)
+
+    eps = 1e-5
+    momentum = 0.1
+
+    ref_inp = to_reference(inp, True)
+    ref_weight = to_reference(weight, True)
+    ref_bias = to_reference(bias, True)
+    ref_running_mean = to_reference(running_mean, True)
+    ref_running_var = to_reference(running_var, True)
+
+    ref_out, ref_mean, ref_rstd, _ = torch.ops.aten._batch_norm_with_update(
+        ref_inp,
+        ref_weight,
+        ref_bias,
+        ref_running_mean,
+        ref_running_var,
+        momentum,
+        eps,
+    )
+
+    with flag_gems.use_gems():
+        res_out, res_mean, res_rstd, _ = torch.ops.aten._batch_norm_with_update(
+            inp,
+            weight,
+            bias,
+            running_mean,
+            running_var,
+            momentum,
+            eps,
+        )
+
+    gems_assert_close(res_out, ref_out, dtype)
+    # Note: mean and rstd are computed in float32 internally, so we check them with tolerance
+    # The running mean/var should match as they are updated in-place
+    gems_assert_close(running_mean, ref_running_mean, dtype)
+    gems_assert_close(running_var, ref_running_var, dtype)
