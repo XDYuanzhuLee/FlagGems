@@ -2777,3 +2777,119 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+# Test shapes for fractional_max_pool2d - typical 4D tensor shapes
+FRACTIONAL_MAX_POOL2D_SHAPES = [
+    (2, 3, 16, 16),
+    (4, 8, 32, 32),
+    (1, 1, 8, 8),
+    (8, 16, 64, 64),
+]
+
+
+@pytest.mark.fractional_max_pool2d
+@pytest.mark.parametrize("shape", FRACTIONAL_MAX_POOL2D_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_fractional_max_pool2d(shape, dtype):
+    # Skip small shapes where fractional pooling cannot produce valid output
+    if shape[2] < 4 or shape[3] < 4:
+        pytest.skip("Input too small for fractional max pooling")
+
+    # Create input tensor
+    x = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_x = to_reference(x)
+
+    # Set random seed for reproducibility of random samples
+    torch.manual_seed(42)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(42)
+
+    # Define kernel size
+    kernel_size = (3, 3)
+
+    # Compute output size from input size
+    output_size = (shape[2] // 2, shape[3] // 2)
+
+    # Reference implementation - use standard torch (on CPU via to_reference)
+    torch.manual_seed(42)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(42)
+    ref_out = torch.nn.functional.fractional_max_pool2d(
+        ref_x, kernel_size=kernel_size, output_size=output_size
+    )
+
+    # Test with flag_gems implementation
+    torch.manual_seed(42)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(42)
+
+    # Use flag_gems.fractional_max_pool2d directly
+    res_out = flag_gems.fractional_max_pool2d(
+        x, kernel_size=kernel_size, output_size=output_size
+    )
+
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.fractional_max_pool2d
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy_fractional_max_pool2d_with_indices(dtype):
+    """Test fractional_max_pool2d with return_indices=True"""
+    shape = (2, 3, 16, 16)
+    x = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_x = to_reference(x)
+
+    torch.manual_seed(42)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(42)
+
+    kernel_size = (3, 3)
+    output_size = (8, 8)
+
+    ref_out, ref_indices = torch.nn.functional.fractional_max_pool2d(
+        ref_x, kernel_size=kernel_size, output_size=output_size, return_indices=True
+    )
+
+    torch.manual_seed(42)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(42)
+
+    # Use flag_gems.fractional_max_pool2d directly
+    res_out, res_indices = flag_gems.fractional_max_pool2d(
+        x, kernel_size=kernel_size, output_size=output_size, return_indices=True
+    )
+
+    gems_assert_close(res_out, ref_out, dtype)
+    gems_assert_equal(res_indices, ref_indices)
+
+
+@pytest.mark.fractional_max_pool2d
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy_fractional_max_pool2d_output_ratio(dtype):
+    """Test fractional_max_pool2d with output_ratio instead of output_size"""
+    shape = (2, 3, 32, 32)
+    x = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_x = to_reference(x)
+
+    torch.manual_seed(42)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(42)
+
+    kernel_size = (3, 3)
+    output_ratio = (0.5, 0.5)
+
+    ref_out = torch.nn.functional.fractional_max_pool2d(
+        ref_x, kernel_size=kernel_size, output_ratio=output_ratio
+    )
+
+    torch.manual_seed(42)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(42)
+
+    # Use flag_gems.fractional_max_pool2d directly
+    res_out = flag_gems.fractional_max_pool2d(
+        x, kernel_size=kernel_size, output_ratio=output_ratio
+    )
+
+    gems_assert_close(res_out, ref_out, dtype)

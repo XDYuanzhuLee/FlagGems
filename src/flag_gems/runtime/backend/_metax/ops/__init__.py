@@ -3,6 +3,7 @@ from .amax import amax
 from .arange import arange, arange_start
 from .bmm import bmm
 from .exponential_ import exponential_
+from .fractional_max_pool2d import fractional_max_pool2d
 from .full import full
 from .full_like import full_like
 from .groupnorm import group_norm
@@ -37,6 +38,7 @@ __all__ = [
     "arange_start",
     "bmm",
     "exponential_",
+    "fractional_max_pool2d",
     "full",
     "full_like",
     "group_norm",
