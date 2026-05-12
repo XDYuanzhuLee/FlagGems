@@ -205,12 +205,27 @@ def resolve_conj_input_fn(shape, dtype, device):
     yield x.conj(),
 
 
+def shifted_chebyshev_polynomial_w_input_fn(shape, dtype, device):
+    # Generate random input x in valid range [-1, 1]
+    x = torch.rand(shape, dtype=dtype, device=device) * 2 - 1
+    # n is integer degree, use small values for benchmark
+    n = torch.randint(0, 5, shape, dtype=torch.int32, device=device)
+    yield x, n
+
+
 special_operations = [
     # Sorting Operations
     ("topk", torch.topk, FLOAT_DTYPES, topk_input_fn),
     # Complex Operations
     ("resolve_neg", torch.resolve_neg, [torch.cfloat], resolve_neg_input_fn),
     ("resolve_conj", torch.resolve_conj, [torch.cfloat], resolve_conj_input_fn),
+    # Special functions
+    (
+        "special_shifted_chebyshev_polynomial_w",
+        torch.special.shifted_chebyshev_polynomial_w,
+        [torch.float32, torch.float64],
+        shifted_chebyshev_polynomial_w_input_fn,
+    ),
 ]
 
 
