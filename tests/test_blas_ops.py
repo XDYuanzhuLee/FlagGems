@@ -443,6 +443,28 @@ def test_accuracy_addmv_out(M, N, scalar, dtype):
     gems_assert_close(out, ref_out, dtype, reduce_dim=N)
 
 
+@pytest.mark.addmv_
+@pytest.mark.parametrize("M, N", MN_SHAPES)
+@pytest.mark.parametrize("scalar", SCALARS)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_addmv_(M, N, scalar, dtype):
+    mat = torch.randn((M, N), dtype=dtype, device=flag_gems.device)
+    vec = torch.randn((N,), dtype=dtype, device=flag_gems.device)
+    bias = torch.randn((M,), dtype=dtype, device=flag_gems.device)
+    ref_mat = to_reference(mat, True)
+    ref_vec = to_reference(vec, True)
+    ref_bias = to_reference(bias, True)
+
+    alpha = beta = scalar
+
+    # Test inplace addmv_
+    ref_out = torch.addmv_(ref_bias, ref_mat, ref_vec, alpha=alpha, beta=beta)
+    with flag_gems.use_gems():
+        res_out = torch.addmv_(bias, mat, vec, alpha=alpha, beta=beta)
+
+    gems_assert_close(res_out, ref_out, dtype, reduce_dim=N)
+
+
 @pytest.mark.outer
 @pytest.mark.parametrize(
     "M, N", MN_SHAPES + ([(32, 131072)] if flag_gems.vendor_name == "cambricon" else [])

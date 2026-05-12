@@ -1,4 +1,5 @@
 from .addmm import addmm
+from .addmv_ import addmv_
 from .amax import amax
 from .arange import arange, arange_start
 from .bmm import bmm
@@ -32,6 +33,7 @@ from .zeros_like import zeros_like
 __all__ = [
     "_unique2",
     "addmm",
+    "addmv_",
     "amax",
     "arange",
     "arange_start",
