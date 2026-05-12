@@ -21,6 +21,7 @@ from .outer import outer
 from .polar import polar
 from .prod import prod, prod_dim
 from .repeat_interleave import repeat_interleave_self_tensor
+from .reflection_pad2d import reflection_pad2d, reflection_pad2d_out
 from .resolve_conj import resolve_conj
 from .sigmoid import sigmoid
 from .tanh import tanh
@@ -61,6 +62,8 @@ __all__ = [
     "prod",
     "prod_dim",
     "repeat_interleave_self_tensor",
+    "reflection_pad2d",
+    "reflection_pad2d_out",
     "resolve_conj",
     "sigmoid",
     "tanh",
