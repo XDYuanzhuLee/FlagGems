@@ -2777,3 +2777,33 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+# Test for moe_combine: combines top-k expert outputs by summing
+@pytest.mark.moe_combine
+@pytest.mark.parametrize("num_tokens", [1, 16, 32, 64])
+@pytest.mark.parametrize("topk", [2, 4, 8])
+@pytest.mark.parametrize("hidden_size", [128, 256, 512])
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_moe_combine(num_tokens, topk, hidden_size, dtype):
+    """Test moe_combine accuracy by comparing with manual sum"""
+    torch.manual_seed(42)
+    torch.cuda.manual_seed(42)
+
+    # Input shape: (num_tokens, topk, hidden_size)
+    input_tensor = torch.randn(
+        (num_tokens, topk, hidden_size), dtype=dtype, device=flag_gems.device
+    )
+
+    # Reference: manual sum over topk dimension
+    ref_input = to_reference(input_tensor)
+    ref_output = torch.sum(ref_input, dim=1)
+
+    # GEMS implementation
+    output = torch.empty(
+        (num_tokens, hidden_size), dtype=dtype, device=flag_gems.device
+    )
+    with flag_gems.use_gems():
+        res_output = flag_gems.moe_combine(input_tensor, output)
+
+    gems_assert_close(res_output, ref_output, dtype)
