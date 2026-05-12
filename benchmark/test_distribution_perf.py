@@ -20,8 +20,9 @@ def normal_inplace_input_fn(shape, cur_dtype, device):
 
 def poisson_input_fn(shape, cur_dtype, device):
     # Poisson requires non-negative rate parameters
+    # For benchmark, use a simpler approach - just return rates
     rates = torch.rand(shape, dtype=cur_dtype, device=device) * 10.0
-    yield rates
+    return (rates,)
 
 
 @pytest.mark.parametrize(
