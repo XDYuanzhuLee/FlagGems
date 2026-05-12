@@ -2,6 +2,7 @@ from .addmm import addmm
 from .amax import amax
 from .arange import arange, arange_start
 from .bmm import bmm
+from .bitwise_right_shift_ import bitwise_right_shift
 from .exponential_ import exponential_
 from .full import full
 from .full_like import full_like
@@ -36,6 +37,7 @@ __all__ = [
     "arange",
     "arange_start",
     "bmm",
+    "bitwise_right_shift",
     "exponential_",
     "full",
     "full_like",
