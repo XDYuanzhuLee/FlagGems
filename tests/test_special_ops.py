@@ -2777,3 +2777,32 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.special_chebyshev_polynomial_v
+@pytest.mark.parametrize("shape", SPECIAL_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy_special_chebyshev_polynomial_v(shape, dtype):
+    # Test with tensor n (all elements same n value)
+    n_val = 3  # Degree of the polynomial
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+    ref_out = torch.special.chebyshev_polynomial_v(ref_inp, n_val)
+    with flag_gems.use_gems():
+        res_out = torch.special.chebyshev_polynomial_v(inp, n_val)
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.special_chebyshev_polynomial_v
+@pytest.mark.parametrize("shape", SPECIAL_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy_special_chebyshev_polynomial_v_tensor_n(shape, dtype):
+    # Test with tensor n (different n values)
+    n_tensor = torch.randint(0, 5, shape, device=flag_gems.device, dtype=torch.int64)
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+    ref_n = to_reference(n_tensor)
+    ref_out = torch.special.chebyshev_polynomial_v(ref_inp, ref_n)
+    with flag_gems.use_gems():
+        res_out = torch.special.chebyshev_polynomial_v(inp, n_tensor)
+    gems_assert_close(res_out, ref_out, dtype)
