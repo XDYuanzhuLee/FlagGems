@@ -467,3 +467,35 @@ def test_addr_benchmark():
         dtypes=FLOAT_DTYPES,
     )
     bench.run()
+
+
+class LinalgInvBenchmark(BlasBenchmark):
+    """
+    benchmark for linalg_inv
+    """
+
+    def set_more_shapes(self):
+        return None
+
+    def get_input_iter(self, cur_dtype) -> Generator:
+        for shape in self.shapes:
+            n = shape[0]
+            yield from self.input_fn(n, cur_dtype, self.device)
+
+
+@pytest.mark.linalg_inv
+def test_linalg_inv_benchmark():
+    def linalg_inv_input_fn(n, cur_dtype, device):
+        # Generate a random invertible matrix
+        A = torch.randn([n, n], dtype=cur_dtype, device=device)
+        # Add identity to make it more likely invertible
+        A = A + torch.eye(n, dtype=cur_dtype, device=device) * n
+        yield A
+
+    bench = LinalgInvBenchmark(
+        input_fn=linalg_inv_input_fn,
+        op_name="linalg_inv",
+        torch_op=torch.linalg.inv,
+        dtypes=FLOAT_DTYPES,
+    )
+    bench.run()
