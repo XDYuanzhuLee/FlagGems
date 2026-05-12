@@ -1467,3 +1467,19 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+@pytest.mark.special_ndtri
+def test_perf_special_ndtri():
+    def ndtri_input_fn(shape, dtype, device):
+        # Input for ndtri should be in [0, 1] range (probabilities)
+        inp = torch.rand(shape, dtype=dtype, device=device)
+        yield inp
+
+    bench = GenericBenchmark(
+        input_fn=ndtri_input_fn,
+        op_name="special_ndtri",
+        torch_op=torch.special.ndtri,
+        dtypes=[torch.float32],
+    )
+    bench.run()
