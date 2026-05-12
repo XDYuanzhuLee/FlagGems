@@ -13,6 +13,7 @@ from .accuracy_utils import (
     ALL_INT_DTYPES,
     ARANGE_START,
     BOOL_TYPES,
+    COMPLEX_DTYPES,
     FLOAT_DTYPES,
     FP8_QUANT_SHAPES,
     INT_DTYPES,
@@ -2776,4 +2777,77 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
     gems_assert_equal(res_is_target, ref_is_target, dtype)
 
     # Compare output tensors
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+# FFT/IFFT2 test cases
+# Shapes for 2D FFT testing - powers of 2 are preferred for FFT
+# Note: complex32 (half-precision complex) is not supported on all GPU architectures for FFT
+FFT_SHAPES = [(64, 64), (128, 128), (256, 256), (512, 512)]
+# Only test complex64 as complex32 requires SM53+ for cuFFT
+FFT_COMPLEX_DTYPES = [torch.complex64]
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is not available")
+@pytest.mark.fft_ifft2
+@pytest.mark.parametrize("shape", FFT_SHAPES)
+@pytest.mark.parametrize("dtype", FFT_COMPLEX_DTYPES)
+def test_accuracy_fft_ifft2(shape, dtype):
+    """Test accuracy of fft_ifft2 against PyTorch reference implementation."""
+    # Create input tensor with complex dtype
+    input_tensor = torch.randn(shape, dtype=dtype, device=device)
+
+    # Reference implementation using PyTorch directly
+    ref_input = to_reference(input_tensor)
+    ref_out = torch.fft.ifft2(ref_input)
+
+    # FlagGems implementation
+    with flag_gems.use_gems():
+        res_out = torch.fft.ifft2(input_tensor)
+
+    # Compare outputs
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is not available")
+@pytest.mark.fft_ifft2
+@pytest.mark.parametrize("shape", FFT_SHAPES)
+@pytest.mark.parametrize("dtype", FFT_COMPLEX_DTYPES)
+def test_accuracy_fft_ifft2_with_s(shape, dtype):
+    """Test accuracy of fft_ifft2 with explicit output size s."""
+    # Create input tensor
+    input_tensor = torch.randn(shape, dtype=dtype, device=device)
+    # Specify output size (can be larger or smaller than input)
+    s = (shape[0] // 2, shape[1] // 2)
+
+    # Reference implementation
+    ref_input = to_reference(input_tensor)
+    ref_out = torch.fft.ifft2(ref_input, s=s)
+
+    # FlagGems implementation
+    with flag_gems.use_gems():
+        res_out = torch.fft.ifft2(input_tensor, s=s)
+
+    # Compare outputs
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is not available")
+@pytest.mark.fft_ifft2
+@pytest.mark.parametrize("shape", FFT_SHAPES)
+@pytest.mark.parametrize("dtype", FFT_COMPLEX_DTYPES)
+@pytest.mark.parametrize("norm", ["forward", "backward", "ortho"])
+def test_accuracy_fft_ifft2_with_norm(shape, dtype, norm):
+    """Test accuracy of fft_ifft2 with different normalization modes."""
+    input_tensor = torch.randn(shape, dtype=dtype, device=device)
+
+    # Reference implementation
+    ref_input = to_reference(input_tensor)
+    ref_out = torch.fft.ifft2(ref_input, norm=norm)
+
+    # FlagGems implementation
+    with flag_gems.use_gems():
+        res_out = torch.fft.ifft2(input_tensor, norm=norm)
+
+    # Compare outputs
     gems_assert_close(res_out, ref_out, dtype)
