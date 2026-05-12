@@ -1467,3 +1467,44 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+# Fractional max pool 2d benchmark
+FRACTIONAL_MAX_POOL2D_SHAPES = [
+    (2, 3, 16, 16),
+    (4, 8, 32, 32),
+    (1, 1, 8, 8),
+    (8, 16, 64, 64),
+]
+
+
+class FractionalMaxPool2dBenchmark(Benchmark):
+    def set_shapes(self, shape_file_path=None):
+        self.shapes = FRACTIONAL_MAX_POOL2D_SHAPES
+
+    def set_more_shapes(self):
+        return None
+
+    def get_input_iter(self, cur_dtype):
+        for shape in self.shapes:
+            x = torch.randn(shape, dtype=cur_dtype, device=self.device)
+            kernel_size = (3, 3)
+            output_size = (shape[2] // 2, shape[3] // 2)
+            yield x, kernel_size, output_size
+
+
+def torch_fractional_max_pool2d(input, kernel_size, output_size):
+    return torch.nn.functional.fractional_max_pool2d(
+        input, kernel_size=kernel_size, output_size=output_size
+    )
+
+
+@pytest.mark.fractional_max_pool2d
+def test_perf_fractional_max_pool2d():
+    bench = FractionalMaxPool2dBenchmark(
+        op_name="fractional_max_pool2d",
+        torch_op=torch_fractional_max_pool2d,
+        dtypes=FLOAT_DTYPES,
+    )
+    bench.set_gems(flag_gems.fractional_max_pool2d)
+    bench.run()
