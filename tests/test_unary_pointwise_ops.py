@@ -2232,3 +2232,20 @@ def test_accuracy_special_i0e_out(shape, dtype):
         act_out = torch.ops.aten.special_i0e.out(x, out=out_act)
     gems_assert_close(act_out, ref_out, dtype)
     gems_assert_close(out_act, out_ref, dtype)
+
+
+@pytest.mark.special_bessel_y0
+@pytest.mark.parametrize("shape", [(2, 3), (128, 256), (512, 512)])
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_special_bessel_y0(shape, dtype):
+    # Bessel Y0 is only defined for positive x, so we use positive values
+    # Use values >= 3.0 for better accuracy with asymptotic approximation
+    x = torch.rand(shape, dtype=dtype, device=flag_gems.device) * 7.0 + 3.0
+    ref_x = to_reference(x)
+    if dtype in (torch.float16, torch.bfloat16):
+        ref_out = torch.ops.aten.special_bessel_y0(ref_x.float()).to(dtype)
+    else:
+        ref_out = torch.ops.aten.special_bessel_y0(ref_x)
+    with flag_gems.use_gems():
+        act_out = torch.ops.aten.special_bessel_y0(x)
+    gems_assert_close(act_out, ref_out, dtype)
