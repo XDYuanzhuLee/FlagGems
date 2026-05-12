@@ -5,6 +5,7 @@ import triton
 import triton.language as tl
 
 from flag_gems import runtime
+from flag_gems.ops.unfold_backward import unfold_backward as unfold_backward_generic
 from flag_gems.runtime import torch_device_fn
 from flag_gems.utils import libentry
 from flag_gems.utils import triton_lang_extension as tle
@@ -51,6 +52,19 @@ def unfold_backward(
     grad_in: torch.Tensor, input_sizes, dim: int, size: int, step: int
 ) -> torch.Tensor:
     logger.debug("METAX GEMS UNFOLD BACKWARD")
+
+    # For very small outputs, delegate to generic implementation for better performance
+    if not isinstance(input_sizes, (list, tuple)):
+        input_sizes_list = list(input_sizes)
+    else:
+        input_sizes_list = list(input_sizes)
+    output_size = 1
+    for s in input_sizes_list:
+        output_size *= int(s)
+
+    if output_size <= 64:
+        return unfold_backward_generic(grad_in, input_sizes, dim, size, step)
+
     if step <= 0:
         raise ValueError("step must be > 0")
 
@@ -73,7 +87,13 @@ def unfold_backward(
 
     numel_in = grad_in.numel()
 
-    BLOCK = 128
+    # Use smaller block size and num_warps for small inputs to improve occupancy
+    if numel_in <= 256:
+        BLOCK = 64
+        num_warps = 2
+    else:
+        BLOCK = 128
+        num_warps = 4
     grid = lambda meta: (triton.cdiv(numel_in, meta["BLOCK"]),)
 
     with torch_device_fn.device(grad_in.device):
@@ -88,6 +108,7 @@ def unfold_backward(
             D,
             inner_total,
             BLOCK=BLOCK,
+            num_warps=num_warps,
         )
 
     if grad_in.dtype != torch.float32:
