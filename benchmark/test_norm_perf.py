@@ -200,6 +200,31 @@ def test_perf_batch_norm_backward():
     bench.run()
 
 
+def batch_norm_with_update_input_fn(shape, dtype, device):
+    C = shape[1]
+    inp = torch.randn(shape, dtype=dtype, device=device)
+    weight = torch.randn((C,), dtype=dtype, device=device)
+    bias = torch.randn((C,), dtype=dtype, device=device)
+    running_mean = torch.zeros((C,), dtype=dtype, device=device)
+    running_var = torch.ones((C,), dtype=dtype, device=device)
+    momentum = 0.1
+    eps = 1e-5
+    yield inp, weight, bias, running_mean, running_var, momentum, eps
+    if Config.bench_level == BenchLevel.COMPREHENSIVE:
+        yield inp, weight, bias, running_mean, running_var, momentum, eps
+
+
+@pytest.mark.batch_norm_with_update
+def test_perf_batch_norm_with_update():
+    bench = NormBenchmark(
+        input_fn=batch_norm_with_update_input_fn,
+        op_name="_batch_norm_with_update",
+        torch_op=torch.ops.aten._batch_norm_with_update,
+        dtypes=FLOAT_DTYPES,
+    )
+    bench.run()
+
+
 def weight_norm_interface_input_fn(shape, dtype, device):
     dim = 0
     v = torch.randn(shape, dtype=dtype, device=device)
