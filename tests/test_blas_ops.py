@@ -562,3 +562,49 @@ def test_accuracy_addr(M, N, dtype):
         res_out = torch.addr(input_tensor, vec1, vec2, alpha=alpha, beta=beta)
 
     gems_assert_close(res_out, ref_out, dtype, equal_nan=True)
+
+
+# Shapes for linalg_svdvals tests - matrices with various aspect ratios
+SVD_SHAPES = [
+    (3, 5),   # tall matrix
+    (5, 3),   # wide matrix
+    (10, 10), # square matrix
+    (16, 8),  # rectangular
+    (8, 16),  # rectangular
+    (32, 16), # rectangular
+]
+
+
+# Only float32 is supported for SVD on CUDA (PyTorch limitation)
+@pytest.mark.linalg_svdvals
+@pytest.mark.parametrize("M, N", SVD_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy_linalg_svdvals(M, N, dtype):
+    if flag_gems.vendor_name == "tsingmicro" and dtype == torch.float32:
+        pytest.skip("Skipping fp32 linalg_svdvals test on tsingmicro platform")
+
+    A = torch.randn((M, N), dtype=dtype, device=flag_gems.device)
+    ref_A = to_reference(A, True)
+
+    ref_out = torch.linalg.svdvals(ref_A)
+    res_out = flag_gems.linalg_svdvals(A)
+
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.linalg_svdvals
+@pytest.mark.parametrize("M, N", SVD_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy_linalg_svdvals_batch(M, N, dtype):
+    """Test linalg_svdvals with batch dimensions"""
+    if flag_gems.vendor_name == "tsingmicro" and dtype == torch.float32:
+        pytest.skip("Skipping fp32 linalg_svdvals test on tsingmicro platform")
+
+    batch_size = 4
+    A = torch.randn((batch_size, M, N), dtype=dtype, device=flag_gems.device)
+    ref_A = to_reference(A, True)
+
+    ref_out = torch.linalg.svdvals(ref_A)
+    res_out = flag_gems.linalg_svdvals(A)
+
+    gems_assert_close(res_out, ref_out, dtype)
