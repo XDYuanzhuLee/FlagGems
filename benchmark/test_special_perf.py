@@ -205,12 +205,24 @@ def resolve_conj_input_fn(shape, dtype, device):
     yield x.conj(),
 
 
+def fft_hfftn_input_fn(shape, dtype, device):
+    """Generate valid Hermitian symmetric input for hfftn."""
+    last_dim = shape[-1]
+    # Create a real signal
+    real_signal = generate_tensor_input(shape[:-1] + (last_dim,), dtype, device)
+    # Convert to Hermitian symmetric complex input using ihfftn
+    hermitian_input = torch.fft.ihfftn(real_signal, dim=-1)
+    yield hermitian_input
+
+
 special_operations = [
     # Sorting Operations
     ("topk", torch.topk, FLOAT_DTYPES, topk_input_fn),
     # Complex Operations
     ("resolve_neg", torch.resolve_neg, [torch.cfloat], resolve_neg_input_fn),
     ("resolve_conj", torch.resolve_conj, [torch.cfloat], resolve_conj_input_fn),
+    # FFT Operations
+    ("fft_hfftn", torch.fft.hfftn, [torch.complex64], fft_hfftn_input_fn),
 ]
 
 

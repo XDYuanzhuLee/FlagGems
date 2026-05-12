@@ -13,6 +13,7 @@ from .accuracy_utils import (
     ALL_INT_DTYPES,
     ARANGE_START,
     BOOL_TYPES,
+    COMPLEX_DTYPES,
     FLOAT_DTYPES,
     FP8_QUANT_SHAPES,
     INT_DTYPES,
@@ -2777,3 +2778,35 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.fft_hfftn
+@pytest.mark.parametrize("shape", [(8, 16), (16, 32), (4, 8, 16)])
+@pytest.mark.parametrize("dtype", [torch.complex64, torch.complex128])
+def test_accuracy_fft_hfftn(shape, dtype):
+    """Test accuracy of fft_hfftn (Hermitian FFT).
+
+    fft_hfftn computes the n-dimensional discrete Fourier transform
+    of a Hermitian symmetric input signal. The input is a complex tensor
+    and the output is a real tensor.
+    """
+    # Create a valid Hermitian symmetric input
+    # For hfftn, the last dimension should be (n//2 + 1) for an output of size n
+    # We create this by using ihfftn on a real signal first
+    last_dim = shape[-1]
+    output_size = 2 * (last_dim - 1)  # This gives us back the original size
+
+    # Create real input on CPU first, then move to device (avoids randn issues)
+    real_input_cpu = torch.randn(*shape[:-1], last_dim, dtype=torch.float32)
+    hermitian_input_cpu = torch.fft.ihfftn(real_input_cpu, dim=-1)
+
+    # Move to device
+    hermitian_input = hermitian_input_cpu.to(device=flag_gems.device)
+
+    ref_input = to_reference(hermitian_input)
+    ref_output = torch.fft.hfftn(ref_input, dim=-1)
+
+    with flag_gems.use_gems():
+        res_output = torch.fft.hfftn(hermitian_input, dim=-1)
+
+    gems_assert_close(res_output, ref_output, dtype=torch.float32)
