@@ -11,6 +11,7 @@ from .index_put import index_put, index_put_
 from .index_select import index_select
 from .isin import isin
 from .log_softmax import log_softmax, log_softmax_backward
+from .log_sigmoid import log_sigmoid
 from .masked_fill import masked_fill, masked_fill_
 from .min import min, min_dim
 from .mm import mm, mm_out
@@ -47,6 +48,7 @@ __all__ = [
     "isin",
     "log_softmax",
     "log_softmax_backward",
+    "log_sigmoid",
     "masked_fill",
     "masked_fill_",
     "min_dim",
