@@ -2777,3 +2777,40 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.special_shifted_chebyshev_polynomial_t
+@pytest.mark.parametrize("shape", SPECIAL_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy_special_shifted_chebyshev_polynomial_t(shape, dtype):
+    # Test with tensor n
+    x = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    n = torch.randint(0, 16, shape, dtype=torch.int32, device=flag_gems.device)
+
+    ref_x = to_reference(x)
+    ref_n = to_reference(n)
+    ref_out = torch.special.shifted_chebyshev_polynomial_t(ref_x, ref_n)
+
+    # Use metax specialized implementation directly
+    from flag_gems.runtime.backend._metax.ops import shifted_chebyshev_polynomial_t
+    res_out = shifted_chebyshev_polynomial_t(x, n)
+
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.special_shifted_chebyshev_polynomial_t
+@pytest.mark.parametrize("shape", SPECIAL_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy_special_shifted_chebyshev_polynomial_t_scalar_n(shape, dtype):
+    # Test with scalar n
+    x = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    n = 5  # scalar
+
+    ref_x = to_reference(x)
+    ref_out = torch.special.shifted_chebyshev_polynomial_t(ref_x, n)
+
+    # Use metax specialized implementation directly
+    from flag_gems.runtime.backend._metax.ops import shifted_chebyshev_polynomial_t
+    res_out = shifted_chebyshev_polynomial_t(x, n)
+
+    gems_assert_close(res_out, ref_out, dtype)
