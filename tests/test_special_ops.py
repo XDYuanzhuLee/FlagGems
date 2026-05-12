@@ -2777,3 +2777,44 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.special_chebyshev_polynomial_t
+@pytest.mark.parametrize("shape", SPECIAL_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float32])
+@pytest.mark.parametrize("n", [0, 1, 2, 3, 4, 5, 10])
+def test_accuracy_special_chebyshev_polynomial_t(shape, dtype, n):
+    """Test special_chebyshev_polynomial_t accuracy"""
+    x = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    n_tensor = torch.tensor(n, dtype=torch.int32, device=flag_gems.device)
+
+    # Compute reference on CPU to avoid NotImplementedError for half precision
+    ref_x = x.cpu()
+    ref_n = n
+
+    ref_out = torch.special.chebyshev_polynomial_t(ref_x, ref_n)
+    with flag_gems.use_gems():
+        res_out = torch.special.chebyshev_polynomial_t(x, n_tensor)
+
+    # Move result to CPU for comparison
+    res_out = res_out.cpu()
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.special_chebyshev_polynomial_t
+@pytest.mark.parametrize("shape", SPECIAL_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy_special_chebyshev_polynomial_t_scalar_n(shape, dtype):
+    """Test special_chebyshev_polynomial_t with scalar n"""
+    x = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    n = 3  # scalar
+
+    ref_x = x.cpu()
+
+    ref_out = torch.special.chebyshev_polynomial_t(ref_x, n)
+    with flag_gems.use_gems():
+        res_out = torch.special.chebyshev_polynomial_t(x, n)
+
+    # Move result to CPU for comparison
+    res_out = res_out.cpu()
+    gems_assert_close(res_out, ref_out, dtype)
