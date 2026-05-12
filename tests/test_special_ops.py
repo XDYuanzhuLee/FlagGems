@@ -2777,3 +2777,35 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.special_legendre_polynomial_p
+@pytest.mark.parametrize("shape", SPECIAL_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy_special_legendre_polynomial_p(shape, dtype):
+    # Test with scalar n (degree of polynomial)
+    n = 3  # Degree of polynomial
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+
+    ref_out = torch.special.legendre_polynomial_p(ref_inp, n)
+    with flag_gems.use_gems():
+        res_out = torch.special.legendre_polynomial_p(inp, n)
+
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.special_legendre_polynomial_p
+@pytest.mark.parametrize("shape", SPECIAL_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float32])
+@pytest.mark.parametrize("n", [0, 1, 2, 5, 10])
+def test_accuracy_special_legendre_polynomial_p_various_n(shape, dtype, n):
+    # Test with various polynomial degrees
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+
+    ref_out = torch.special.legendre_polynomial_p(ref_inp, n)
+    with flag_gems.use_gems():
+        res_out = torch.special.legendre_polynomial_p(inp, n)
+
+    gems_assert_close(res_out, ref_out, dtype)
