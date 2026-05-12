@@ -126,6 +126,7 @@ _FULL_CONFIG = (
     ("conv2d.padding", conv2d),
     ("conv3d", conv3d),
     ("conv3d.padding", conv3d),
+    ("cudnnconvfilter", cudnnconvfilter),
     (
         "copy_",
         copy_,

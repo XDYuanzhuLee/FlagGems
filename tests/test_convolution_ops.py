@@ -473,3 +473,39 @@ def test_accuracy_depthwise2d(
         inp, weight, kernel, bias=None, stride=stride, padding=padding, dilation=1
     )
     gems_assert_close(res_out, ref_out, dtype)
+
+
+# Test shapes for cudnnconvfilter
+SHAPE_CONVFILTER = [
+    ((4, 8, 32, 32), (16, 8, 3, 3)),
+    ((2, 16, 16, 16), (32, 16, 3, 3)),
+    ((1, 3, 64, 64), (8, 3, 5, 5)),
+]
+
+
+@pytest.mark.cudnnconvfilter
+@pytest.mark.parametrize("shape, weight_shape", SHAPE_CONVFILTER)
+@pytest.mark.parametrize("stride", [1, 2])
+@pytest.mark.parametrize("padding", [0, 1])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float16])
+def test_accuracy_cudnnconvfilter(shape, weight_shape, stride, padding, dtype):
+    if flag_gems.vendor_name == "mthreads" and dtype == torch.float16:
+        os.environ["MUSA_ENABLE_SQMMA"] = "1"
+
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp, True)
+    weight = torch.randn(weight_shape, dtype=dtype, device=flag_gems.device)
+    ref_weight = to_reference(weight, True)
+
+    ref_out = torch.nn.functional.conv2d(
+        ref_inp, ref_weight, bias=None, stride=stride, padding=padding, dilation=1
+    )
+
+    with flag_gems.use_gems():
+        res_out = flag_gems.cudnnconvfilter(
+            inp, weight, bias=None, stride=stride, padding=padding, dilation=1
+        )
+    gems_assert_close(res_out, ref_out, dtype)
+
+    if flag_gems.vendor_name == "mthreads" and dtype == torch.float16:
+        del os.environ["MUSA_ENABLE_SQMMA"]
