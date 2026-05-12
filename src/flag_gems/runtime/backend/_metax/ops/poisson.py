@@ -33,7 +33,7 @@ def heur_num_warps(args):
         return 16
 
 
-# Poisson sampling kernel using inverse transform method
+# Simple Poisson sampling kernel using normal approximation
 @triton.heuristics(
     {
         "BLOCK": heur_block,
@@ -69,20 +69,20 @@ def poisson_kernel(
     c0 += i4
     _O = c0 * 0
 
-    # Generate 4 random uint32 values
+    # Generate random values
     r0, r1, r2, r3 = tl.philox(philox_seed, c0, c1, _O, _O)
 
     # Convert to uniform floats
-    rand0 = uint_to_uniform_float(r0)
-    rand1 = uint_to_uniform_float(r1)
-    rand2 = uint_to_uniform_float(r2)
-    rand3 = uint_to_uniform_float(r3)
+    u0 = uint_to_uniform_float(r0)
+    u1 = uint_to_uniform_float(r1)
+    u2 = uint_to_uniform_float(r2)
+    u3 = uint_to_uniform_float(r3)
 
-    # Apply Poisson sampling
-    result0 = poisson_sampling(rates, rand0, r0)
-    result1 = poisson_sampling(rates, rand1, r1)
-    result2 = poisson_sampling(rates, rand2, r2)
-    result3 = poisson_sampling(rates, rand3, r3)
+    # Apply Poisson sampling using normal approximation
+    result0 = poisson_sample(rates, u0)
+    result1 = poisson_sample(rates, u1)
+    result2 = poisson_sample(rates, u2)
+    result3 = poisson_sample(rates, u3)
 
     # Store results with unrolling
     UNROLL = 4
@@ -100,57 +100,53 @@ def poisson_kernel(
 
 
 @triton.jit
-def poisson_sampling(rate, u, rand_state):
+def poisson_sample(rate, u):
     """
-    Sample from Poisson distribution.
-    Uses a combination of algorithms:
-    - For small rates (< 1): direct computation
-    - For medium rates (1-30): Knuth's algorithm
-    - For large rates (> 30): Normal approximation
+    Sample from Poisson distribution using simplified normal approximation.
     """
     rate = rate.to(tl.float32)
 
     # For rate <= 0, return 0
-    result = tl.where(rate <= 0.0, 0.0, poisson_core(rate, u, rand_state))
+    result = tl.where(rate <= 0.0, 0.0, poisson_normal_approx(rate, u))
 
     return tl.cast(result, tl.int64)
 
 
 @triton.jit
-def poisson_core(rate, u, rand_state):
+def poisson_normal_approx(rate, u):
     """
-    Core Poisson sampling implementation.
-    Uses the inverse CDF method.
+    Simple Poisson sampling using normal approximation.
+    Poisson(lambda) ~ Normal(lambda, sqrt(lambda))
     """
-    # Use the random state to generate more random numbers
-    # We'll use a simple hash to generate different seeds
-    seed = rand_state.to(tl.uint32)
+    # Use simple inverse CDF approximation
+    # For efficiency, use a simpler formula
 
-    # For small rates (< 1), use direct formula
-    # P(X=0) = exp(-lambda), P(X=k) = lambda^k * exp(-lambda) / k!
-    exp_neg_rate = tl.exp(-rate)
+    # Transform u to normal using simple approximation
+    # Use the probit function approximation
 
-    # Initialize using the input uniform random
-    product = u
-    k = 0
+    # Simple polynomial approximation for normal inverse CDF
+    y = u - 0.5
 
-    # Use static loop with a reasonable number of iterations
-    # For rate < 30, we need at most ~30-40 iterations
-    for _ in tl.static_range(30):
-        # Generate a new random number from the philox state
-        # Use simple linear congruential generator for additional randoms
-        seed = seed * 1103515245 + 12345
-        rand_val = (seed >> 16) * 4.6566127342e-10  # Convert to float in (0,1)
+    # Very simple approximation
+    if y < 0:
+        # Use a simple formula for negative side
+        x = -tl.sqrt(-2.0 * tl.log(u + 1e-10))
+    else:
+        # Use a simple formula for positive side
+        x = tl.sqrt(-2.0 * tl.log(1.0 - u + 1e-10))
 
-        product = product * rand_val
-        k = k + 1
+    # Transform to Poisson
+    mu = rate
+    sigma = tl.sqrt(rate)
 
-        # Early exit if product < exp(-rate)
-        # We need to check this condition
-        if product < exp_neg_rate:
-            break
+    # Add continuity correction
+    result = mu + sigma * x + 0.5
 
-    return k - 1
+    # Floor and ensure non-negative
+    result = tl.floor(result)
+    result = tl.where(result < 0, 0.0, result)
+
+    return result
 
 
 def poisson(input: torch.Tensor, generator=None):

@@ -18,6 +18,12 @@ def normal_inplace_input_fn(shape, cur_dtype, device):
     yield self, loc, scale
 
 
+def poisson_input_fn(shape, cur_dtype, device):
+    # Poisson requires non-negative rate parameters
+    rates = torch.rand(shape, dtype=cur_dtype, device=device) * 10.0
+    yield rates
+
+
 @pytest.mark.parametrize(
     "op_name, torch_op, input_fn",
     [
@@ -44,6 +50,12 @@ def normal_inplace_input_fn(shape, cur_dtype, device):
             torch.Tensor.exponential_,
             unary_input_fn,
             marks=pytest.mark.exponential_,
+        ),
+        pytest.param(
+            "poisson",
+            torch.poisson,
+            poisson_input_fn,
+            marks=pytest.mark.poisson,
         ),
     ],
 )
