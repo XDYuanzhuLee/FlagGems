@@ -192,6 +192,12 @@ def topk_input_fn(shape, dtype, device):
     #     yield {"x": x, "k": k, "dim": -1, "sorted": False},
 
 
+def chebyshev_polynomial_t_input_fn(shape, dtype, device):
+    x = torch.randn(shape, device=device, dtype=dtype)
+    n = torch.tensor(3, dtype=torch.int32, device=device)
+    yield x, n
+
+
 def resolve_neg_input_fn(shape, dtype, device):
     x = torch.randn(size=shape, dtype=dtype, device=device)
     if vendor_name == "mthreads":
@@ -208,6 +214,13 @@ def resolve_conj_input_fn(shape, dtype, device):
 special_operations = [
     # Sorting Operations
     ("topk", torch.topk, FLOAT_DTYPES, topk_input_fn),
+    # Chebyshev Polynomial
+    (
+        "special_chebyshev_polynomial_t",
+        torch.special.chebyshev_polynomial_t,
+        [torch.float32],
+        chebyshev_polynomial_t_input_fn,
+    ),
     # Complex Operations
     ("resolve_neg", torch.resolve_neg, [torch.cfloat], resolve_neg_input_fn),
     ("resolve_conj", torch.resolve_conj, [torch.cfloat], resolve_conj_input_fn),
