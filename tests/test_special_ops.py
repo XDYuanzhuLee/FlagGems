@@ -2777,3 +2777,83 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+# Test for quantize operation
+QUANTIZE_SHAPES = [(1024,), (1024, 1024), (16, 128, 64)]
+
+
+@pytest.mark.quantize
+@pytest.mark.parametrize("shape", QUANTIZE_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy_quantize(shape, dtype):
+    # Create input tensor
+    input = torch.randn(shape, dtype=dtype, device=flag_gems.device) * 10
+
+    # Create reference
+    ref_input = to_reference(input)
+
+    # Quantization parameters
+    scale = 0.1
+    zero_point = 128
+
+    # Reference output
+    ref_out = torch.quantize_per_tensor(ref_input, scale, zero_point, torch.quint8)
+
+    # Test with Metax specialized op
+    with flag_gems.use_gems():
+        # Import the specialized quantize function from Metax backend
+        from flag_gems.runtime.backend._metax.ops.quantize import quantize
+
+        res_out = quantize(input, scale, zero_point, torch.quint8)
+
+    # Compare scale approximately (account for float precision differences)
+    res_scale = res_out.q_scale()
+    ref_scale = ref_out.q_scale()
+    if hasattr(res_scale, 'item'):
+        res_scale = res_scale.item()
+    if hasattr(ref_scale, 'item'):
+        ref_scale = ref_scale.item()
+    assert abs(res_scale - ref_scale) < 1e-6, f"Scale mismatch: {res_scale} vs {ref_scale}"
+    assert res_out.q_zero_point() == ref_out.q_zero_point(), f"Zero point mismatch: {res_out.q_zero_point()} vs {ref_out.q_zero_point()}"
+
+    # Compare dequantized values - use a slightly larger tolerance for quantize
+    # since there can be small differences due to rounding methods
+    res_dequant = res_out.dequantize()
+    ref_dequant = ref_out.dequantize()
+
+    gems_assert_close(res_dequant, ref_dequant, dtype, atol=0.15)
+
+
+@pytest.mark.quantize
+@pytest.mark.parametrize("shape", QUANTIZE_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy_quantize_qint8(shape, dtype):
+    # Test with qint8 dtype
+    input = torch.randn(shape, dtype=dtype, device=flag_gems.device) * 10
+
+    ref_input = to_reference(input)
+
+    scale = 0.1
+    zero_point = 0  # qint8 typically uses 0 as zero point
+
+    ref_out = torch.quantize_per_tensor(ref_input, scale, zero_point, torch.qint8)
+
+    with flag_gems.use_gems():
+        from flag_gems.runtime.backend._metax.ops.quantize import quantize
+
+        res_out = quantize(input, scale, zero_point, torch.qint8)
+
+    res_scale = res_out.q_scale()
+    ref_scale = ref_out.q_scale()
+    if hasattr(res_scale, 'item'):
+        res_scale = res_scale.item()
+    if hasattr(ref_scale, 'item'):
+        ref_scale = ref_scale.item()
+    assert abs(res_scale - ref_scale) < 1e-6
+    assert res_out.q_zero_point() == ref_out.q_zero_point()
+
+    res_dequant = res_out.dequantize()
+    ref_dequant = ref_out.dequantize()
+
+    gems_assert_close(res_dequant, ref_dequant, dtype, atol=0.15)
