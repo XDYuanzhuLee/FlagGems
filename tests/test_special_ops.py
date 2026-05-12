@@ -2777,3 +2777,18 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.special_modified_bessel_i0
+@pytest.mark.parametrize("shape", SPECIAL_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy_special_modified_bessel_i0(shape, dtype):
+    """Test special_modified_bessel_i0 accuracy against PyTorch reference"""
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+
+    ref_out = torch.special.modified_bessel_i0(ref_inp)
+    with flag_gems.use_gems():
+        res_out = torch.special.modified_bessel_i0(inp)
+
+    gems_assert_close(res_out, ref_out, dtype)
