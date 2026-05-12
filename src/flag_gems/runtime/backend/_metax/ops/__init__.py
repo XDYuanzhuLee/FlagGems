@@ -23,6 +23,7 @@ from .prod import prod, prod_dim
 from .repeat_interleave import repeat_interleave_self_tensor
 from .resolve_conj import resolve_conj
 from .sigmoid import sigmoid
+from .special_hermite_polynomial_he import hermite_polynomial_he
 from .tanh import tanh
 from .unique import _unique2
 from .upsample_nearest2d import upsample_nearest2d
@@ -63,6 +64,7 @@ __all__ = [
     "repeat_interleave_self_tensor",
     "resolve_conj",
     "sigmoid",
+    "special_hermite_polynomial_he",
     "tanh",
     "upsample_nearest2d",
     "zeros",

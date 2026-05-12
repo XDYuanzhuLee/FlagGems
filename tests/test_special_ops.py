@@ -2777,3 +2777,30 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.special_hermite_polynomial_he
+@pytest.mark.parametrize("shape", SPECIAL_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_special_hermite_polynomial_he(shape, dtype):
+    # Test with scalar n (most common use case)
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+    ref_out = torch.special.hermite_polynomial_he(ref_inp, 2)
+    with flag_gems.use_gems():
+        res_out = torch.special.hermite_polynomial_he(inp, 2)
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.special_hermite_polynomial_he
+@pytest.mark.parametrize("shape", SPECIAL_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_special_hermite_polynomial_he_tensor_n(shape, dtype):
+    # Test with tensor n
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    n = torch.tensor(3, dtype=torch.int32, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+    ref_out = torch.special.hermite_polynomial_he(ref_inp, n)
+    with flag_gems.use_gems():
+        res_out = torch.special.hermite_polynomial_he(inp, n)
+    gems_assert_close(res_out, ref_out, dtype)
