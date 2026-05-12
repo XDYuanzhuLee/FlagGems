@@ -2777,3 +2777,59 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+# Grid sampler 2d backward test
+GRID_SAMPLER_SHAPES = [
+    (1, 1, 4, 4),
+    (1, 3, 8, 8),
+    (2, 3, 16, 16),
+    (4, 3, 32, 32),
+]
+
+
+@pytest.mark.grid_sampler_2d_backward
+@pytest.mark.parametrize("shape", GRID_SAMPLER_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+@pytest.mark.parametrize("interpolation_mode", [0, 1])
+@pytest.mark.parametrize("padding_mode", [0, 1, 2])
+@pytest.mark.parametrize("align_corners", [True, False])
+def test_accuracy_grid_sampler_2d_backward(shape, dtype, interpolation_mode, padding_mode, align_corners):
+    N, C, H, W = shape
+    GRID_H, GRID_W = H, W  # Use same size as input for simplicity
+
+    # Create input and grid tensors
+    input = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    grid = torch.randn((N, GRID_H, GRID_W, 2), dtype=dtype, device=flag_gems.device)
+    # Clamp grid to [-1, 1] range for valid sampling
+    grid = torch.clamp(grid, -1.0, 1.0)
+
+    # Create grad_output (the gradient from the next layer)
+    grad_output = torch.randn((N, C, GRID_H, GRID_W), dtype=dtype, device=flag_gems.device)
+
+    ref_input = to_reference(input)
+    ref_grid = to_reference(grid)
+    ref_grad_output = to_reference(grad_output)
+
+    output_mask = (True, True)
+
+    # Compute reference output
+    ref_grad_input, ref_grad_grid = torch.ops.aten.grid_sampler_2d_backward(
+        ref_grad_output, ref_input, ref_grid,
+        interpolation_mode, padding_mode, align_corners, output_mask
+    )
+
+    # Compute gems output using flag_gems.grid_sampler_2d_backward
+    grad_input, grad_grid = flag_gems.grid_sampler_2d_backward(
+        grad_output, input, grid,
+        interpolation_mode, padding_mode, align_corners, output_mask
+    )
+
+    # Use larger tolerance for float16 and bfloat16 to account for precision differences
+    # Grid sampler backward can have larger errors for half precision
+    if dtype in (torch.float16, torch.bfloat16):
+        gems_assert_close(grad_input, ref_grad_input, dtype, atol=2e-1)
+        gems_assert_close(grad_grid, ref_grad_grid, dtype, atol=2e-1)
+    else:
+        gems_assert_close(grad_input, ref_grad_input, dtype)
+        gems_assert_close(grad_grid, ref_grad_grid, dtype)
