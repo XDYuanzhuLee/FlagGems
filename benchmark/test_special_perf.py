@@ -1467,3 +1467,19 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+@pytest.mark.special_chebyshev_polynomial_v
+def test_perf_special_chebyshev_polynomial_v():
+    def chebyshev_input_fn(shape, dtype, device):
+        inp = torch.randn(shape, dtype=dtype, device=device)
+        n = 3  # Degree of the polynomial
+        yield inp, n
+
+    bench = GenericBenchmark(
+        input_fn=chebyshev_input_fn,
+        op_name="special_chebyshev_polynomial_v",
+        torch_op=torch.special.chebyshev_polynomial_v,
+        dtypes=[torch.float32],
+    )
+    bench.run()
