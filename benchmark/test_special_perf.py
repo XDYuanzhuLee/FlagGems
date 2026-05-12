@@ -205,12 +205,23 @@ def resolve_conj_input_fn(shape, dtype, device):
     yield x.conj(),
 
 
+def quantize_input_fn(shape, dtype, device):
+    # Quantize requires float32 input
+    x = torch.randn(size=shape, dtype=torch.float32, device=device) * 10
+    scale = 0.1
+    zero_point = 128
+    # Yield positional arguments for torch.quantize_per_tensor
+    yield x, scale, zero_point, torch.quint8
+
+
 special_operations = [
     # Sorting Operations
     ("topk", torch.topk, FLOAT_DTYPES, topk_input_fn),
     # Complex Operations
     ("resolve_neg", torch.resolve_neg, [torch.cfloat], resolve_neg_input_fn),
     ("resolve_conj", torch.resolve_conj, [torch.cfloat], resolve_conj_input_fn),
+    # Quantization Operations
+    ("quantize", torch.quantize_per_tensor, [torch.float32], quantize_input_fn),
 ]
 
 
