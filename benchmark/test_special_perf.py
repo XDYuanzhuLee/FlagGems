@@ -1467,3 +1467,44 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+# Grid sampler 2d backward benchmark
+GRID_SAMPLER_SHAPES = [
+    (1, 1, 8, 8),
+    (1, 3, 16, 16),
+    (2, 3, 32, 32),
+    (4, 3, 64, 64),
+]
+
+
+class GridSampler2DBackwardBenchmark(Benchmark):
+    def set_shapes(self, shape_file_path=None):
+        self.shapes = GRID_SAMPLER_SHAPES
+
+    def get_input_iter(self, cur_dtype):
+        for shape in self.shapes:
+            N, C, H, W = shape
+            GRID_H, GRID_W = H, W
+
+            input = torch.randn(shape, dtype=cur_dtype, device=self.device)
+            grid = torch.randn((N, GRID_H, GRID_W, 2), dtype=cur_dtype, device=self.device)
+            grid = torch.clamp(grid, -1.0, 1.0)
+            grad_output = torch.randn((N, C, GRID_H, GRID_W), dtype=cur_dtype, device=self.device)
+
+            interpolation_mode = 0
+            padding_mode = 0
+            align_corners = False
+            output_mask = (True, True)
+
+            yield grad_output, input, grid, interpolation_mode, padding_mode, align_corners, output_mask
+
+
+@pytest.mark.grid_sampler_2d_backward
+def test_perf_grid_sampler_2d_backward():
+    bench = GridSampler2DBackwardBenchmark(
+        op_name="grid_sampler_2d_backward",
+        torch_op=torch.ops.aten.grid_sampler_2d_backward,
+        dtypes=[torch.float32],
+    )
+    bench.run()
