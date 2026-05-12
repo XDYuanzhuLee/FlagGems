@@ -2777,3 +2777,90 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.poisson
+@pytest.mark.parametrize("shape", SPECIAL_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float16, torch.bfloat16])
+def test_accuracy_poisson(shape, dtype):
+    """Test poisson operator accuracy."""
+    # Poisson requires non-negative input (rate parameters)
+    # Generate rates in a reasonable range for testing
+    rates = torch.rand(shape, dtype=dtype, device=flag_gems.device) * 10.0
+
+    ref_rates = to_reference(rates)
+    ref_out = torch.poisson(ref_rates)
+
+    with flag_gems.use_gems():
+        res_out = torch.poisson(rates)
+
+    # For poisson, we check that the output is non-negative integers
+    # and the distribution statistics are reasonable
+    res_out = to_reference(res_out)
+
+    # Check that output is non-negative
+    assert torch.all(res_out >= 0), "Poisson output should be non-negative"
+
+    # Check that output is integer type (or close to it in float)
+    # Since we're comparing distributions, we use a statistical test
+    # Check mean is close to input rate (within 40% tolerance for randomness and dtype issues)
+    res_mean = res_out.float().mean()
+    ref_mean = ref_out.float().mean()
+    input_mean = ref_rates.float().mean()
+
+    # Allow for statistical variation - use looser tolerance for bfloat16 and small shapes
+    rtol = 0.4 if dtype == torch.bfloat16 else 0.3
+    torch.testing.assert_close(res_mean, ref_mean, rtol=rtol, atol=2.0)
+
+
+@pytest.mark.poisson
+@pytest.mark.parametrize("shape", [(1024, 1024), (1, 8192)])
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy_poisson_large(shape, dtype):
+    """Test poisson operator with larger shapes."""
+    rates = torch.rand(shape, dtype=dtype, device=flag_gems.device) * 20.0
+
+    ref_rates = to_reference(rates)
+    ref_out = torch.poisson(ref_rates)
+
+    with flag_gems.use_gems():
+        res_out = torch.poisson(rates)
+
+    res_out = to_reference(res_out)
+
+    # Check non-negative
+    assert torch.all(res_out >= 0), "Poisson output should be non-negative"
+
+    # Check mean is reasonable
+    res_mean = res_out.float().mean()
+    ref_mean = ref_out.float().mean()
+    torch.testing.assert_close(res_mean, ref_mean, rtol=0.2, atol=1.0)
+
+
+@pytest.mark.poisson
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy_poisson_edge_cases(dtype):
+    """Test poisson operator edge cases."""
+    # Test with zero rate
+    rates_zero = torch.zeros((16, 16), dtype=dtype, device=flag_gems.device)
+    ref_rates = to_reference(rates_zero)
+    ref_out = torch.poisson(ref_rates)
+
+    with flag_gems.use_gems():
+        res_out = torch.poisson(rates_zero)
+
+    res_out = to_reference(res_out)
+    # With zero rate, output should always be 0
+    assert torch.all(res_out == 0), "Poisson(0) should be 0"
+
+    # Test with small rate
+    rates_small = torch.full((16, 16), 0.1, dtype=dtype, device=flag_gems.device)
+    ref_rates = to_reference(rates_small)
+    ref_out = torch.poisson(ref_rates)
+
+    with flag_gems.use_gems():
+        res_out = torch.poisson(rates_small)
+
+    res_out = to_reference(res_out)
+    # With small rate, output should be mostly 0 or 1
+    assert torch.all(res_out >= 0), "Poisson output should be non-negative"

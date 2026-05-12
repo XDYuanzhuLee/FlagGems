@@ -18,6 +18,7 @@ from .nonzero import nonzero
 from .ones import ones
 from .ones_like import ones_like
 from .outer import outer
+from .poisson import poisson
 from .polar import polar
 from .prod import prod, prod_dim
 from .repeat_interleave import repeat_interleave_self_tensor
@@ -57,6 +58,7 @@ __all__ = [
     "ones",
     "ones_like",
     "outer",
+    "poisson",
     "polar",
     "prod",
     "prod_dim",
