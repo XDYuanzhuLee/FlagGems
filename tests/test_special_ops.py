@@ -2777,3 +2777,20 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+# Tests for special_ndtri (inverse normal CDF / quantile function)
+@pytest.mark.special_ndtri
+@pytest.mark.parametrize("shape", SPECIAL_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy_special_ndtri(shape, dtype):
+    # Input for ndtri should be in [0, 1] range (probabilities)
+    # We use uniform distribution to get valid probability values
+    inp = torch.rand(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+
+    ref_out = torch.special.ndtri(ref_inp)
+    with flag_gems.use_gems():
+        res_out = torch.special.ndtri(inp)
+
+    gems_assert_close(res_out, ref_out, dtype)
