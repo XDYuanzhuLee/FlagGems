@@ -12,6 +12,7 @@ from .index_select import index_select
 from .isin import isin
 from .log_softmax import log_softmax, log_softmax_backward
 from .masked_fill import masked_fill, masked_fill_
+from .max_pool3d_with_indices import max_pool3d_with_indices, max_pool3d_backward
 from .min import min, min_dim
 from .mm import mm, mm_out
 from .nonzero import nonzero
@@ -47,6 +48,8 @@ __all__ = [
     "isin",
     "log_softmax",
     "log_softmax_backward",
+    "max_pool3d_backward",
+    "max_pool3d_with_indices",
     "masked_fill",
     "masked_fill_",
     "min_dim",
