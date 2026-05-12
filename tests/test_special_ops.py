@@ -2777,3 +2777,75 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+# FFT/IFFT tests
+@pytest.mark.fft_ifft
+@pytest.mark.parametrize(
+    "shape",
+    [
+        (1024,),
+        (2048,),
+        (256, 256),
+        (128, 512),
+        (64, 64, 64),
+    ],
+)
+@pytest.mark.parametrize("dtype", [torch.complex64, torch.complex128])
+def test_accuracy_fft_ifft(shape, dtype):
+    """Test accuracy of fft_ifft (inverse FFT)"""
+    # Create complex input tensor
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+
+    # Compute IFFT using flag_gems.fft_ifft (experimental)
+    ref_out = torch.fft.ifft(ref_inp)
+    res_out = flag_gems.fft_ifft(inp)
+
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.fft_ifft
+@pytest.mark.parametrize(
+    "shape",
+    [
+        (1024,),
+        (2048,),
+        (256, 256),
+    ],
+)
+@pytest.mark.parametrize("dtype", [torch.complex64, torch.complex128])
+def test_accuracy_fft_ifft_with_n(shape, dtype):
+    """Test accuracy of fft_ifft with specified output length n"""
+    # Create complex input tensor
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+
+    # Specify output length n
+    n = shape[-1] * 2 if isinstance(shape, tuple) else shape[0] * 2
+    ref_out = torch.fft.ifft(ref_inp, n=n)
+    res_out = flag_gems.fft_ifft(inp, n=n)
+
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.fft_ifft
+@pytest.mark.parametrize(
+    "shape",
+    [
+        (256, 256),
+        (128, 128, 128),
+    ],
+)
+@pytest.mark.parametrize("dtype", [torch.complex64, torch.complex128])
+@pytest.mark.parametrize("norm", ["forward", "backward", "ortho"])
+def test_accuracy_fft_ifft_norm(shape, dtype, norm):
+    """Test accuracy of fft_ifft with different normalization modes"""
+    # Create complex input tensor
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+
+    ref_out = torch.fft.ifft(ref_inp, norm=norm)
+    res_out = flag_gems.fft_ifft(inp, norm=norm)
+
+    gems_assert_close(res_out, ref_out, dtype)
