@@ -1467,3 +1467,21 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+def special_legendre_polynomial_p_input_fn(shape, dtype, device):
+    # Input x tensor and polynomial degree n
+    x = torch.randn(*shape, device=device, dtype=dtype)
+    n = 3  # Fixed degree for benchmark
+    yield {"x": x, "n": n},
+
+
+@pytest.mark.special_legendre_polynomial_p
+def test_perf_special_legendre_polynomial_p():
+    bench = GenericBenchmark(
+        input_fn=special_legendre_polynomial_p_input_fn,
+        op_name="special_legendre_polynomial_p",
+        torch_op=torch.special.legendre_polynomial_p,
+        dtypes=[torch.float32],
+    )
+    bench.run()
