@@ -168,3 +168,48 @@ def test_perf_conv3d():
     )
     bench.set_gems(flag_gems.conv3d)
     bench.run()
+
+
+class CudnnConvFilterBenchmark(Conv2DBenchmark):
+    """Use the same shapes as Conv2DBenchmark for cudnnconvfilter."""
+    pass
+
+
+@pytest.mark.cudnnconvfilter
+def test_perf_cudnnconvfilter():
+    def cudnnconvfilter_input_fn(shape, dtype, device):
+        (
+            batch,
+            input_c,
+            input_h,
+            input_w,
+            out_c,
+            kernel_h,
+            kernel_w,
+            stride,
+            padding,
+            groups,
+        ) = shape
+        input_shape = (batch, input_c, input_h, input_w)
+        weight_shape = (out_c, input_c // groups, kernel_h, kernel_w)
+        input = torch.randn(size=input_shape, device=device, dtype=dtype)
+        weight = torch.randn(size=weight_shape, device=device, dtype=dtype)
+
+        yield {
+            "input": input,
+            "weight": weight,
+            "bias": None,
+            "groups": groups,
+            "stride": stride,
+            "padding": padding,
+        },
+
+    torch.backends.cudnn.allow_tf32 = False
+    bench = CudnnConvFilterBenchmark(
+        input_fn=cudnnconvfilter_input_fn,
+        op_name="cudnnconvfilter",
+        torch_op=torch.nn.functional.conv2d,
+        dtypes=FLOAT_DTYPES,
+    )
+    bench.set_gems(flag_gems.cudnnconvfilter)
+    bench.run()
