@@ -1485,7 +1485,7 @@ class MaxUnpool3dBenchmark(Benchmark):
             input_orig = torch.randn(shape, dtype=cur_dtype, device=self.device)
             pool = torch.nn.MaxPool3d(kernel_size=2, stride=2, return_indices=True)
             pooled, indices = pool(input_orig)
-            yield pooled, indices
+            yield pooled, indices, 2  # kernel_size=2
 
 
 @pytest.mark.max_unpool3d
