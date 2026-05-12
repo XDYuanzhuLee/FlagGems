@@ -2777,3 +2777,69 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+# FFT irfftn test shapes - powers of 2 for efficient FFT
+FFT_IRFFTN_SHAPES = [(8,), (16,), (32,), (64,), (128,), (256,), (512,), (1024,),
+                     (8, 8), (16, 16), (32, 32), (64, 64), (128, 128),
+                     (4, 16), (8, 32), (16, 64)]
+
+
+@pytest.mark.fft_irfftn
+@pytest.mark.parametrize("shape", FFT_IRFFTN_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy_fft_irfftn(shape, dtype):
+    """Test fft_irfftn accuracy by round-tripping with rfftn"""
+    # Generate a real input tensor
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+
+    # First apply rfftn to get half-Hermitian complex output
+    # The output will have shape[:-1] + (shape[-1]//2 + 1,) for the last dim
+    rfftn_out = torch.fft.rfftn(ref_inp)
+    rfftn_out_gems = torch.fft.rfftn(inp)
+
+    # Then apply irfftn to get back the original
+    ref_out = torch.fft.irfftn(rfftn_out, s=shape)
+    with flag_gems.use_gems():
+        res_out = torch.fft.irfftn(rfftn_out_gems, s=shape)
+
+    # The round-trip should recover the original (within numerical tolerance)
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.fft_irfftn
+@pytest.mark.parametrize("shape", [(8, 8), (16, 16), (32, 32)])
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy_fft_irfftn_with_norm(shape, dtype):
+    """Test fft_irfftn with different normalization modes"""
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+
+    for norm in ["forward", "backward", "ortho"]:
+        rfftn_out = torch.fft.rfftn(ref_inp, norm=norm)
+        rfftn_out_gems = torch.fft.rfftn(inp, norm=norm)
+
+        ref_out = torch.fft.irfftn(rfftn_out, s=shape, norm=norm)
+        with flag_gems.use_gems():
+            res_out = torch.fft.irfftn(rfftn_out_gems, s=shape, norm=norm)
+
+        gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.fft_irfftn
+@pytest.mark.parametrize("shape", [(4, 8, 16), (2, 4, 8)])
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy_fft_irfftn_3d(shape, dtype):
+    """Test fft_irfftn with 3D tensors"""
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+
+    rfftn_out = torch.fft.rfftn(ref_inp)
+    rfftn_out_gems = torch.fft.rfftn(inp)
+
+    ref_out = torch.fft.irfftn(rfftn_out, s=shape)
+    with flag_gems.use_gems():
+        res_out = torch.fft.irfftn(rfftn_out_gems, s=shape)
+
+    gems_assert_close(res_out, ref_out, dtype)
