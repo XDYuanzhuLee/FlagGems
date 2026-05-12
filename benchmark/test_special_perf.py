@@ -1112,6 +1112,38 @@ def test_perf_reflection_pad2d():
     bench.run()
 
 
+@pytest.mark.reflection_pad3d
+def test_perf_reflection_pad3d():
+    def reflection_pad3d_input_fn(config, dtype, device):
+        shape, padding = config
+        x = torch.randn(shape, dtype=dtype, device=device)
+        yield x, list(padding)
+
+    class ReflectionPad3dBenchmark(Benchmark):
+        def set_shapes(self, shape_file_path=None):
+            self.shapes = [
+                ((2, 4, 8, 16, 16), (1, 1, 1, 1, 1, 1)),
+                ((1, 3, 16, 32, 32), (2, 3, 2, 3, 2, 3)),
+                ((4, 8, 32, 64, 64), (3, 5, 3, 5, 3, 5)),
+                ((8, 16, 32, 64, 64), (0, 4, 0, 4, 0, 4)),
+                ((2, 8, 16, 32, 32), (1, 1, 1, 1, 1, 1)),
+            ]
+
+        def set_more_shapes(self):
+            return None
+
+        def get_input_iter(self, cur_dtype):
+            for config in self.shapes:
+                yield from reflection_pad3d_input_fn(config, cur_dtype, self.device)
+
+    bench = ReflectionPad3dBenchmark(
+        op_name="reflection_pad3d",
+        torch_op=torch.ops.aten.reflection_pad3d,
+        dtypes=FLOAT_DTYPES,
+    )
+    bench.run()
+
+
 @pytest.mark.upsample_bicubic2d
 @pytest.mark.parametrize("align_corners", [False, True])
 def test_perf_upsample_bicubic2d(align_corners):
