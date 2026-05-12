@@ -408,6 +408,35 @@ def test_addmv_benchmark(op_name, torch_op, input_fn):
     bench.run()
 
 
+def addmv__input_fn(m, n, cur_dtype, device):
+    mat = torch.randn([m, n], dtype=cur_dtype, device=device)
+    vec = torch.randn([n], dtype=cur_dtype, device=device)
+    bias = torch.randn([m], dtype=cur_dtype, device=device)
+    # torch.addmv_(bias, mat, vec)
+    yield bias, mat, vec
+
+
+@pytest.mark.parametrize(
+    "op_name, torch_op, input_fn",
+    [
+        pytest.param(
+            "addmv_",
+            torch.addmv_,
+            addmv__input_fn,
+            marks=pytest.mark.addmv_,
+        ),
+    ],
+)
+def test_addmv__benchmark(op_name, torch_op, input_fn):
+    bench = AddmvBenchmark(
+        input_fn=input_fn,
+        op_name=op_name,
+        torch_op=torch_op,
+        dtypes=FLOAT_DTYPES,
+    )
+    bench.run()
+
+
 class VdotBenchmark(BlasBenchmark):
     """
     benchmark for vdot
