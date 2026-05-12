@@ -467,3 +467,42 @@ def test_addr_benchmark():
         dtypes=FLOAT_DTYPES,
     )
     bench.run()
+
+
+@pytest.mark.linalg_slogdet
+def test_linalg_slogdet_benchmark():
+    # Note: linalg.slogdet on Metax only supports float32
+    from benchmark.performance_utils import Benchmark
+
+    dtypes = [torch.float32]
+    shapes = [
+        (32,),
+        (64,),
+        (128,),
+        (256,),
+        (512,),
+    ]
+
+    def slogdet_input_fn(n, cur_dtype, device):
+        A = torch.randn([n, n], dtype=cur_dtype, device=device)
+        yield A
+
+    class LinalgSlogdetBenchmark(Benchmark):
+        def __init__(self, *args, input_fn, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.input_fn = input_fn
+
+        def get_input_iter(self, cur_dtype):
+            for shape in self.shapes:
+                n = shape[0]
+                yield from self.input_fn(n, cur_dtype, self.device)
+
+    bench = LinalgSlogdetBenchmark(
+        input_fn=slogdet_input_fn,
+        op_name="linalg_slogdet",
+        torch_op=torch.linalg.slogdet,
+        dtypes=dtypes,
+        shapes=shapes,
+    )
+    bench.set_gems(flag_gems.linalg_slogdet)
+    bench.run()
