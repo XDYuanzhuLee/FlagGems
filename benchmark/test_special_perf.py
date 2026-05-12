@@ -1467,3 +1467,94 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+# FFT irfftn benchmark shapes - powers of 2 for efficient FFT
+FFT_IRFFTN_BENCHMARK_SHAPES = [
+    (8,),
+    (16,),
+    (32,),
+    (64,),
+    (128,),
+    (256,),
+    (512,),
+    (1024,),
+    (8, 8),
+    (16, 16),
+    (32, 32),
+    (64, 64),
+    (128, 128),
+    (4, 16),
+    (8, 32),
+    (16, 64),
+]
+
+
+class FFTRFFTNHelperBenchmark(Benchmark):
+    """Helper benchmark to pre-compute rfftn output for irfftn benchmarking"""
+
+    def set_shapes(self, shape_file_path=None):
+        self.shapes = FFT_IRFFTN_BENCHMARK_SHAPES
+
+    def get_input_iter(self, cur_dtype):
+        for shape in self.shapes:
+            # Generate real input tensor
+            inp = torch.randn(shape, dtype=cur_dtype, device=self.device)
+            # Pre-compute rfftn output which is the input to irfftn
+            rfftn_out = torch.fft.rfftn(inp)
+            yield rfftn_out, shape
+
+
+class FFTRFFTNHelperOutputBenchmark(Benchmark):
+    """Helper benchmark to store rfftn output for irfftn benchmarking"""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.helper_data = []
+
+    def run(self):
+        from benchmark.performance_utils import benchmark_general
+
+        self.set_shapes()
+        for cur_dtype in self.dtypes:
+            for inp in self.get_input_iter(cur_dtype):
+                rfftn_out, shape = inp
+                self.helper_data.append((rfftn_out, shape))
+
+    def get_helper_data(self):
+        return self.helper_data
+
+
+class FFPIRFFTNBenchmark(Benchmark):
+    """Benchmark for fft_irfftn operation"""
+
+    def set_shapes(self, shape_file_path=None):
+        self.shapes = FFT_IRFFTN_BENCHMARK_SHAPES
+
+    def get_input_iter(self, cur_dtype):
+        for shape in self.shapes:
+            # Generate real input tensor
+            inp = torch.randn(shape, dtype=cur_dtype, device=self.device)
+            # Pre-compute rfftn output (half-Hermitian complex tensor)
+            rfftn_out = torch.fft.rfftn(inp)
+            yield rfftn_out, shape
+
+    def get_gflops(self, op, *args, **kwargs):
+        # GFLOPs estimation for FFT
+        # For irfftn of size N, complexity is roughly O(N log N)
+        rfftn_out, shape = args
+        n = rfftn_out.numel()
+        # Approximate FLOPs = 5 * N * log2(N)
+        import math
+
+        return 5 * n * math.log2(n) if n > 0 else 0
+
+
+@pytest.mark.fft_irfftn
+def test_perf_fft_irfftn():
+    bench = FFPIRFFTNBenchmark(
+        op_name="fft_irfftn",
+        torch_op=torch.fft.irfftn,
+        dtypes=[torch.float32],
+    )
+    bench.run()
