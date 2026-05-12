@@ -59,6 +59,7 @@ forward_operations = [
     ("argmin", torch.argmin, FLOAT_DTYPES),
     ("max", torch.max, FLOAT_DTYPES),
     ("mean", torch.mean, FLOAT_DTYPES),
+    ("median", torch.median, FLOAT_DTYPES),
     ("min", torch.min, FLOAT_DTYPES),
     ("prod", torch.prod, FLOAT_DTYPES),
     ("softmax", torch.nn.functional.softmax, FLOAT_DTYPES),
