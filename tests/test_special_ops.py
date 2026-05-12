@@ -2777,3 +2777,18 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+# Test for special_airy_ai
+# Note: PyTorch's CPU implementation of airy_ai only supports float32
+# We test flag_gems.airy_ai directly since special_airy_ai is not in _FULL_CONFIG
+@pytest.mark.special_airy_ai
+@pytest.mark.parametrize("shape", SPECIAL_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy_special_airy_ai(shape, dtype):
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+    ref_out = torch.special.airy_ai(ref_inp)
+    # Call flag_gems.airy_ai directly since special_airy_ai is not registered in PyTorch dispatch
+    res_out = flag_gems.airy_ai(inp)
+    gems_assert_close(res_out, ref_out, dtype)

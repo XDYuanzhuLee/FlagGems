@@ -23,6 +23,7 @@ from .prod import prod, prod_dim
 from .repeat_interleave import repeat_interleave_self_tensor
 from .resolve_conj import resolve_conj
 from .sigmoid import sigmoid
+from .special_airy_ai import airy_ai
 from .tanh import tanh
 from .unique import _unique2
 from .upsample_nearest2d import upsample_nearest2d
@@ -32,6 +33,7 @@ from .zeros_like import zeros_like
 __all__ = [
     "_unique2",
     "addmm",
+    "airy_ai",
     "amax",
     "arange",
     "arange_start",
