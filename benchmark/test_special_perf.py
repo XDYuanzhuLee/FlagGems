@@ -205,12 +205,28 @@ def resolve_conj_input_fn(shape, dtype, device):
     yield x.conj(),
 
 
+def fft_ifft2_input_fn(shape, dtype, device):
+    """Input function for fft_ifft2 benchmark."""
+    # FFT operates on complex tensors
+    if dtype.is_complex:
+        float_dtype = torch.float32 if dtype == torch.complex64 else torch.float16
+        real = torch.randn(shape, dtype=float_dtype, device=device)
+        imag = torch.randn(shape, dtype=float_dtype, device=device)
+        input_tensor = torch.complex(real, imag).to(dtype)
+    else:
+        input_tensor = torch.randn(shape, dtype=dtype, device=device)
+    # Yield as a tuple with the tensor as the only positional arg
+    yield (input_tensor,)
+
+
 special_operations = [
     # Sorting Operations
     ("topk", torch.topk, FLOAT_DTYPES, topk_input_fn),
     # Complex Operations
     ("resolve_neg", torch.resolve_neg, [torch.cfloat], resolve_neg_input_fn),
     ("resolve_conj", torch.resolve_conj, [torch.cfloat], resolve_conj_input_fn),
+    # FFT Operations
+    ("fft_ifft2", torch.fft.ifft2, [torch.complex64], fft_ifft2_input_fn),
 ]
 
 
