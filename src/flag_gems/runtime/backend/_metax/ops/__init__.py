@@ -10,6 +10,7 @@ from .index import index
 from .index_put import index_put, index_put_
 from .index_select import index_select
 from .isin import isin
+from .linalg_slogdet import _linalg_slogdet_aten, linalg_slogdet
 from .log_softmax import log_softmax, log_softmax_backward
 from .masked_fill import masked_fill, masked_fill_
 from .min import min, min_dim
@@ -30,6 +31,7 @@ from .zeros import zeros
 from .zeros_like import zeros_like
 
 __all__ = [
+    "_linalg_slogdet_aten",
     "_unique2",
     "addmm",
     "amax",
@@ -45,6 +47,7 @@ __all__ = [
     "index_put_",
     "index_select",
     "isin",
+    "linalg_slogdet",
     "log_softmax",
     "log_softmax_backward",
     "masked_fill",
