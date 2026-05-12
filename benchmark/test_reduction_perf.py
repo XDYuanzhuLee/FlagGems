@@ -475,6 +475,88 @@ def test_perf_max_pool2d_backward():
     bench.run()
 
 
+# 3D Max Pooling Benchmark
+def max_pool3d_input_fn(shape, dtype, device):
+    inp = generate_tensor_input(shape, dtype, device)
+    yield inp, {
+        "kernel_size": 3,
+        "stride": 2,
+        "padding": 1,
+        "dilation": 1,
+        "ceil_mode": False,
+    }
+    if Config.bench_level == BenchLevel.COMPREHENSIVE:
+        # Non-square kernel/stride/padding
+        if shape[-3] > 5 and shape[-2] > 5 and shape[-1] > 5:
+            yield inp, {
+                "kernel_size": (3, 3, 3),
+                "stride": (2, 2, 2),
+                "padding": (1, 1, 1),
+                "dilation": 1,
+                "ceil_mode": False,
+            }
+        # With dilation
+        yield inp, {
+            "kernel_size": 3,
+            "stride": 1,
+            "padding": 1,
+            "dilation": 2,
+            "ceil_mode": False,
+        }
+        # With ceil_mode
+        yield inp, {
+            "kernel_size": 3,
+            "stride": 2,
+            "padding": 1,
+            "dilation": 1,
+            "ceil_mode": True,
+        }
+
+
+class MaxPool3dBenchmark(GenericBenchmark):
+    def get_input_iter(self, cur_dtype) -> Generator:
+        shapes_5d = [
+            (4, 3, 16, 32, 32),  # Typical 3D input
+            (8, 16, 8, 16, 16),  # Mid layer output
+            (2, 32, 4, 16, 16),  # Later layer output
+        ]
+
+        for shape in shapes_5d:
+            yield from self.input_fn(shape, cur_dtype, self.device)
+
+
+@pytest.mark.max_pool3d_with_indices_backward
+def test_perf_max_pool3d_with_indices_backward():
+    def max_pool3d_backward_input_fn(shape, dtype, device):
+        for forward_args in max_pool3d_input_fn(shape, dtype, device):
+            inp, params = forward_args
+            inp.requires_grad_(True)
+            # Use torch forward to get indices
+            output, indices = torch.nn.functional.max_pool3d_with_indices(inp, **params)
+            grad_output = torch.randn_like(output)
+            # Yield as tuple: (grad_output, input, indices, params_dict)
+            yield (grad_output, inp, indices, params)
+
+    def torch_max_pool3d_backward_wrapper(grad_output, input, indices, **kwargs):
+        # For torch baseline, we use torch forward to get compatible indices
+        output, _ = torch.nn.functional.max_pool3d_with_indices(input, **kwargs)
+        grad_input = torch.autograd.grad(
+            outputs=(output,), inputs=(input,), grad_outputs=(grad_output,)
+        )
+        return grad_input[0]
+
+    bench = MaxPool3dBenchmark(
+        input_fn=max_pool3d_backward_input_fn,
+        op_name="max_pool3d_with_indices_backward",
+        torch_op=torch_max_pool3d_backward_wrapper,
+        dtypes=FLOAT_DTYPES,
+        is_backward=False,
+    )
+
+    bench.set_gems(flag_gems.max_pool3d_with_indices_backward)
+    bench.run()
+
+
 @pytest.mark.dot
 def test_perf_dot():
     def dot_input_fn(shape, dtype, device):

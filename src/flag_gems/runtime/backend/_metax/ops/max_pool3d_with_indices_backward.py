@@ -232,12 +232,12 @@ def max_pool3d_backward_kernel(
 def max_pool3d_with_indices_backward(
     grad_output: torch.Tensor,
     self: torch.Tensor,
+    indices: torch.Tensor,
     kernel_size,
     stride,
     padding,
     dilation,
     ceil_mode: bool,
-    indices: torch.Tensor,
 ):
     logger.debug("METAX GEMS MAX_POOL3D_WITH_INDICES_BACKWARD")
 
