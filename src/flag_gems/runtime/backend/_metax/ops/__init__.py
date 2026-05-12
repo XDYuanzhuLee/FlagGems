@@ -13,6 +13,7 @@ from .isin import isin
 from .log_softmax import log_softmax, log_softmax_backward
 from .masked_fill import masked_fill, masked_fill_
 from .min import min, min_dim
+from .max_unpool3d import max_unpool3d
 from .mm import mm, mm_out
 from .nonzero import nonzero
 from .ones import ones
@@ -49,6 +50,7 @@ __all__ = [
     "log_softmax_backward",
     "masked_fill",
     "masked_fill_",
+    "max_unpool3d",
     "min_dim",
     "min",
     "mm",
