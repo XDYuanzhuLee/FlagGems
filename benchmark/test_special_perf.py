@@ -1467,3 +1467,56 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+# Benchmark for embeddingSpMDM operator
+class EmbeddingSpMDMBenchmark(GenericBenchmark2DOnly):
+    def set_more_shapes(self):
+        return None
+
+
+def embedding_spdm_input_fn(shape, dtype, device):
+    """Input function for embeddingSpMDM benchmark."""
+    num_embeddings, embedding_dim = shape
+    indices = torch.randint(0, num_embeddings, (num_embeddings,), device=device)
+    weight = torch.randn((num_embeddings, embedding_dim), device=device, dtype=dtype)
+    # Return as a tuple (weight, indices) to match the function signature
+    yield weight, indices
+
+
+def embedding_spdm_backward_input_fn(shape, dtype, device):
+    """Input function for embeddingSpMDM backward benchmark."""
+    num_embeddings, embedding_dim = shape
+    indices = torch.randint(0, num_embeddings, (num_embeddings,), device=device)
+    # weight needs requires_grad=True for backward pass
+    weight = torch.randn((num_embeddings, embedding_dim), device=device, dtype=dtype, requires_grad=True)
+    # Forward pass to get output
+    output = torch.nn.functional.embedding(indices, weight)
+    grad_output = torch.randn_like(output)
+    # Return as tuple: (grad_output, indices, num_weights)
+    yield grad_output, indices, num_embeddings
+
+
+@pytest.mark.skipif(
+    (not torch.cuda.is_available()) or (flag_gems.device != "cuda"),
+    reason="CUDA backend is not available for this benchmark.",
+)
+@pytest.mark.embeddingSpMDM
+@pytest.mark.performance
+def test_perf_embeddingSpMDM():
+    from flag_gems.runtime.backend._metax.ops import embedding_spdm
+
+    bench = EmbeddingSpMDMBenchmark(
+        input_fn=embedding_spdm_input_fn,
+        op_name="embeddingSpMDM",
+        torch_op=embedding_spdm,
+        dtypes=[
+            torch.float32,
+            torch.float16,
+        ],
+    )
+    bench.run()
+
+
+# Note: embedding_spdm_backward is a standalone function, not an autograd Function
+# So it's tested separately in accuracy tests rather than in the performance benchmark
