@@ -2777,3 +2777,31 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+# Test for special_shifted_chebyshev_polynomial_w
+# Note: PyTorch only supports float32 and float64 for this operator
+@pytest.mark.special_shifted_chebyshev_polynomial_w
+@pytest.mark.parametrize("shape", SPECIAL_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+def test_accuracy_special_shifted_chebyshev_polynomial_w(shape, dtype):
+    """Test accuracy for special_shifted_chebyshev_polynomial_w."""
+    torch.manual_seed(0)
+    torch.cuda.manual_seed_all(0)
+
+    # Generate random input x in valid range [-1, 1]
+    # The shifted Chebyshev polynomial is typically evaluated in [0, 1]
+    x = torch.rand(shape, dtype=dtype, device=flag_gems.device) * 2 - 1  # range [-1, 1]
+
+    # n can be a scalar tensor or a tensor with same shape as x
+    # For simplicity, we test with small integer degrees
+    n = torch.randint(0, 5, shape, dtype=torch.int32, device=flag_gems.device)
+
+    ref_x = to_reference(x)
+    ref_n = to_reference(n)
+    ref_out = torch.special.shifted_chebyshev_polynomial_w(ref_x, ref_n)
+
+    with flag_gems.use_gems():
+        res_out = torch.special.shifted_chebyshev_polynomial_w(x, n)
+
+    gems_assert_close(res_out, ref_out, dtype)
