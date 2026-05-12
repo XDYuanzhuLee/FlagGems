@@ -1467,3 +1467,35 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+# FFT shapes for benchmark
+FFT_RFFT2_SHAPES = [
+    (16, 16),
+    (32, 32),
+    (64, 64),
+    (128, 64),
+    (64, 128),
+]
+
+
+class FFT_RFFT2_Benchmark(Benchmark):
+    def set_shapes(self, shape_file_path=None):
+        self.shapes = FFT_RFFT2_SHAPES
+
+    def get_input_iter(self, cur_dtype):
+        for shape in self.shapes:
+            x = torch.randn(shape, dtype=cur_dtype, device=self.device)
+            yield x,
+
+
+@pytest.mark.fft_rfft2
+def test_perf_fft_rfft2():
+    from flag_gems.runtime.backend._metax.ops import fft_rfft2 as metax_fft_rfft2
+
+    bench = FFT_RFFT2_Benchmark(
+        op_name="fft_rfft2",
+        torch_op=metax_fft_rfft2,
+        dtypes=[torch.float32],
+    )
+    bench.run()
