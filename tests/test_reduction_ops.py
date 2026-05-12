@@ -1665,6 +1665,64 @@ def test_accuracy_max_pool2d_backward(
     gems_assert_close(res_in_grad, ref_in_grad, dtype)
 
 
+MAXPOOL3D_CONFIGS = [
+    # Classic case: 3x3x3 kernel, stride 2, padding 1
+    ((4, 3, 8, 16, 16), 3, 2, 1, 1, False),
+    # Non-square kernel and stride
+    ((2, 8, 14, 14, 14), (3, 3, 3), (2, 2, 2), 1, 1, False),
+    # Test ceil_mode
+    ((2, 3, 10, 16, 16), 3, 2, 0, 1, True),
+    # Test different dilation
+    ((2, 3, 8, 16, 16), 3, 1, 1, 2, False),
+    # Small input
+    ((1, 1, 4, 4, 4), 2, 2, 0, 1, False),
+]
+
+
+@pytest.mark.max_pool3d_with_indices_backward
+@pytest.mark.parametrize(
+    "shape, kernel_size, stride, padding, dilation, ceil_mode", MAXPOOL3D_CONFIGS
+)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_max_pool3d_with_indices_backward(
+    shape, kernel_size, stride, padding, dilation, ceil_mode, dtype
+):
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device, requires_grad=True)
+    ref_inp = to_reference(inp, upcast=True)
+    # Use torch.nn.functional for forward pass to get indices
+    ref_out, ref_indices = torch.nn.functional.max_pool3d_with_indices(
+        ref_inp,
+        kernel_size=kernel_size,
+        stride=stride,
+        padding=padding,
+        dilation=dilation,
+        ceil_mode=ceil_mode,
+    )
+    res_out, res_indices = torch.nn.functional.max_pool3d_with_indices(
+        inp,
+        kernel_size=kernel_size,
+        stride=stride,
+        padding=padding,
+        dilation=dilation,
+        ceil_mode=ceil_mode,
+    )
+    out_grad = torch.randn_like(res_out, device=flag_gems.device)
+    ref_grad = to_reference(out_grad, upcast=True)
+    (ref_in_grad,) = torch.autograd.grad(ref_out, ref_inp, ref_grad)
+    res_in_grad = flag_gems.max_pool3d_with_indices_backward(
+        out_grad,
+        inp,
+        kernel_size=kernel_size,
+        stride=stride,
+        padding=padding,
+        dilation=dilation,
+        ceil_mode=ceil_mode,
+        indices=res_indices,
+    )
+
+    gems_assert_close(res_in_grad, ref_in_grad, dtype)
+
+
 INDEX_PUT_SHAPE_ACC_FALSE = (
     ((2**28,), ((2**16,),), (2**16,), False),
     ((32, 32), ((8,), (8,)), (8,), False),
