@@ -562,3 +562,64 @@ def test_accuracy_addr(M, N, dtype):
         res_out = torch.addr(input_tensor, vec1, vec2, alpha=alpha, beta=beta)
 
     gems_assert_close(res_out, ref_out, dtype, equal_nan=True)
+
+
+# Shapes for linalg_inv - square matrices (*, n, n)
+if QUICK_MODE:
+    SQUARE_SHAPES = [
+        (32, 32),
+    ]
+else:
+    SQUARE_SHAPES = [
+        (32, 32),
+        (128, 128),
+        (512, 512),
+        (1024, 1024),
+    ]
+
+
+@pytest.mark.linalg_inv
+@pytest.mark.parametrize("shape", SQUARE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_linalg_inv(shape, dtype):
+    # Create an invertible matrix
+    # For numerical stability, we create a matrix with a known inverse
+    # by starting with identity and adding random noise
+    if flag_gems.vendor_name == "metax":
+        torch.manual_seed(42)
+
+    # Generate a random square matrix
+    A = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    # Make it more likely to be invertible by adding identity
+    A = A + torch.eye(shape[-1], dtype=dtype, device=flag_gems.device) * shape[-1]
+
+    ref_A = to_reference(A, True)
+
+    ref_out = torch.linalg.inv(ref_A)
+    with flag_gems.use_gems():
+        res_out = torch.linalg.inv(A)
+
+    gems_assert_close(res_out, ref_out, dtype, equal_nan=True)
+
+
+@pytest.mark.linalg_inv
+@pytest.mark.parametrize("shape", SQUARE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_linalg_inv_batched(shape, dtype):
+    # Test batched matrix inverse (*, n, n)
+    if flag_gems.vendor_name == "metax":
+        torch.manual_seed(42)
+
+    # Create batched square matrices
+    batch_shape = (4,)  # batch of 4 matrices
+    A = torch.randn(batch_shape + shape, dtype=dtype, device=flag_gems.device)
+    # Make them more likely to be invertible
+    A = A + torch.eye(shape[-1], dtype=dtype, device=flag_gems.device) * shape[-1]
+
+    ref_A = to_reference(A, True)
+
+    ref_out = torch.linalg.inv(ref_A)
+    with flag_gems.use_gems():
+        res_out = torch.linalg.inv(A)
+
+    gems_assert_close(res_out, ref_out, dtype, equal_nan=True)
