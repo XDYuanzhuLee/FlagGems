@@ -2777,3 +2777,87 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+# Reference implementation for weight_int8pack_mm (used when PyTorch doesn't have CUDA impl)
+def reference_weight_int8pack_mm(weight_packed, mat2, scales):
+    """
+    Reference implementation of weight-int8pack matrix multiplication.
+
+    Args:
+        weight_packed: Packed int8 weight tensor of shape (M, K//2)
+        mat2: Activation tensor of shape (K, N)
+        scales: Scale tensor of shape (M,)
+
+    Returns:
+        Output tensor of shape (M, N)
+    """
+    M, K2 = weight_packed.shape
+    K = K2 * 2
+    N = mat2.shape[1]
+
+    # Unpack the int8 weights to float32
+    weight = torch.zeros((M, K), dtype=torch.float32, device=weight_packed.device)
+
+    # Extract low nibble (bits 0-3)
+    low_nibble = (weight_packed & 0x0F).to(torch.float32)
+    # Extract high nibble (bits 4-7)
+    high_nibble = ((weight_packed >> 4) & 0x0F).to(torch.float32)
+
+    # Fill in unpacked weights
+    # Even columns: low nibble, Odd columns: high nibble
+    for j in range(K):
+        if j % 2 == 0:
+            weight[:, j] = low_nibble[:, j // 2]
+        else:
+            weight[:, j] = high_nibble[:, j // 2]
+
+    # Apply scales (per-row scaling)
+    weight = weight * scales.unsqueeze(1)
+
+    # Matrix multiplication
+    output = torch.mm(weight, mat2)
+
+    return output
+
+
+# Test shapes for weight_int8pack_mm
+WEIGHT_INT8PACK_MM_SHAPES = [
+    (16, 32, 64),   # (M, K, N)
+    (32, 64, 128),
+    (64, 128, 256),
+    (128, 256, 128),
+]
+
+
+@pytest.mark._weight_int8pack_mm
+@pytest.mark.parametrize("M, K, N", WEIGHT_INT8PACK_MM_SHAPES)
+def test_accuracy_weight_int8pack_mm(M, K, N):
+    """Test weight_int8pack_mm accuracy against reference implementation"""
+    torch.manual_seed(42)
+    torch.cuda.manual_seed(42)
+
+    # Create packed int8 weight (M, K//2)
+    # Values should be in range 0-15 (4-bit)
+    weight_packed = torch.randint(0, 256, (M, K // 2), dtype=torch.int8, device=flag_gems.device)
+
+    # Create activation (K, N) - float16
+    mat2 = torch.randn(K, N, dtype=torch.float16, device=flag_gems.device)
+
+    # Create scales (M,) - float16
+    scales = torch.randn(M, dtype=torch.float16, device=flag_gems.device)
+
+    # Compute reference using CPU implementation
+    weight_packed_cpu = weight_packed.cpu()
+    mat2_cpu = mat2.cpu()
+    scales_cpu = scales.cpu()
+
+    ref_output = reference_weight_int8pack_mm(weight_packed_cpu, mat2_cpu, scales_cpu)
+    ref_output = ref_output.to(flag_gems.device)
+
+    # Compute using FlagGems implementation
+    with flag_gems.use_gems():
+        res_output = flag_gems._weight_int8pack_mm(weight_packed, mat2, scales)
+
+    # Compare results with appropriate tolerance for float16
+    gems_assert_close(res_output, ref_output, torch.float16, rtol=1e-3, atol=1e-3)

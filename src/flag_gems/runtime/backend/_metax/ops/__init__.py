@@ -26,11 +26,13 @@ from .sigmoid import sigmoid
 from .tanh import tanh
 from .unique import _unique2
 from .upsample_nearest2d import upsample_nearest2d
+from ._weight_int8pack_mm import _weight_int8pack_mm
 from .zeros import zeros
 from .zeros_like import zeros_like
 
 __all__ = [
     "_unique2",
+    "_weight_int8pack_mm",
     "addmm",
     "amax",
     "arange",
