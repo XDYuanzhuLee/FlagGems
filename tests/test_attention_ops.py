@@ -1771,3 +1771,70 @@ def test_scheduler_metadata_correctness(
         )
 
     gems_assert_close(gems_metadata, ref_metadata, dtype=torch.int32)
+
+
+@pytest.mark.flash_decoding
+@pytest.mark.parametrize(
+    "batch, num_q_head, num_kv_head, q_seq_len, kv_seq_len, head_size",
+    [
+        (4, 8, 8, 1024, 1024, 64),
+        (4, 8, 8, 1024, 1024, 128),
+        (2, 4, 4, 512, 512, 128),
+        (2, 4, 2, 1024, 1024, 64),
+        (1, 2, 2, 2048, 2048, 32),
+    ],
+)
+@pytest.mark.parametrize("is_causal", [False, True])
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_accuracy_flash_decoding(
+    batch,
+    num_q_head,
+    num_kv_head,
+    q_seq_len,
+    kv_seq_len,
+    head_size,
+    is_causal,
+    dtype,
+):
+    """
+    Test accuracy for FlashDecoding operator.
+    """
+    device = torch_device_fn.current_device()
+
+    # Create input tensors
+    q = torch.randn(
+        batch, num_q_head, q_seq_len, head_size,
+        dtype=dtype, device=device
+    ).uniform_(-0.05, 0.05)
+    k = torch.randn(
+        batch, num_kv_head, kv_seq_len, head_size,
+        dtype=dtype, device=device
+    ).uniform_(-0.05, 0.05)
+    v = torch.randn(
+        batch, num_kv_head, kv_seq_len, head_size,
+        dtype=dtype, device=device
+    ).uniform_(-0.05, 0.05)
+
+    # Reference implementation using torch.nn.functional.scaled_dot_product_attention
+    ref_q = to_reference(q)
+    ref_k = to_reference(k)
+    ref_v = to_reference(v)
+
+    scale = float(1.0 / (head_size ** 0.5))
+
+    # Compute reference result
+    ref_out = torch.nn.functional.scaled_dot_product_attention(
+        ref_q, ref_k, ref_v,
+        scale=scale,
+        is_causal=is_causal,
+    )
+
+    # Compute GEMS result using FlashDecoding (metax backend)
+    from flag_gems.runtime.backend._metax.ops import flash_decoding
+    gems_out = flash_decoding(
+        q, k, v,
+        scale=scale,
+        is_causal=is_causal,
+    )
+
+    gems_assert_close(gems_out, ref_out, dtype)

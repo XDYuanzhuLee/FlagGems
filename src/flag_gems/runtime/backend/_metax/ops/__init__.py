@@ -3,6 +3,7 @@ from .amax import amax
 from .arange import arange, arange_start
 from .bmm import bmm
 from .exponential_ import exponential_
+from .FlashDecoding import flash_decoding, flash_decoding_forward
 from .full import full
 from .full_like import full_like
 from .groupnorm import group_norm
@@ -37,6 +38,8 @@ __all__ = [
     "arange_start",
     "bmm",
     "exponential_",
+    "flash_decoding",
+    "flash_decoding_forward",
     "full",
     "full_like",
     "group_norm",
