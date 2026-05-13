@@ -1467,3 +1467,40 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+# Benchmark for weight_int8pack_mm
+WEIGHT_INT8PACK_MM_SHAPES = [
+    (16, 32, 64),   # (M, K, N)
+    (32, 64, 128),
+    (64, 128, 256),
+    (128, 256, 128),
+    (256, 512, 256),
+]
+
+
+class WeightInt8PackMMBenchmark(Benchmark):
+    def set_shapes(self, shape_file_path=None):
+        self.shapes = WEIGHT_INT8PACK_MM_SHAPES
+
+    def get_input_iter(self, cur_dtype):
+        for shape in self.shapes:
+            M, K, N = shape
+            # Create packed int8 weight (M, K//2)
+            weight_base = torch.zeros(M, K // 2, dtype=torch.uint8, device=self.device)
+            weight_packed = torch.randint_like(weight_base, 0, 256).to(torch.int8)
+            # Create activation (K, N) - use float16
+            mat2 = torch.randn(K, N, dtype=torch.float16, device=self.device)
+            # Create scales (M,) - use float16
+            scales = torch.randn(M, dtype=torch.float16, device=self.device)
+            yield weight_packed, mat2, scales
+
+
+@pytest.mark._weight_int8pack_mm
+def test_perf_weight_int8pack_mm():
+    bench = WeightInt8PackMMBenchmark(
+        op_name="_weight_int8pack_mm",
+        torch_op=flag_gems._weight_int8pack_mm,
+        dtypes=[torch.float16],
+    )
+    bench.run()
