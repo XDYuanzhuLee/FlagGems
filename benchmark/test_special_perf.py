@@ -1467,3 +1467,46 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+# LDL Factor shapes for benchmark
+LDL_FACTOR_SHAPES = [
+    (4, 4),
+    (8, 8),
+    (16, 16),
+    (32, 32),
+    (64, 64),
+    (128, 128),
+    (256, 256),
+]
+
+
+def make_symmetric_matrix(n, dtype, device):
+    """Create a symmetric positive definite matrix for LDL factorization."""
+    A = torch.randn(n, n, dtype=dtype, device=device)
+    A = (A + A.T) / 2  # Make symmetric
+    A = A + n * torch.eye(n, dtype=dtype, device=device)  # Make positive definite
+    return A
+
+
+class LdLFactorExBenchmark(Benchmark):
+    def set_shapes(self, shape_file_path=None):
+        self.shapes = LDL_FACTOR_SHAPES
+
+    def get_input_iter(self, cur_dtype):
+        for shape in self.shapes:
+            n = shape[0]
+            A = make_symmetric_matrix(n, cur_dtype, self.device)
+            # Return as tuple with A as tensor and kwargs as dict
+            yield (A, {"hermitian": False, "check_errors": False})
+
+
+@pytest.mark.linalg_ldl_factor_ex
+def test_perf_linalg_ldl_factor_ex():
+    bench = LdLFactorExBenchmark(
+        op_name="linalg_ldl_factor_ex",
+        torch_op=torch.linalg.ldl_factor_ex,
+        dtypes=[torch.float32],  # float16 not supported by torch on GPU
+    )
+    bench.set_gems(flag_gems.ldl_factor_ex)
+    bench.run()
