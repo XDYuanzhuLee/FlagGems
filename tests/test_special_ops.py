@@ -2777,3 +2777,16 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark._pin_memory
+@pytest.mark.parametrize("shape", SPECIAL_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy__pin_memory(shape, dtype):
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+    ref_out = torch._pin_memory(ref_inp)
+    with flag_gems.use_gems():
+        res_out = torch._pin_memory(inp)
+    # For GPU tensors, _pin_memory should return the same tensor
+    gems_assert_equal(res_out, ref_out, dtype)
