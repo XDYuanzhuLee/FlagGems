@@ -2,6 +2,7 @@ from .addmm import addmm
 from .amax import amax
 from .arange import arange, arange_start
 from .bmm import bmm
+from .batch_norm import batch_norm, batch_norm_backward
 from .exponential_ import exponential_
 from .full import full
 from .full_like import full_like
@@ -36,6 +37,8 @@ __all__ = [
     "arange",
     "arange_start",
     "bmm",
+    "batch_norm",
+    "batch_norm_backward",
     "exponential_",
     "full",
     "full_like",
