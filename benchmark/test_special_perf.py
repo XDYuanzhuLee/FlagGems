@@ -1467,3 +1467,38 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+# _scaled_dot_product_attention_math_for_mps benchmark
+def scaled_dot_product_attention_math_for_mps_input_fn(shape, dtype, device):
+    batch, heads, seq_len, head_dim = shape
+    query = torch.randn(batch, heads, seq_len, head_dim, dtype=dtype, device=device)
+    key = torch.randn(batch, heads, seq_len, head_dim, dtype=dtype, device=device)
+    value = torch.randn(batch, heads, seq_len, head_dim, dtype=dtype, device=device)
+    yield query, key, value
+
+
+class ScaledDotProductAttentionMathForMpsBenchmark(GenericBenchmark):
+    def set_shapes(self, shape_file_path=None):
+        self.shapes = [
+            (2, 4, 16, 32),
+            (1, 8, 32, 64),
+            (4, 4, 64, 32),
+            (2, 8, 128, 64),
+            (1, 16, 256, 64),
+        ]
+
+    def set_more_shapes(self):
+        return None
+
+
+@pytest.mark.scaled_dot_product_attention_math_for_mps
+def test_perf__scaled_dot_product_attention_math_for_mps():
+    bench = ScaledDotProductAttentionMathForMpsBenchmark(
+        op_name="_scaled_dot_product_attention_math_for_mps",
+        torch_op=lambda q, k, v: torch._scaled_dot_product_attention_math(q, k, v),
+        dtypes=FLOAT_DTYPES,
+        input_fn=scaled_dot_product_attention_math_for_mps_input_fn,
+    )
+    bench.set_gems(flag_gems._scaled_dot_product_attention_math_for_mps)
+    bench.run()
