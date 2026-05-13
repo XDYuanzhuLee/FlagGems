@@ -2777,3 +2777,82 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+# Test shapes for sparse semi-structured linear
+SPARSE_LINEAR_SHAPES = [
+    (16, 32),
+    (32, 64),
+    (64, 128),
+    (128, 256),
+]
+
+
+@pytest.mark.sparse_semi_structured_linear
+@pytest.mark.parametrize("M, K", SPARSE_LINEAR_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float16, torch.float32])
+def test_accuracy__sparse_semi_structured_linear(M, K, dtype):
+    """Test for sparse semi-structured linear layer.
+
+    Note: PyTorch's _sparse_semi_structured_linear requires CUTLASS which is
+    not available on Metax. We use a dense reference for comparison - treating
+    the weight as if all elements are valid (mask=1 everywhere).
+    """
+    if flag_gems.vendor_name == "metax":
+        N = K  # output features
+
+        # Use fixed seed for reproducibility
+        torch.manual_seed(12345)
+        input = torch.randn(M, K, dtype=dtype, device=flag_gems.device)
+        weight = torch.randn(N, K, dtype=dtype, device=flag_gems.device)
+        meta = torch.ones(N // 4, K, dtype=torch.int8, device=flag_gems.device)
+
+        # Save tensors for later
+        input_copy = input.clone()
+        weight_copy = weight.clone()
+
+        # Compute both reference and result inside use_gems() context
+        # to ensure they use the same operator implementations
+        with flag_gems.use_gems():
+            # Reference: dense matmul (treating weight as dense)
+            ref_out = torch.matmul(input_copy, weight_copy.t())
+
+            # Result from FlagGems
+            res_out = torch._sparse_semi_structured_linear(input, weight, meta)
+
+        # Compare
+        gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.sparse_semi_structured_linear
+@pytest.mark.parametrize("M, K", [(32, 64)])
+@pytest.mark.parametrize("dtype", [torch.float16, torch.float32])
+def test_accuracy__sparse_semi_structured_linear_with_bias(M, K, dtype):
+    """Test sparse semi-structured linear with bias."""
+    if flag_gems.vendor_name == "metax":
+        N = K
+
+        # Use fixed seed for reproducibility
+        torch.manual_seed(12345)
+        input = torch.randn(M, K, dtype=dtype, device=flag_gems.device)
+        weight = torch.randn(N, K, dtype=dtype, device=flag_gems.device)
+        bias = torch.randn(N, dtype=dtype, device=flag_gems.device)
+        meta = torch.ones(N // 4, K, dtype=torch.int8, device=flag_gems.device)
+
+        # Save copies for reference
+        input_copy = input.clone()
+        weight_copy = weight.clone()
+        bias_copy = bias.clone()
+
+        # Compute both inside use_gems() context
+        with flag_gems.use_gems():
+            # Reference: dense matmul + bias
+            ref_out = torch.matmul(input_copy, weight_copy.t()) + bias_copy
+
+            # Result from FlagGems
+            res_out = torch._sparse_semi_structured_linear(
+                input, weight, meta, bias=bias
+            )
+
+        # Compare
+        gems_assert_close(res_out, ref_out, dtype)
