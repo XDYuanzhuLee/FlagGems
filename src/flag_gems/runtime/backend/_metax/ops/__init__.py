@@ -2,6 +2,7 @@ from .addmm import addmm
 from .amax import amax
 from .arange import arange, arange_start
 from .bmm import bmm
+from .embeddingSpMDMGrad import embedding_spdm_grad
 from .exponential_ import exponential_
 from .full import full
 from .full_like import full_like
@@ -36,6 +37,7 @@ __all__ = [
     "arange",
     "arange_start",
     "bmm",
+    "embedding_spdm_grad",
     "exponential_",
     "full",
     "full_like",
