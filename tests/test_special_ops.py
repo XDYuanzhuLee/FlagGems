@@ -2777,3 +2777,63 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+# _scaled_dot_product_attention_math_for_mps tests
+SDPA_SHAPES = [
+    (2, 4, 16, 32),  # batch, heads, seq_len, head_dim
+    (1, 8, 32, 64),
+    (4, 4, 64, 32),
+]
+
+
+@pytest.mark.scaled_dot_product_attention_math_for_mps
+@pytest.mark.parametrize("shape", SDPA_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+@pytest.mark.parametrize("is_causal", [False, True])
+def test_accuracy__scaled_dot_product_attention_math_for_mps(shape, dtype, is_causal):
+    batch, heads, seq_len, head_dim = shape
+
+    # Create Q, K, V tensors
+    query = torch.randn(batch, heads, seq_len, head_dim, dtype=dtype, device=flag_gems.device)
+    key = torch.randn(batch, heads, seq_len, head_dim, dtype=dtype, device=flag_gems.device)
+    value = torch.randn(batch, heads, seq_len, head_dim, dtype=dtype, device=flag_gems.device)
+
+    # Reference implementation using flag_gems.scaled_dot_product_attention
+    # (which is what our Metax implementation delegates to)
+    ref_out = flag_gems.scaled_dot_product_attention(
+        query, key, value, is_causal=is_causal
+    )
+
+    # Test our Metax specialized implementation
+    res_out = flag_gems._scaled_dot_product_attention_math_for_mps(
+        query, key, value, is_causal=is_causal
+    )
+
+    gems_assert_close(res_out, ref_out, dtype, reduce_dim=1)
+
+
+@pytest.mark.scaled_dot_product_attention_math_for_mps
+@pytest.mark.parametrize("dtype", [torch.float16, torch.float32])
+def test_accuracy__scaled_dot_product_attention_math_for_mps_with_attn_mask(dtype):
+    batch, heads, seq_len, head_dim = 2, 4, 16, 32
+
+    # Create Q, K, V tensors
+    query = torch.randn(batch, heads, seq_len, head_dim, dtype=dtype, device=flag_gems.device)
+    key = torch.randn(batch, heads, seq_len, head_dim, dtype=dtype, device=flag_gems.device)
+    value = torch.randn(batch, heads, seq_len, head_dim, dtype=dtype, device=flag_gems.device)
+
+    # Create attention mask
+    attn_mask = torch.zeros(batch, heads, seq_len, seq_len, dtype=dtype, device=flag_gems.device)
+
+    # Reference implementation using flag_gems.scaled_dot_product_attention
+    ref_out = flag_gems.scaled_dot_product_attention(
+        query, key, value, attn_mask=attn_mask
+    )
+
+    # Test our Metax specialized implementation
+    res_out = flag_gems._scaled_dot_product_attention_math_for_mps(
+        query, key, value, attn_mask=attn_mask
+    )
+
+    gems_assert_close(res_out, ref_out, dtype, reduce_dim=1)
