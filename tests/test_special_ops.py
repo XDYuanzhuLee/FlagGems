@@ -2777,3 +2777,132 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark._fused_adam_
+@pytest.mark.parametrize("shape", SPECIAL_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy__fused_adam_(shape, dtype):
+    # Import the metax implementation as the reference
+    from flag_gems.runtime.backend._metax.ops import _fused_adam_ as metax_fused_adam_
+
+    # Create test tensors
+    param = torch.randn(shape, dtype=dtype, device=flag_gems.device, requires_grad=True)
+    grad = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    exp_avg = torch.zeros(shape, dtype=dtype, device=flag_gems.device)
+    exp_avg_sq = torch.zeros(shape, dtype=dtype, device=flag_gems.device)
+    max_exp_avg_sq = torch.zeros(shape, dtype=dtype, device=flag_gems.device)
+    state_step = torch.tensor(0, device=flag_gems.device)
+
+    # Store copies for reference (metax implementation)
+    ref_param = param.clone()
+    ref_grad = grad.clone()
+    ref_exp_avg = exp_avg.clone()
+    ref_exp_avg_sq = exp_avg_sq.clone()
+    ref_max_exp_avg_sq = max_exp_avg_sq.clone()
+
+    # Call metax implementation as reference
+    metax_fused_adam_(
+        [ref_param],
+        [ref_grad],
+        [ref_exp_avg],
+        [ref_exp_avg_sq],
+        [ref_max_exp_avg_sq],
+        [state_step],
+        lr=0.01,
+        beta1=0.9,
+        beta2=0.999,
+        weight_decay=0.0,
+        eps=1e-8,
+        amsgrad=False,
+        maximize=False
+    )
+
+    # Call gems implementation (through aten dispatcher)
+    with flag_gems.use_gems():
+        torch._fused_adam_(
+            [param],
+            [grad],
+            [exp_avg],
+            [exp_avg_sq],
+            [max_exp_avg_sq],
+            [state_step],
+            lr=0.01,
+            beta1=0.9,
+            beta2=0.999,
+            weight_decay=0.0,
+            eps=1e-8,
+            amsgrad=False,
+            maximize=False
+        )
+
+    # Compare results
+    gems_assert_close(param, ref_param, dtype)
+    gems_assert_close(grad, ref_grad, dtype)
+    gems_assert_close(exp_avg, ref_exp_avg, dtype)
+    gems_assert_close(exp_avg_sq, ref_exp_avg_sq, dtype)
+
+
+@pytest.mark._fused_adam_
+@pytest.mark.parametrize("shape", SPECIAL_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy__fused_adam_amsgrad(shape, dtype):
+    # Import the metax implementation as the reference
+    from flag_gems.runtime.backend._metax.ops import _fused_adam_ as metax_fused_adam_
+
+    # Create test tensors with amsgrad=True
+    param = torch.randn(shape, dtype=dtype, device=flag_gems.device, requires_grad=True)
+    grad = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    exp_avg = torch.zeros(shape, dtype=dtype, device=flag_gems.device)
+    exp_avg_sq = torch.zeros(shape, dtype=dtype, device=flag_gems.device)
+    max_exp_avg_sq = torch.zeros(shape, dtype=dtype, device=flag_gems.device)
+    state_step = torch.tensor(0, device=flag_gems.device)
+
+    # Store copies for reference (metax implementation)
+    ref_param = param.clone()
+    ref_grad = grad.clone()
+    ref_exp_avg = exp_avg.clone()
+    ref_exp_avg_sq = exp_avg_sq.clone()
+    ref_max_exp_avg_sq = max_exp_avg_sq.clone()
+
+    # Call metax implementation as reference with amsgrad=True
+    metax_fused_adam_(
+        [ref_param],
+        [ref_grad],
+        [ref_exp_avg],
+        [ref_exp_avg_sq],
+        [ref_max_exp_avg_sq],
+        [state_step],
+        lr=0.01,
+        beta1=0.9,
+        beta2=0.999,
+        weight_decay=0.0,
+        eps=1e-8,
+        amsgrad=True,
+        maximize=False
+    )
+
+    # Call gems implementation (through aten dispatcher) with amsgrad=True
+    with flag_gems.use_gems():
+        torch._fused_adam_(
+            [param],
+            [grad],
+            [exp_avg],
+            [exp_avg_sq],
+            [max_exp_avg_sq],
+            [state_step],
+            lr=0.01,
+            beta1=0.9,
+            beta2=0.999,
+            weight_decay=0.0,
+            eps=1e-8,
+            amsgrad=True,
+            maximize=False
+        )
+
+    # Compare results
+    gems_assert_close(param, ref_param, dtype)
+    gems_assert_close(grad, ref_grad, dtype)
+    gems_assert_close(exp_avg, ref_exp_avg, dtype)
+    gems_assert_close(exp_avg_sq, ref_exp_avg_sq, dtype)
+    gems_assert_close(max_exp_avg_sq, ref_max_exp_avg_sq, dtype)

@@ -33,6 +33,7 @@ _FULL_CONFIG = (
         "_functional_sym_constrain_range_for_size",
         _functional_sym_constrain_range_for_size,
     ),
+    ("_fused_adam_", _fused_adam_),
     ("_log_softmax", log_softmax),
     ("_log_softmax_backward_data", log_softmax_backward),
     ("_safe_softmax", _safe_softmax),
