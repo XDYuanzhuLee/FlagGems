@@ -168,3 +168,66 @@ def test_perf_conv3d():
     )
     bench.set_gems(flag_gems.conv3d)
     bench.run()
+
+
+class ConvTranspose2DBenchmark(GenericBenchmark):
+    def set_more_shapes(self):
+        # Return only custom shapes, don't use default shapes
+        return [
+            (4, 8, 16, 16, 16, 3, 3, 1, 0),
+            (2, 4, 32, 32, 8, 3, 3, 2, 1),
+            (1, 16, 64, 64, 32, 5, 5, 2, 2),
+            (4, 32, 16, 16, 64, 3, 3, 1, 1),
+            (2, 8, 8, 8, 16, 3, 3, 2, 0),
+        ]
+
+
+@pytest.mark.ConvTranspose
+def test_perf_conv_transpose2d():
+    def conv_transpose2d_input_fn(shape, dtype, device):
+        # Handle different shape formats
+        if len(shape) == 1:
+            # Skip default 1D shapes - they don't apply to conv_transpose2d
+            return
+            yield
+        elif len(shape) == 9:
+            (
+                batch,
+                input_c,
+                input_h,
+                input_w,
+                out_c,
+                kernel_h,
+                kernel_w,
+                stride,
+                padding,
+            ) = shape
+            input_shape = (batch, input_c, input_h, input_w)
+            weight_shape = (input_c, out_c, kernel_h, kernel_w)
+            input = torch.randn(size=input_shape, device=device, dtype=dtype)
+            weight = torch.randn(size=weight_shape, device=device, dtype=dtype)
+
+            yield {
+                "input": input,
+                "weight": weight,
+                "bias": None,
+                "stride": stride,
+                "padding": padding,
+                "output_padding": 0,
+                "groups": 1,
+                "dilation": 1,
+            },
+        else:
+            # Skip shapes with wrong number of elements
+            return
+            yield
+
+    torch.backends.cudnn.allow_tf32 = False
+    bench = ConvTranspose2DBenchmark(
+        input_fn=conv_transpose2d_input_fn,
+        op_name="conv_transpose2d",
+        torch_op=torch.nn.functional.conv_transpose2d,
+        dtypes=FLOAT_DTYPES,
+    )
+    bench.set_gems(flag_gems.conv_transpose2d)
+    bench.run()
