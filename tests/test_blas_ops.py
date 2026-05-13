@@ -562,3 +562,81 @@ def test_accuracy_addr(M, N, dtype):
         res_out = torch.addr(input_tensor, vec1, vec2, alpha=alpha, beta=beta)
 
     gems_assert_close(res_out, ref_out, dtype, equal_nan=True)
+
+
+# Test shapes for cholesky_solve_helper
+CHOLESKY_SOLVE_SHAPES = [
+    (4, 1),   # Small square matrix, single RHS
+    (4, 3),   # Small square matrix, multiple RHS
+    (16, 1),  # Medium square matrix, single RHS
+    (16, 4),  # Medium square matrix, multiple RHS
+    (32, 1),  # Large square matrix, single RHS
+    (32, 8),  # Large square matrix, multiple RHS
+]
+
+
+@pytest.mark.cholesky_solve_helper
+@pytest.mark.parametrize("N, K", CHOLESKY_SOLVE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+@pytest.mark.parametrize("upper", [False, True])
+def test_accuracy_cholesky_solve_helper(N, K, dtype, upper):
+    if flag_gems.vendor_name == "tsingmicro" and dtype == torch.float32:
+        pytest.skip("Skipping fp32 cholesky_solve_helper test on tsingmicro platform")
+
+    # Skip float16 and bfloat16 on metax due to backend limitation
+    if flag_gems.vendor_name == "metax" and dtype in [torch.float16, torch.bfloat16]:
+        pytest.skip("Skipping fp16/bf16 cholesky_solve_helper test on metax platform")
+
+    # Create a positive definite matrix
+    torch.manual_seed(0)
+    A = torch.randn(N, N, dtype=dtype, device=flag_gems.device)
+    A = A @ A.T + torch.eye(N, dtype=dtype, device=flag_gems.device) * 0.1
+
+    # Create right-hand side
+    b = torch.randn(N, K, dtype=dtype, device=flag_gems.device)
+
+    # Reference result
+    ref_A = to_reference(A, True)
+    ref_b = to_reference(b, True)
+    ref_out = torch.cholesky_solve(ref_b, ref_A, upper=upper)
+
+    # GEMS result
+    with flag_gems.use_gems():
+        res_out = torch.ops.aten._cholesky_solve_helper(b, A, upper)
+
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.cholesky_solve_helper
+@pytest.mark.parametrize("N, K", CHOLESKY_SOLVE_SHAPES[:2])
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_cholesky_solve_helper_batch(N, K, dtype):
+    """Test batched cholesky_solve_helper with 3D tensors"""
+    if flag_gems.vendor_name == "tsingmicro" and dtype == torch.float32:
+        pytest.skip("Skipping fp32 cholesky_solve_helper test on tsingmicro platform")
+
+    # Skip float16 and bfloat16 on metax due to backend limitation
+    if flag_gems.vendor_name == "metax" and dtype in [torch.float16, torch.bfloat16]:
+        pytest.skip("Skipping fp16/bf16 cholesky_solve_helper test on metax platform")
+
+    batch = 4
+    torch.manual_seed(0)
+
+    # Create batch of positive definite matrices
+    A = torch.randn(batch, N, N, dtype=dtype, device=flag_gems.device)
+    for i in range(batch):
+        A[i] = A[i] @ A[i].T + torch.eye(N, dtype=dtype, device=flag_gems.device) * 0.1
+
+    # Create batch of right-hand sides
+    b = torch.randn(batch, N, K, dtype=dtype, device=flag_gems.device)
+
+    # Reference result
+    ref_A = to_reference(A, True)
+    ref_b = to_reference(b, True)
+    ref_out = torch.cholesky_solve(ref_b, ref_A, upper=False)
+
+    # GEMS result
+    with flag_gems.use_gems():
+        res_out = torch.ops.aten._cholesky_solve_helper(b, A, False)
+
+    gems_assert_close(res_out, ref_out, dtype)

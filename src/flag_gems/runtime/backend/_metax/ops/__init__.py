@@ -1,3 +1,4 @@
+from ._cholesky_solve_helper import cholesky_solve_helper
 from .addmm import addmm
 from .amax import amax
 from .arange import arange, arange_start
@@ -36,6 +37,7 @@ __all__ = [
     "arange",
     "arange_start",
     "bmm",
+    "cholesky_solve_helper",
     "exponential_",
     "full",
     "full_like",
