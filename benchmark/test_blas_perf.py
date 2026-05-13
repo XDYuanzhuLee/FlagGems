@@ -112,6 +112,39 @@ class BaddbmmBenchmark(BlasBenchmark):
         return total_flops
 
 
+class AddbmmBenchmark(BlasBenchmark):
+    """
+    benchmark for Addbmm
+    """
+
+    def set_more_shapes(self):
+        model_shapes_list = model_shapes()
+
+        skip_shapes = [
+            (4, 8192, 128256, 4096),
+            (4, 8192, 152064, 3584),
+        ]
+
+        filtered = []
+        for shape in model_shapes_list:
+            if shape not in skip_shapes:
+                filtered.append(shape)
+
+        return filtered
+
+    def get_tflops(self, op, *args, **kwargs):
+        # shape(b,m,k)(b,k,n)
+        # addbmm reduces over batch dimension
+        # total_flops = b * m * n * (2 * k + 1)
+        total_flops = (
+            args[1].shape[0]
+            * args[1].shape[1]
+            * args[2].shape[2]
+            * (args[1].shape[2] * 2 + 1)
+        )
+        return total_flops
+
+
 def addmm_input_fn(b, m, n, k, cur_dtype, device, b_column_major):
     inp1 = torch.randn([m, k], dtype=cur_dtype, device=device)
     bias = torch.randn([m, n], dtype=cur_dtype, device=device)
@@ -149,6 +182,21 @@ def baddbmm_input_fn(b, m, n, k, cur_dtype, device, b_column_major):
     bias = torch.randn([b, m, n], dtype=cur_dtype, device=device, requires_grad=True)
 
     yield bias, inp1, inp2
+
+
+def addbmm_input_fn(b, m, n, k, cur_dtype, device, b_column_major):
+    # addbmm: input is 2D (m, n), batch1 is 3D (b, m, k), batch2 is 3D (b, k, n)
+    # result is 2D (m, n) = beta * input + alpha * sum(batch1_i @ batch2_i)
+    inp = torch.randn([m, n], dtype=cur_dtype, device=device, requires_grad=True)
+    inp1 = torch.randn([b, m, k], dtype=cur_dtype, device=device, requires_grad=True)
+
+    if b_column_major:
+        inp2 = torch.randn([b, n, k], dtype=cur_dtype, device=device, requires_grad=True)
+        inp2 = inp2.transpose(1, 2).contiguous()
+    else:
+        inp2 = torch.randn([b, k, n], dtype=cur_dtype, device=device, requires_grad=True)
+
+    yield inp, inp1, inp2
 
 
 def mm_input_fn(b, m, n, k, cur_dtype, device, b_column_major):
@@ -281,10 +329,17 @@ class W8A8BlockFP8MatmulBenchmark(Benchmark):
             BaddbmmBenchmark,
             marks=pytest.mark.baddbmm,
         ),
+        pytest.param(
+            "addbmm_",
+            torch.addbmm,
+            addbmm_input_fn,
+            AddbmmBenchmark,
+            marks=pytest.mark.addbmm_,
+        ),
     ],
 )
 def test_blas_benchmark(op_name, torch_op, input_fn, bench_cls):
-    if flag_gems.vendor_name == "mthreads" and op_name != "baddbmm":
+    if flag_gems.vendor_name == "mthreads" and op_name not in ("baddbmm", "addbmm_"):
         os.environ["MUSA_ENABLE_SQMMA"] = "1"
 
     bench = bench_cls(
@@ -292,7 +347,7 @@ def test_blas_benchmark(op_name, torch_op, input_fn, bench_cls):
     )
     bench.run()
 
-    if flag_gems.vendor_name == "mthreads" and op_name != "baddbmm":
+    if flag_gems.vendor_name == "mthreads" and op_name not in ("baddbmm", "addbmm_"):
         del os.environ["MUSA_ENABLE_SQMMA"]
 
 
