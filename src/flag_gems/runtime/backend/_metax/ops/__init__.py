@@ -6,6 +6,13 @@ from .exponential_ import exponential_
 from .full import full
 from .full_like import full_like
 from .groupnorm import group_norm
+from .__ior__ import (
+    bitwise_or_tensor,
+    bitwise_or_tensor_,
+    bitwise_or_scalar,
+    bitwise_or_scalar_,
+    bitwise_or_scalar_tensor,
+)
 from .index import index
 from .index_put import index_put, index_put_
 from .index_select import index_select
@@ -35,6 +42,11 @@ __all__ = [
     "amax",
     "arange",
     "arange_start",
+    "bitwise_or_scalar",
+    "bitwise_or_scalar_",
+    "bitwise_or_scalar_tensor",
+    "bitwise_or_tensor",
+    "bitwise_or_tensor_",
     "bmm",
     "exponential_",
     "full",
