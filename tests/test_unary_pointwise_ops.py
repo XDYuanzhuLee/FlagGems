@@ -2232,3 +2232,43 @@ def test_accuracy_special_i0e_out(shape, dtype):
         act_out = torch.ops.aten.special_i0e.out(x, out=out_act)
     gems_assert_close(act_out, ref_out, dtype)
     gems_assert_close(out_act, out_ref, dtype)
+
+
+@pytest.mark.special_modified_bessel_k0
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_special_modified_bessel_k0(shape, dtype):
+    # K0 is only defined for positive inputs
+    # Use positive random values starting from 0.2 to avoid invalid inputs
+    # and ensure good numerical stability
+    x = torch.abs(torch.randn(shape, dtype=dtype, device=flag_gems.device)) + 0.2
+    ref_x = to_reference(x)
+
+    ref_out = torch.special.modified_bessel_k0(ref_x)
+    res_out = flag_gems.special_modified_bessel_k0(x)
+
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.special_modified_bessel_k0
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_special_modified_bessel_k0_edge_cases(shape, dtype):
+    # Test edge cases: medium values and large values
+    # Use x >= 0.5 to ensure numerical stability
+    x = torch.ones(shape, dtype=dtype, device=flag_gems.device) * 0.5  # medium
+    ref_x = to_reference(x)
+
+    ref_out = torch.special.modified_bessel_k0(ref_x)
+    res_out = flag_gems.special_modified_bessel_k0(x)
+
+    gems_assert_close(res_out, ref_out, dtype)
+
+    # Test large values
+    x = torch.ones(shape, dtype=dtype, device=flag_gems.device) * 10.0
+    ref_x = to_reference(x)
+
+    ref_out = torch.special.modified_bessel_k0(ref_x)
+    res_out = flag_gems.special_modified_bessel_k0(x)
+
+    gems_assert_close(res_out, ref_out, dtype)
