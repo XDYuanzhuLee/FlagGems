@@ -2,6 +2,7 @@ from .addmm import addmm
 from .amax import amax
 from .arange import arange, arange_start
 from .bmm import bmm
+from .conv_transpose2d import conv_transpose1d, conv_transpose2d
 from .exponential_ import exponential_
 from .full import full
 from .full_like import full_like
@@ -36,6 +37,8 @@ __all__ = [
     "arange",
     "arange_start",
     "bmm",
+    "conv_transpose1d",
+    "conv_transpose2d",
     "exponential_",
     "full",
     "full_like",

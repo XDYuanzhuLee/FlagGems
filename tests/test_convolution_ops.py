@@ -473,3 +473,56 @@ def test_accuracy_depthwise2d(
         inp, weight, kernel, bias=None, stride=stride, padding=padding, dilation=1
     )
     gems_assert_close(res_out, ref_out, dtype)
+
+
+SHAPE_CONV_TRANSPOSE2D = [
+    ((4, 8, 16, 16), (8, 16, 3, 3)),  # (input_shape, weight_shape)
+    ((2, 4, 8, 8), (4, 8, 3, 3)),
+    ((1, 16, 32, 32), (16, 32, 5, 5)),
+    ((4, 32, 8, 8), (32, 64, 3, 3)),
+]
+
+
+@pytest.mark.ConvTranspose
+@pytest.mark.parametrize("shape, kernel", SHAPE_CONV_TRANSPOSE2D)
+@pytest.mark.parametrize("stride", [1, 2])
+@pytest.mark.parametrize("padding", [0, 1, 2])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float16])
+@pytest.mark.parametrize("bias", [True, False])
+def test_accuracy_conv_transpose2d(shape, kernel, stride, padding, dtype, bias):
+    if flag_gems.vendor_name == "mthreads" and dtype == torch.float16:
+        os.environ["MUSA_ENABLE_SQMMA"] = "1"
+
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device, requires_grad=False)
+    ref_inp = to_reference(inp, False)
+    weight = torch.randn(kernel, dtype=dtype, device=flag_gems.device)
+    ref_weight = to_reference(weight, False)
+
+    if bias:
+        bias_tensor = torch.randn(kernel[1], dtype=dtype, device=flag_gems.device)
+        ref_bias = to_reference(bias_tensor, False)
+    else:
+        bias_tensor = None
+        ref_bias = None
+
+    ref_out = torch.nn.functional.conv_transpose2d(
+        ref_inp,
+        ref_weight,
+        bias=ref_bias,
+        stride=stride,
+        padding=padding,
+        groups=1,
+    )
+
+    res_out = flag_gems.conv_transpose2d(
+        inp,
+        weight,
+        bias=bias_tensor,
+        stride=stride,
+        padding=padding,
+        groups=1,
+    )
+    gems_assert_close(res_out, ref_out, dtype)
+
+    if flag_gems.vendor_name == "mthreads" and dtype == torch.float16:
+        del os.environ["MUSA_ENABLE_SQMMA"]
