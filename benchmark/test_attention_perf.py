@@ -1119,3 +1119,45 @@ def test_perf_reshape_and_cache():
     )
     bench.set_gems(flag_gems.reshape_and_cache)
     bench.run()
+
+
+@pytest.mark.flash_decoding
+@pytest.mark.parametrize("dropout_p", [0.0])
+@pytest.mark.parametrize("is_causal", [True, False])
+def test_perf_flash_decoding(dropout_p, is_causal):
+    """
+    Benchmark for FlashDecoding operator.
+    """
+    from flag_gems.runtime.backend._metax.ops import flash_decoding
+
+    def flash_decoding_kwargs(shape, dtype, device):
+        query = torch.randn(shape, device=device, dtype=dtype)
+        key = torch.randn(shape, device=device, dtype=dtype)
+        value = torch.randn(shape, device=device, dtype=dtype)
+        scale = float(1.0 / (shape[-1] ** 0.5))
+        yield query, key, value, None, dropout_p, is_causal, scale
+
+    def torch_flash_decoding(
+        query, key, value, attn_mask=None, dropout_p=0.0, is_causal=False, scale=None
+    ):
+        return torch.nn.functional.scaled_dot_product_attention(
+            query,
+            key,
+            value,
+            attn_mask=attn_mask,
+            dropout_p=dropout_p,
+            is_causal=is_causal,
+            scale=scale,
+        )
+
+    bench = AttentionBenchmark(
+        op_name="flash_decoding",
+        input_fn=flash_decoding_kwargs,
+        torch_op=torch_flash_decoding,
+        dtypes=[
+            torch.float16,
+            torch.bfloat16,
+        ],
+    )
+    bench.set_gems(flash_decoding)
+    bench.run()
