@@ -2513,3 +2513,37 @@ def test_accuracy_bincount_minlength(shape, num_classes, minlength):
     ref_out_w = torch.bincount(ref_inp, weights=ref_weights, minlength=minlength)
     res_out_w = flag_gems.bincount(inp, weights=weights, minlength=minlength)
     _assert_bincount(res_out_w, ref_out_w, dtype, shape, num_classes)
+
+
+# Test for logsumexp
+LOGSUMEXP_SHAPES = [(2, 32)] if QUICK_MODE else [(1, 2), (16, 1024), (4, 2048), (8, 4096)]
+
+
+@pytest.mark.logsumexp
+@pytest.mark.parametrize("shape", LOGSUMEXP_SHAPES)
+@pytest.mark.parametrize("dim", [0, 1])
+@pytest.mark.parametrize("keepdim", [True, False])
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_logsumexp(shape, dim, keepdim, dtype):
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+
+    ref_out = torch.logsumexp(ref_inp, dim=dim, keepdim=keepdim)
+    with flag_gems.use_gems():
+        res_out = torch.logsumexp(inp, dim=dim, keepdim=keepdim)
+
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.logsumexp
+@pytest.mark.parametrize("shape", LOGSUMEXP_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_logsumexp_keepdim(shape, dtype):
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+
+    ref_out = torch.logsumexp(ref_inp, dim=1, keepdim=True)
+    with flag_gems.use_gems():
+        res_out = torch.logsumexp(inp, dim=1, keepdim=True)
+
+    gems_assert_close(res_out, ref_out, dtype)

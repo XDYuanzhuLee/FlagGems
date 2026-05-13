@@ -245,6 +245,7 @@ _FULL_CONFIG = (
     ("log1p_", log1p_),
     ("logaddexp", logaddexp),
     ("logaddexp.out", logaddexp_out),
+    ("logsumexp", logsumexp),
     ("logical_and", logical_and),
     ("logical_and_", logical_and_),
     ("logical_not", logical_not),
