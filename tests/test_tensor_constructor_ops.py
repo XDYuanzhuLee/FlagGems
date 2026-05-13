@@ -393,3 +393,33 @@ def test_accuracy_zero_out(shape, dtype):
         act_out = torch.ops.aten.zero.out(act_x, out=act_x)
 
     gems_assert_close(act_out, ref_out, dtype)
+
+
+@pytest.mark.make_dep_token
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy__make_dep_token(dtype):
+    # Import the metax implementation directly
+    from flag_gems.runtime.backend._metax.ops._make_dep_token import _make_dep_token as metax_make_dep_token
+
+    # Test with default parameters using metax implementation
+    res_out = metax_make_dep_token(dtype=dtype, device=flag_gems.device)
+
+    # Verify output is a scalar tensor with correct dtype
+    assert res_out.shape == torch.Size([]), f"Expected scalar tensor, got shape {res_out.shape}"
+    assert res_out.dtype == dtype, f"Expected dtype {dtype}, got {res_out.dtype}"
+    assert res_out.device.type == "cuda", f"Expected cuda device, got {res_out.device}"
+
+
+@pytest.mark.make_dep_token
+@pytest.mark.parametrize("dtype", ALL_INT_DTYPES)
+def test_accuracy__make_dep_token_int(dtype):
+    # Import the metax implementation directly
+    from flag_gems.runtime.backend._metax.ops._make_dep_token import _make_dep_token as metax_make_dep_token
+
+    # Test with integer dtypes using metax implementation
+    res_out = metax_make_dep_token(dtype=dtype, device=flag_gems.device)
+
+    # Verify output is a scalar tensor with correct dtype
+    assert res_out.shape == torch.Size([]), f"Expected scalar tensor, got shape {res_out.shape}"
+    assert res_out.dtype == dtype, f"Expected dtype {dtype}, got {res_out.dtype}"
+    assert res_out.device.type == "cuda", f"Expected cuda device, got {res_out.device}"
