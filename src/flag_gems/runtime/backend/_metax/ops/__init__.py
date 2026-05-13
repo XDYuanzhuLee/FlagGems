@@ -3,6 +3,13 @@ from .amax import amax
 from .arange import arange, arange_start
 from .bmm import bmm
 from .exponential_ import exponential_
+from .float_power_ import (
+    float_power_scalar,
+    float_power_tensor_scalar,
+    float_power_tensor_scalar_,
+    float_power_tensor_tensor,
+    float_power_tensor_tensor_,
+)
 from .full import full
 from .full_like import full_like
 from .groupnorm import group_norm
@@ -37,6 +44,11 @@ __all__ = [
     "arange_start",
     "bmm",
     "exponential_",
+    "float_power_scalar",
+    "float_power_tensor_scalar",
+    "float_power_tensor_scalar_",
+    "float_power_tensor_tensor",
+    "float_power_tensor_tensor_",
     "full",
     "full_like",
     "group_norm",

@@ -116,6 +116,13 @@ from flag_gems.ops.fill import (
     fill_tensor_out,
 )
 from flag_gems.ops.flip import flip
+from flag_gems.ops.float_power import (
+    float_power_scalar,
+    float_power_tensor_scalar,
+    float_power_tensor_scalar_,
+    float_power_tensor_tensor,
+    float_power_tensor_tensor_,
+)
 from flag_gems.ops.floor_ import floor_
 from flag_gems.ops.fmin import fmin, fmin_out
 from flag_gems.ops.full import full
@@ -437,6 +444,11 @@ __all__ = [
     "flash_attention_forward",
     "flash_attn_varlen_func",
     "flip",
+    "float_power_scalar",
+    "float_power_tensor_scalar",
+    "float_power_tensor_scalar_",
+    "float_power_tensor_tensor",
+    "float_power_tensor_tensor_",
     "floor_",
     "floor_divide",
     "floor_divide_",

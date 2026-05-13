@@ -2540,3 +2540,80 @@ def test_accuracy_atan2_out(shape, dtype):
         res_out = torch.ops.aten.atan2.out(x, y, out=res_out_buf)
 
     gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.float_power_
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_float_power_(shape, dtype):
+    inp1 = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    inp2 = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+
+    # float_power requires inputs to be in valid range for the operation
+    inp1 = inp1.uniform_(-2, 2)
+    inp2 = inp2.uniform_(-2, 2)
+
+    ref_inp1 = to_reference(inp1.clone(), True)
+    ref_inp2 = to_reference(inp2, True)
+
+    ref_out = torch.float_power(ref_inp1, ref_inp2)
+    with flag_gems.use_gems():
+        res_out = torch.float_power(inp1, inp2)
+
+    gems_assert_close(res_out, ref_out, dtype, equal_nan=True)
+
+
+@pytest.mark.float_power_
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_float_power_inplace(shape, dtype):
+    inp1 = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    inp2 = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+
+    # float_power requires inputs to be in valid range for the operation
+    inp1 = inp1.uniform_(-2, 2)
+    inp2 = inp2.uniform_(-2, 2)
+
+    ref_inp1 = to_reference(inp1.clone(), True)
+    ref_inp2 = to_reference(inp2, True)
+
+    # Use aten float_power_ for reference
+    ref_out = torch.ops.aten.float_power_.Tensor(ref_inp1, ref_inp2)
+    with flag_gems.use_gems():
+        res_out = torch.ops.aten.float_power_.Tensor(inp1, inp2)
+
+    gems_assert_close(res_out, ref_out, dtype, equal_nan=True)
+
+
+@pytest.mark.float_power_
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_float_power_scalar_tensor(shape, dtype):
+    scalar = 2.0
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    inp = inp.uniform_(-2, 2)
+
+    ref_inp = to_reference(inp, True)
+
+    ref_out = torch.float_power(scalar, ref_inp)
+    with flag_gems.use_gems():
+        res_out = torch.float_power(scalar, inp)
+
+    gems_assert_close(res_out, ref_out, dtype, equal_nan=True)
+
+
+@pytest.mark.float_power_
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_float_power_tensor_scalar(shape, dtype):
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    scalar = 2.0
+    inp = inp.uniform_(-2, 2)
+
+    ref_inp = to_reference(inp, True)
+
+    ref_out = torch.float_power(ref_inp, scalar)
+    with flag_gems.use_gems():
+        res_out = torch.float_power(inp, scalar)
+
+    gems_assert_close(res_out, ref_out, dtype, equal_nan=True)
