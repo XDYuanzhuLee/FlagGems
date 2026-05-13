@@ -1,4 +1,5 @@
 import random
+from functools import partial
 from typing import Generator
 
 import pytest
@@ -51,12 +52,21 @@ class UnaryReductionBenchmark(Benchmark):
                 yield inp,
 
 
+def logsumexp_fn(x, dim=None):
+    """Wrapper for logsumexp that handles different tensor dimensions."""
+    if dim is None:
+        # For 1D tensors, use dim=0; for multi-dim tensors, use dim=-1
+        dim = 0 if x.ndim == 1 else -1
+    return torch.logsumexp(x, dim=dim)
+
+
 forward_operations = [
     ("all", torch.all, FLOAT_DTYPES),
     ("any", torch.any, FLOAT_DTYPES),
     ("amax", torch.amax, FLOAT_DTYPES),
     ("argmax", torch.argmax, FLOAT_DTYPES),
     ("argmin", torch.argmin, FLOAT_DTYPES),
+    ("logsumexp", logsumexp_fn, FLOAT_DTYPES),
     ("max", torch.max, FLOAT_DTYPES),
     ("mean", torch.mean, FLOAT_DTYPES),
     ("min", torch.min, FLOAT_DTYPES),
