@@ -63,6 +63,13 @@ def zero__input_fn(shape, dtype, device):
     yield input,
 
 
+def make_dep_token_input_fn(shape, dtype, device):
+    # _make_dep_token creates a scalar tensor, so shape is not used
+    # Use metax implementation directly
+    from flag_gems.runtime.backend._metax.ops._make_dep_token import _make_dep_token as metax_make_dep_token
+    yield {"dtype": dtype, "device": device}, metax_make_dep_token
+
+
 def arange_input_fn(shape, dtype, device):
     yield {
         "end": math.prod(shape),
@@ -275,5 +282,23 @@ def test_perf_zero():
         torch_op=torch.ops.aten.zero,
         dtypes=FLOAT_DTYPES,
         is_inplace=True,
+    )
+    bench.run()
+
+
+class MakeDepTokenBenchmark(Benchmark):
+    def get_input_iter(self, cur_dtype) -> Generator:
+        # _make_dep_token creates a scalar tensor - no shape needed
+        yield {"dtype": cur_dtype, "device": self.device},
+
+
+@pytest.mark.make_dep_token
+def test_perf_make_dep_token():
+    from flag_gems.runtime.backend._metax.ops._make_dep_token import _make_dep_token as metax_make_dep_token
+
+    bench = MakeDepTokenBenchmark(
+        op_name="make_dep_token",
+        torch_op=metax_make_dep_token,
+        dtypes=FLOAT_DTYPES,
     )
     bench.run()

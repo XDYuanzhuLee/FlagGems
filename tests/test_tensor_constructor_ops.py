@@ -397,7 +397,7 @@ def test_accuracy_zero_out(shape, dtype):
 
 @pytest.mark.make_dep_token
 @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
-def test_accuracy__make_dep_token(dtype):
+def test_accuracy_make_dep_token(dtype):
     # Import the metax implementation directly
     from flag_gems.runtime.backend._metax.ops._make_dep_token import _make_dep_token as metax_make_dep_token
 
@@ -412,7 +412,7 @@ def test_accuracy__make_dep_token(dtype):
 
 @pytest.mark.make_dep_token
 @pytest.mark.parametrize("dtype", ALL_INT_DTYPES)
-def test_accuracy__make_dep_token_int(dtype):
+def test_accuracy_make_dep_token_int(dtype):
     # Import the metax implementation directly
     from flag_gems.runtime.backend._metax.ops._make_dep_token import _make_dep_token as metax_make_dep_token
 
