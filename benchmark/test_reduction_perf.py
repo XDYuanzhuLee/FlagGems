@@ -116,6 +116,23 @@ def cross_entropy_loss_input_fn(shape, cur_dtype, device):
         }
 
 
+def fused_cross_entropy_input_fn(shape, cur_dtype, device):
+    """Input function for Fused_Cross_Entropy benchmark."""
+    from flag_gems.runtime.backend._metax.ops import Fused_Cross_Entropy
+
+    inp = generate_tensor_input(shape, cur_dtype, device)
+    target = torch.randint(0, shape[-1], (shape[0],), device=device)
+    yield inp, target
+    if Config.bench_level == BenchLevel.COMPREHENSIVE:
+        weight = torch.randn(shape[-1], dtype=cur_dtype, device=device)
+        yield inp, target, {"weight": weight, "ignore_index": 1, "reduction": "none"}
+        yield inp, target, {
+            "weight": weight,
+            "reduction": "sum",
+            "label_smoothing": 0.1,
+        }
+
+
 def nll_loss_input_fn(shape, cur_dtype, device):
     inp = generate_tensor_input(shape, cur_dtype, device)
     target_shape = list(shape)
@@ -189,6 +206,13 @@ def mse_loss_input_fn(shape, cur_dtype, device):
             marks=pytest.mark.cross_entropy_loss,
         ),
         pytest.param(
+            "Fused_Cross_Entropy",
+            torch.nn.functional.cross_entropy,
+            fused_cross_entropy_input_fn,
+            FLOAT_DTYPES,
+            marks=pytest.mark.Fused_Cross_Entropy,
+        ),
+        pytest.param(
             "cumsum",
             torch.cumsum,
             cumsum_input_fn,
@@ -241,6 +265,10 @@ def test_generic_reduction_benchmark(op_name, torch_op, input_fn, dtypes):
     )
     if op_name == "cross_entropy_loss":
         bench.set_gems(flag_gems.cross_entropy_loss)
+    if op_name == "Fused_Cross_Entropy":
+        from flag_gems.runtime.backend._metax.ops import Fused_Cross_Entropy
+
+        bench.set_gems(Fused_Cross_Entropy)
     bench.run()
 
 
