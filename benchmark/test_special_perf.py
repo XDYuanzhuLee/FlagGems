@@ -1467,3 +1467,32 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+_PIN_MEMORY_SHAPES = [
+    (4, 4),
+    (8, 8),
+    (16, 16),
+    (32, 32),
+    (64, 64),
+    (128, 128),
+    (256, 256),
+    (512, 512),
+]
+
+
+def _pin_memory_input_fn(shape, cur_dtype, device):
+    # _pin_memory works on CPU tensors
+    x = torch.randn(shape, dtype=cur_dtype, device='cpu')
+    yield x
+
+
+@pytest.mark._pin_memory
+def test_perf__pin_memory():
+    bench = GenericBenchmark(
+        op_name="_pin_memory",
+        torch_op=torch._pin_memory,
+        dtypes=FLOAT_DTYPES,
+        input_fn=_pin_memory_input_fn,
+    )
+    bench.run()
