@@ -85,6 +85,41 @@ def test_accuracy_amax(shape, dim, keepdim, dtype):
     gems_assert_equal(res_out, ref_out)
 
 
+@pytest.mark.ReduceMax
+@pytest.mark.parametrize("shape", REDUCTION_SMALL_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_reduce_max(shape, dtype):
+    """Test reduce_max - reduces all dimensions to a single value."""
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+
+    # Test reducing all dimensions (dim=None)
+    ref_out = torch.amax(ref_inp)
+    with flag_gems.use_gems():
+        res_out = torch.amax(inp)
+
+    gems_assert_equal(res_out, ref_out)
+
+
+@pytest.mark.ReduceMax
+@pytest.mark.parametrize("shape", REDUCTION_SMALL_SHAPES)
+@pytest.mark.parametrize("keepdim", [True, False])
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_reduce_max_dim(shape, keepdim, dtype):
+    """Test reduce_max along a specific dimension."""
+    if len(shape) < 2:
+        pytest.skip("Requires at least 2 dimensions")
+    dim = 1
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+
+    ref_out = torch.amax(ref_inp, dim=dim, keepdim=keepdim)
+    with flag_gems.use_gems():
+        res_out = torch.amax(inp, dim=dim, keepdim=keepdim)
+
+    gems_assert_equal(res_out, ref_out)
+
+
 EMPTY_SHAPES = [(0, 5), (3, 0, 4), (2, 5, 0), (0,)]
 
 
