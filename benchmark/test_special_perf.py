@@ -1467,3 +1467,20 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+@pytest.mark.GatherBlockQuantized
+def test_perf_gather_block_quantized():
+    def gather_block_quantized_input_fn(shape, dtype, device):
+        inp = generate_tensor_input(shape, dtype, device)
+        # Create indices for gathering
+        indices = torch.randint(0, shape[0], (shape[0] // 2,), dtype=torch.long, device=device)
+        yield inp, indices, 0
+
+    bench = GenericBenchmark(
+        input_fn=gather_block_quantized_input_fn,
+        op_name="GatherBlockQuantized",
+        torch_op=torch.gather,
+        dtypes=FLOAT_DTYPES,
+    )
+    bench.run()
