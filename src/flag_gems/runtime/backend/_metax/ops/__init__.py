@@ -5,6 +5,7 @@ from .bmm import bmm
 from .exponential_ import exponential_
 from .full import full
 from .full_like import full_like
+from .Fused_Cross_Entropy import Fused_Cross_Entropy
 from .groupnorm import group_norm
 from .index import index
 from .index_put import index_put, index_put_
@@ -39,6 +40,7 @@ __all__ = [
     "exponential_",
     "full",
     "full_like",
+    "Fused_Cross_Entropy",
     "group_norm",
     "index",
     "index_put",

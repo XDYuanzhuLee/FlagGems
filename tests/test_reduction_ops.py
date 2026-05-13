@@ -2513,3 +2513,98 @@ def test_accuracy_bincount_minlength(shape, num_classes, minlength):
     ref_out_w = torch.bincount(ref_inp, weights=ref_weights, minlength=minlength)
     res_out_w = flag_gems.bincount(inp, weights=weights, minlength=minlength)
     _assert_bincount(res_out_w, ref_out_w, dtype, shape, num_classes)
+
+
+@pytest.mark.Fused_Cross_Entropy
+@pytest.mark.parametrize("label_smoothing, ignore_index, shape", SMOOTH_IGNORE_SHAPE)
+@pytest.mark.parametrize("reduction", CROSS_ENTROPY_LOSS_REDUCTION)
+@pytest.mark.parametrize("weight", [True, False])
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_Fused_Cross_Entropy_indices(
+    shape, dtype, weight, ignore_index, reduction, label_smoothing
+):
+    """Test Fused_Cross_Entropy with index targets."""
+    dim = 1
+    up_limit = shape[dim] - 1
+    target_shape = list(shape)
+    del target_shape[dim]
+
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device, requires_grad=True)
+    target = torch.randint(0, up_limit, target_shape, device=flag_gems.device)
+    ref_inp = to_reference(inp, True)
+    ref_target = to_reference(target)
+
+    if weight:
+        wgt = torch.randn(shape[dim], dtype=dtype, device=flag_gems.device)
+        ref_wgt = to_reference(wgt, True)
+    else:
+        wgt = None
+        ref_wgt = None
+
+    ref_out = torch.nn.functional.cross_entropy(
+        ref_inp,
+        ref_target,
+        weight=ref_wgt,
+        ignore_index=ignore_index,
+        reduction=reduction,
+        label_smoothing=label_smoothing,
+    )
+
+    # Use the Metax Fused_Cross_Entropy
+    from flag_gems.runtime.backend._metax.ops import Fused_Cross_Entropy
+
+    res_out = Fused_Cross_Entropy(
+        inp,
+        target,
+        weight=wgt,
+        ignore_index=ignore_index,
+        reduction=reduction,
+        label_smoothing=label_smoothing,
+    )
+    gems_assert_close(res_out, ref_out, dtype, reduce_dim=shape[dim])
+
+    # Test backward
+    out_grad = torch.randn_like(res_out)
+    ref_grad = to_reference(out_grad, True)
+    (ref_in_grad,) = torch.autograd.grad(ref_out, ref_inp, ref_grad)
+    (res_in_grad,) = torch.autograd.grad(res_out, inp, out_grad)
+    gems_assert_close(res_in_grad, ref_in_grad, dtype, reduce_dim=shape[dim])
+
+
+@pytest.mark.Fused_Cross_Entropy
+@pytest.mark.parametrize("label_smoothing, shape", SMOOTH_SHAPE)
+@pytest.mark.parametrize("reduction", CROSS_ENTROPY_LOSS_REDUCTION)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_Fused_Cross_Entropy_probabilities(
+    shape, dtype, reduction, label_smoothing
+):
+    """Test Fused_Cross_Entropy with probability targets."""
+    dim = 1
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device, requires_grad=True)
+    target = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    weight = torch.randn(shape[dim], dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp, True)
+    ref_target = to_reference(target, True)
+    ref_weight = to_reference(weight, True)
+    ref_out = torch.nn.functional.cross_entropy(
+        ref_inp,
+        ref_target,
+        weight=ref_weight,
+        reduction=reduction,
+        label_smoothing=label_smoothing,
+    )
+
+    # Use the Metax Fused_Cross_Entropy
+    from flag_gems.runtime.backend._metax.ops import Fused_Cross_Entropy
+
+    res_out = Fused_Cross_Entropy(
+        inp, target, weight=weight, reduction=reduction, label_smoothing=label_smoothing
+    )
+    gems_assert_close(res_out, ref_out, dtype, reduce_dim=shape[dim])
+
+    # Test backward
+    out_grad = torch.randn_like(res_out)
+    ref_grad = to_reference(out_grad, True)
+    (ref_in_grad,) = torch.autograd.grad(ref_out, ref_inp, ref_grad)
+    (res_in_grad,) = torch.autograd.grad(res_out, inp, out_grad)
+    gems_assert_close(res_in_grad, ref_in_grad, dtype, reduce_dim=shape[dim])
