@@ -1467,3 +1467,49 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+# Benchmark for embeddingSpMDMGrad operator
+EMBEDDING_SPDM_GRAD_SHAPES = [
+    (1024, 128),
+    (4096, 128),
+    (4096, 256),
+    (4096, 512),
+    (4096, 1024),
+    (4096, 4096),
+]
+
+
+class EmbeddingSpMDMGradBenchmark(Benchmark):
+    def set_shapes(self, shape_file_path=None):
+        self.shapes = EMBEDDING_SPDM_GRAD_SHAPES
+
+    def get_input_iter(self, cur_dtype):
+        for shape in self.shapes:
+            num_embeddings, embedding_dim = shape
+            indices = torch.randint(
+                0, num_embeddings, (num_embeddings,), device=self.device
+            )
+            grad_output = torch.randn(
+                (num_embeddings, embedding_dim), device=self.device, dtype=cur_dtype
+            )
+            yield grad_output, indices, num_embeddings
+
+    def get_tflops(self, op, *args, **kwargs):
+        grad_output, _, _ = args
+        return grad_output.numel()
+
+
+@pytest.mark.embeddingSpMDMGrad
+def test_perf_embeddingSpMDMGrad():
+    from flag_gems.runtime.backend._metax.ops import embedding_spdm_grad
+
+    bench = EmbeddingSpMDMGradBenchmark(
+        op_name="embeddingSpMDMGrad",
+        torch_op=embedding_spdm_grad,
+        dtypes=[
+            torch.float32,
+            torch.float16,
+        ],
+    )
+    bench.run()
