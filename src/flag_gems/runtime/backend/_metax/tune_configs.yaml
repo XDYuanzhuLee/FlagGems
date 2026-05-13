@@ -631,6 +631,77 @@ all:
   - 8
   block_n:
   - 1024
+addbmm:
+- META:
+    BLOCK_SIZE_M: 128
+    BLOCK_SIZE_N: 256
+    BLOCK_SIZE_K: 64
+    pipeline: "null"
+  num_stages: 3
+  num_warps: 8
+- META:
+    BLOCK_SIZE_M: 64
+    BLOCK_SIZE_N: 256
+    BLOCK_SIZE_K: 32
+    pipeline: "null"
+  num_stages: 4
+  num_warps: 4
+- META:
+    BLOCK_SIZE_M: 128
+    BLOCK_SIZE_N: 128
+    BLOCK_SIZE_K: 32
+    pipeline: "null"
+  num_stages: 4
+  num_warps: 4
+- META:
+    BLOCK_SIZE_M: 128
+    BLOCK_SIZE_N: 64
+    BLOCK_SIZE_K: 32
+    pipeline: "null"
+  num_stages: 4
+  num_warps: 4
+- META:
+    BLOCK_SIZE_M: 64
+    BLOCK_SIZE_N: 128
+    BLOCK_SIZE_K: 32
+    pipeline: "null"
+  num_stages: 4
+  num_warps: 4
+- META:
+    BLOCK_SIZE_M: 128
+    BLOCK_SIZE_N: 32
+    BLOCK_SIZE_K: 32
+    pipeline: "null"
+  num_stages: 4
+  num_warps: 4
+- META:
+    BLOCK_SIZE_M: 64
+    BLOCK_SIZE_N: 32
+    BLOCK_SIZE_K: 32
+    pipeline: "null"
+  num_stages: 5
+  num_warps: 2
+- META:
+    BLOCK_SIZE_M: 32
+    BLOCK_SIZE_N: 64
+    BLOCK_SIZE_K: 32
+    pipeline: "null"
+  num_stages: 5
+  num_warps: 2
+- META:
+    BLOCK_SIZE_M: 128
+    BLOCK_SIZE_N: 128
+    BLOCK_SIZE_K: 128
+    pipeline: "null"
+  num_stages: 2
+  num_warps: 8
+- META:
+    BLOCK_SIZE_M: 256
+    BLOCK_SIZE_N: 256
+    BLOCK_SIZE_K: 32
+    pipeline: "null"
+  num_stages: 2
+  num_warps: 8
 amax:
 - gen: true
   param_map:

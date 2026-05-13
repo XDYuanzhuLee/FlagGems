@@ -341,6 +341,35 @@ def test_accuracy_baddbmm_backward(M, N, K, scalar, dtype):
     gems_assert_close(res_in_grad2, ref_in_grad2, dtype, reduce_dim=M)
 
 
+@pytest.mark.addbmm_
+@pytest.mark.linear
+@pytest.mark.matmul
+@pytest.mark.parametrize("M, N, K", MNK_SHAPES)
+@pytest.mark.parametrize("scalar", SCALARS)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_addbmm(M, N, K, scalar, dtype):
+    if flag_gems.vendor_name == "mthreads" and dtype in [torch.float16, torch.bfloat16]:
+        os.environ["MUSA_ENABLE_SQMMA"] = "1"
+    batch = 4
+    mat1 = torch.randn((batch, M, K), dtype=dtype, device=flag_gems.device)
+    mat2 = torch.randn((batch, K, N), dtype=dtype, device=flag_gems.device)
+    bias = torch.randn((M, N), dtype=dtype, device=flag_gems.device)
+    ref_mat1 = to_reference(mat1, True)
+    ref_mat2 = to_reference(mat2, True)
+    ref_bias = to_reference(bias, True)
+
+    alpha = beta = scalar
+
+    ref_out = torch.addbmm(ref_bias, ref_mat1, ref_mat2, alpha=alpha, beta=beta)
+    with flag_gems.use_gems():
+        res_out = flag_gems.addbmm(bias, mat1, mat2, alpha=alpha, beta=beta)
+
+    gems_assert_close(res_out, ref_out, dtype, reduce_dim=K)
+
+    if flag_gems.vendor_name == "mthreads" and dtype in [torch.float16, torch.bfloat16]:
+        del os.environ["MUSA_ENABLE_SQMMA"]
+
+
 # TODO: failed at (1, 1, 2)
 @pytest.mark.mm
 @pytest.mark.parametrize("M, N, K", MNK_SHAPES)
