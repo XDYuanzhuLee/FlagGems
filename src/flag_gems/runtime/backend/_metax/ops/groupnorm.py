@@ -13,6 +13,12 @@ rsqrt = tl_extra_shim.rsqrt
 logger = logging.getLogger("flag_gems." + __name__)
 
 
+# Maximum BLOCK_HW_SIZE to avoid exceeding Metax private memory limit (4KB/thread)
+# With BLOCK_GROUP_SIZE up to 64, we have: 64 * 128 float32 = 32KB (exceeds)
+# With BLOCK_GROUP_SIZE up to 8 (typical for groupnorm), we have: 8 * 128 = 4KB (at limit)
+MAX_BLOCK_HW = 128
+
+
 @libentry()
 @triton.jit(do_not_specialize=["eps"])
 def group_norm_kernel(
@@ -39,34 +45,70 @@ def group_norm_kernel(
     wb_offset = group * group_size + group_offset
     wb_mask = wb_offset < C
 
-    xy_offset = pid * num_elements + group_offset[:, None] * HW + hw_offset[None, :]
-    xy_mask = wb_offset[:, None] < C and hw_offset[None, :] < HW
+    # Accumulator for mean and variance
+    sum_val = tl.zeros([BLOCK_GROUP_SIZE, BLOCK_HW_SIZE], dtype=tl.float32)
+
+    # Process HW in tiles
+    for off in range(0, HW, BLOCK_HW_SIZE):
+        hw_offsets = off + hw_offset
+        hw_mask = hw_offsets < HW
+
+        xy_offset = pid * num_elements + group_offset[:, None] * HW + hw_offsets[None, :]
+        xy_mask = wb_offset[:, None] < C and hw_mask[None, :]
+
+        X_ptr = X + xy_offset
+        X_val = tl.load(X_ptr, mask=xy_mask, other=0.0).to(tl.float32)
+        sum_val = tl.where(xy_mask, sum_val + X_val, sum_val)
+
+    # Compute mean
+    mean = tl.sum(sum_val) / num_elements
+
+    # Compute variance
+    var_sum = tl.zeros([BLOCK_GROUP_SIZE, BLOCK_HW_SIZE], dtype=tl.float32)
+    for off in range(0, HW, BLOCK_HW_SIZE):
+        hw_offsets = off + hw_offset
+        hw_mask = hw_offsets < HW
+
+        xy_offset = pid * num_elements + group_offset[:, None] * HW + hw_offsets[None, :]
+        xy_mask = wb_offset[:, None] < C and hw_mask[None, :]
+
+        X_ptr = X + xy_offset
+        X_val = tl.load(X_ptr, mask=xy_mask, other=0.0).to(tl.float32)
+        x = tl.where(xy_mask, X_val - mean, 0.0)
+        var_sum = tl.where(xy_mask, var_sum + x * x, var_sum)
+
+    var = tl.sum(var_sum) / num_elements
+    rstd = rsqrt(var + eps)
+
+    # Compute output
+    y_sum = tl.zeros([BLOCK_GROUP_SIZE, BLOCK_HW_SIZE], dtype=tl.float32)
+    for off in range(0, HW, BLOCK_HW_SIZE):
+        hw_offsets = off + hw_offset
+        hw_mask = hw_offsets < HW
+
+        xy_offset = pid * num_elements + group_offset[:, None] * HW + hw_offsets[None, :]
+        xy_mask = wb_offset[:, None] < C and hw_mask[None, :]
+
+        X_ptr = X + xy_offset
+        X_val = tl.load(X_ptr, mask=xy_mask, other=0.0).to(tl.float32)
+        x = tl.where(xy_mask, X_val - mean, 0.0)
+        x_hat = x * rstd
+
+        if W is None:
+            weight = 1.0
+        else:
+            weight = tl.load(W + wb_offset, mask=wb_mask, other=0.0).to(tl.float32)[:, None]
+        if B is None:
+            bias = 0.0
+        else:
+            bias = tl.load(B + wb_offset, mask=wb_mask, other=0.0).to(tl.float32)[:, None]
+        Y_val = x_hat * weight + bias
+
+        Y_ptr = Y + xy_offset
+        tl.store(Y_ptr, Y_val, mask=xy_mask)
 
     Mean_ptr = Mean + pid
     Rstd_ptr = Rstd + pid
-
-    X_ptr = X + xy_offset
-    Y_ptr = Y + xy_offset
-
-    X_val = tl.load(X_ptr, mask=xy_mask, other=0.0).to(tl.float32)
-    mean = tl.sum(X_val) / num_elements
-    x = tl.where(xy_mask, X_val - mean, 0.0)
-
-    var = tl.sum(x * x) / num_elements
-    rstd = rsqrt(var + eps)
-    x_hat = x * rstd
-
-    if W is None:
-        weight = 1
-    else:
-        weight = tl.load(W + wb_offset, mask=wb_mask, other=0.0)[:, None]
-    if B is None:
-        bias = 0
-    else:
-        bias = tl.load(B + wb_offset, mask=wb_mask, other=0.0)[:, None]
-    Y_val = x_hat * weight + bias
-
-    tl.store(Y_ptr, Y_val, mask=xy_mask)
     tl.store(Mean_ptr, mean)
     tl.store(Rstd_ptr, rstd)
 
@@ -190,6 +232,9 @@ class GroupNorm(torch.autograd.Function):
         rstd = torch.empty((N, num_groups), dtype=x.dtype, device=x.device)
         grid = (N * num_groups,)
 
+        # Cap BLOCK_HW_SIZE to avoid exceeding Metax private memory limit (4KB/thread)
+        block_hw_size = min(triton.next_power_of_2(HW), MAX_BLOCK_HW)
+
         with torch_device_fn.device(x.device):
             group_norm_kernel[grid](
                 x,
@@ -204,7 +249,7 @@ class GroupNorm(torch.autograd.Function):
                 num_groups,
                 eps,
                 BLOCK_GROUP_SIZE=triton.next_power_of_2(C // num_groups),
-                BLOCK_HW_SIZE=triton.next_power_of_2(HW),
+                BLOCK_HW_SIZE=block_hw_size,
             )
         if x.requires_grad:
             ctx.save_for_backward(x, weight, bias, mean, rstd)
