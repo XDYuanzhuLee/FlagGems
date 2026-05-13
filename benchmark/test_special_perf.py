@@ -1467,3 +1467,42 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+class CholeskySolveHelperBenchmark(GenericBenchmark):
+    def set_more_shapes(self):
+        return None
+
+
+@pytest.mark.cholesky_solve_helper
+def test_perf_cholesky_solve_helper():
+    def cholesky_solve_helper_input_fn(shape, dtype, device):
+        n = shape[0]
+        k = shape[1] if len(shape) > 1 else 1
+
+        # Create a positive definite matrix
+        A = torch.randn(n, n, dtype=dtype, device=device)
+        A = A @ A.T + torch.eye(n, dtype=dtype, device=device) * 0.1
+
+        # Create right-hand side
+        b = torch.randn(n, k, dtype=dtype, device=device)
+
+        yield b, A
+
+    def torch_cholesky_solve_helper(b, A):
+        return torch.cholesky_solve(b, A, upper=False)
+
+    torch_op = torch_cholesky_solve_helper
+    # Use the metax specialized function when available
+    from flag_gems.runtime.backend._metax.ops._cholesky_solve_helper import (
+        cholesky_solve_helper as gems_op,
+    )
+
+    bench = CholeskySolveHelperBenchmark(
+        input_fn=cholesky_solve_helper_input_fn,
+        op_name="_cholesky_solve_helper",
+        torch_op=torch_op,
+        dtypes=[torch.float32],
+    )
+    bench.set_gems(gems_op)
+    bench.run()
