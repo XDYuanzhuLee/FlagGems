@@ -1467,3 +1467,37 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+# _fused_adam_ benchmark shapes
+_FUSED_ADAM_SHAPES = [
+    (1024, 1024),
+    (2048, 2048),
+    (4096, 4096),
+    (8192, 8192),
+]
+
+
+class FusedAdamBenchmark(Benchmark):
+    def set_shapes(self, shape_file_path=None):
+        self.shapes = _FUSED_ADAM_SHAPES
+
+    def get_input_iter(self, cur_dtype):
+        for shape in self.shapes:
+            param = torch.randn(shape, dtype=cur_dtype, device=self.device, requires_grad=True)
+            grad = torch.randn(shape, dtype=cur_dtype, device=self.device)
+            exp_avg = torch.zeros(shape, dtype=cur_dtype, device=self.device)
+            exp_avg_sq = torch.zeros(shape, dtype=cur_dtype, device=self.device)
+            max_exp_avg_sq = torch.zeros(shape, dtype=cur_dtype, device=self.device)
+            state_step = torch.tensor(0, device=self.device)
+            yield param, grad, exp_avg, exp_avg_sq, max_exp_avg_sq, state_step
+
+
+@pytest.mark._fused_adam_
+def test_perf__fused_adam_():
+    bench = FusedAdamBenchmark(
+        op_name="_fused_adam_",
+        torch_op=torch.ops.aten._fused_adam_,
+        dtypes=[torch.float16, torch.float32],
+    )
+    bench.run()
