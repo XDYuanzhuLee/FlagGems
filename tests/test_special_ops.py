@@ -784,6 +784,24 @@ def test_accuracy_multinomial_with_replacement(shape, dtype, n_samples):
             assert torch.sum(res_dist == 0) / res_dist.numel() < 0.001
 
 
+@pytest.mark.GatherBlockQuantized
+@pytest.mark.parametrize("shape", [(64,), (128,)])
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_gather_block_quantized(shape, dtype):
+    """Test GatherBlockQuantized operator - wraps gather for block quantized tensors."""
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    # Create indices with proper shape for gather
+    indices = torch.randint(0, shape[0], (shape[0] // 2,), dtype=torch.long, device=flag_gems.device)
+
+    ref_inp = to_reference(inp)
+
+    # Use flag_gems.GatherBlockQuantized directly (custom operator)
+    res_out = flag_gems.GatherBlockQuantized(inp, indices, 0)
+    ref_out = torch.gather(ref_inp, 0, indices)
+
+    gems_assert_close(res_out, ref_out, dtype=dtype)
+
+
 @pytest.mark.multinomial
 @pytest.mark.parametrize("pool", UT_SHAPES_2D)
 @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
