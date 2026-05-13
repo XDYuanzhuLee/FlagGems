@@ -2232,3 +2232,15 @@ def test_accuracy_special_i0e_out(shape, dtype):
         act_out = torch.ops.aten.special_i0e.out(x, out=out_act)
     gems_assert_close(act_out, ref_out, dtype)
     gems_assert_close(out_act, out_ref, dtype)
+
+
+@pytest.mark.special_spherical_bessel_j0
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy_special_spherical_bessel_j0(shape, dtype):
+    x = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_x = to_reference(x)
+    ref_out = torch.special.spherical_bessel_j0(ref_x)
+    with flag_gems.use_gems():
+        act_out = torch.special.spherical_bessel_j0(x)
+    gems_assert_close(act_out, ref_out, dtype)
