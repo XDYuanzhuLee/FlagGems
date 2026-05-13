@@ -85,6 +85,7 @@ forward_operations = [
     ("bitwise_not", torch.bitwise_not, INT_DTYPES),
     # Bessel
     ("i0", torch.i0, FLOAT_DTYPES),
+    ("spherical_bessel_j0", torch.special.spherical_bessel_j0, [torch.float32]),
     # Numerical Checks
     ("isinf", torch.isinf, FLOAT_DTYPES),
     ("isnan", torch.isnan, FLOAT_DTYPES),
