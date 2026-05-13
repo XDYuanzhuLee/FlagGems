@@ -61,6 +61,7 @@ forward_operations = [
     ("mean", torch.mean, FLOAT_DTYPES),
     ("min", torch.min, FLOAT_DTYPES),
     ("prod", torch.prod, FLOAT_DTYPES),
+    ("ReduceMax", lambda x, dim=None: torch.amax(x) if dim is None else torch.amax(x, dim=dim), FLOAT_DTYPES),
     ("softmax", torch.nn.functional.softmax, FLOAT_DTYPES),
     ("std", torch.std, FLOAT_DTYPES),
     ("sum", torch.sum, FLOAT_DTYPES),
