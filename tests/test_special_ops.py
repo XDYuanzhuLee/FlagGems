@@ -2777,3 +2777,98 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+# Test shapes for linalg_ldl_factor_ex - square matrices
+LDL_FACTOR_SHAPES = [
+    (4, 4),
+    (8, 8),
+    (16, 16),
+    (32, 32),
+    (64, 64),
+    (128, 128),
+    (256, 256),
+    (2, 4, 4),  # batch of 2 matrices
+    (4, 8, 8),  # batch of 4 matrices
+    (2, 16, 16),
+]
+
+
+def make_symmetric_matrix(n, dtype, device):
+    """Create a symmetric positive definite matrix for LDL factorization."""
+    # Create a random matrix and add n*I to make it positive definite
+    A = torch.randn(n, n, dtype=dtype, device=device)
+    A = (A + A.T) / 2  # Make symmetric
+    A = A + n * torch.eye(n, dtype=dtype, device=device)  # Make positive definite
+    return A
+
+
+@pytest.mark.linalg_ldl_factor_ex
+@pytest.mark.parametrize("shape", LDL_FACTOR_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_linalg_ldl_factor_ex(shape, dtype):
+    # Create input matrix
+    if len(shape) == 2:
+        n = shape[0]
+        A = make_symmetric_matrix(n, dtype, flag_gems.device)
+    else:
+        batch_size = shape[0]
+        n = shape[1]
+        A = torch.stack([make_symmetric_matrix(n, dtype, flag_gems.device) for _ in range(batch_size)])
+
+    ref_A = to_reference(A)
+
+    # Reference computation using torch
+    ref_LD, ref_pivots, ref_info = torch.linalg.ldl_factor_ex(ref_A, hermitian=False, check_errors=False)
+
+    # GEMS computation
+    with flag_gems.use_gems():
+        res_LD, res_pivots, res_info = torch.linalg.ldl_factor_ex(A, hermitian=False, check_errors=False)
+
+    # Compare LD matrices
+    gems_assert_close(res_LD, ref_LD, dtype, reduce_dim=16)
+
+    # Compare pivots
+    gems_assert_equal(res_pivots, ref_pivots)
+
+    # Compare info
+    gems_assert_equal(res_info, ref_info)
+
+
+@pytest.mark.linalg_ldl_factor_ex
+@pytest.mark.parametrize("shape", [(4, 4), (8, 8), (16, 16)])
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_linalg_ldl_factor_ex_hermitian(shape, dtype):
+    """Test LDL factorization with hermitian=True for complex matrices."""
+    n = shape[0]
+
+    # For real matrices, hermitian doesn't change the result
+    A = make_symmetric_matrix(n, dtype, flag_gems.device)
+    ref_A = to_reference(A)
+
+    ref_LD, ref_pivots, ref_info = torch.linalg.ldl_factor_ex(ref_A, hermitian=True, check_errors=False)
+
+    with flag_gems.use_gems():
+        res_LD, res_pivots, res_info = torch.linalg.ldl_factor_ex(A, hermitian=True, check_errors=False)
+
+    gems_assert_close(res_LD, ref_LD, dtype, reduce_dim=16)
+    gems_assert_equal(res_pivots, ref_pivots)
+    gems_assert_equal(res_info, ref_info)
+
+
+@pytest.mark.linalg_ldl_factor_ex
+@pytest.mark.parametrize("n", [4, 8, 16, 32])
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy_linalg_ldl_factor_ex_large(n, dtype):
+    """Test with larger matrices."""
+    A = make_symmetric_matrix(n, dtype, flag_gems.device)
+    ref_A = to_reference(A)
+
+    ref_LD, ref_pivots, ref_info = torch.linalg.ldl_factor_ex(ref_A)
+
+    with flag_gems.use_gems():
+        res_LD, res_pivots, res_info = torch.linalg.ldl_factor_ex(A)
+
+    gems_assert_close(res_LD, ref_LD, dtype, reduce_dim=32)
+    gems_assert_equal(res_pivots, ref_pivots)
+    gems_assert_equal(res_info, ref_info)
