@@ -61,6 +61,7 @@ _FULL_CONFIG = (
     ("addmv.out", addmv_out),
     ("addmm", addmm),
     ("addmm.out", addmm_out),
+    ("_addmm_activation", _addmm_activation),
     ("addr", addr),
     ("alias_copy", alias_copy),
     ("all", all),

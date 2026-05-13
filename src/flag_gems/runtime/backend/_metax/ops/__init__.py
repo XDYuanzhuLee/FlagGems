@@ -1,3 +1,4 @@
+from ._addmm_activation import _addmm_activation
 from .addmm import addmm
 from .amax import amax
 from .arange import arange, arange_start
@@ -30,6 +31,7 @@ from .zeros import zeros
 from .zeros_like import zeros_like
 
 __all__ = [
+    "_addmm_activation",
     "_unique2",
     "addmm",
     "amax",

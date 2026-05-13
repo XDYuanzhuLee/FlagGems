@@ -68,6 +68,12 @@ class BlasBenchmark(Benchmark):
             total_flops = (
                 args[0].shape[0] * args[1].shape[1] * (args[1].shape[0] * 2 + 1)
             )
+        # shape(m,n)(n,p)
+        # total_flops mxpx(2n+1)
+        elif self.op_name == "_addmm_activation":
+            total_flops = (
+                args[1].shape[0] * args[2].shape[1] * (args[2].shape[0] * 2 + 1)
+            )
         # total_flops bxnxpx2m
         elif self.op_name == "bmm":
             total_flops = (
@@ -159,6 +165,17 @@ def mm_input_fn(b, m, n, k, cur_dtype, device, b_column_major):
     else:
         inp2 = torch.randn([k, n], dtype=cur_dtype, device=device)
         yield inp1, inp2
+
+
+def _addmm_activation_input_fn(b, m, n, k, cur_dtype, device, b_column_major):
+    bias = torch.randn([n], dtype=cur_dtype, device=device)
+    inp1 = torch.randn([m, k], dtype=cur_dtype, device=device)
+    if b_column_major:
+        inp2 = torch.randn([n, k], dtype=cur_dtype, device=device)
+        yield bias, inp1, inp2.t()
+    else:
+        inp2 = torch.randn([k, n], dtype=cur_dtype, device=device)
+        yield bias, inp1, inp2
 
 
 W8A8_BLOCK_FP8_MNK_SHAPES = [
@@ -280,6 +297,13 @@ class W8A8BlockFP8MatmulBenchmark(Benchmark):
             baddbmm_input_fn,
             BaddbmmBenchmark,
             marks=pytest.mark.baddbmm,
+        ),
+        pytest.param(
+            "_addmm_activation",
+            torch._addmm_activation,
+            _addmm_activation_input_fn,
+            BlasBenchmark,
+            marks=pytest.mark.addmm_activation,
         ),
     ],
 )
