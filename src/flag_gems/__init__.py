@@ -47,6 +47,7 @@ _FULL_CONFIG = (
     ("_log_softmax.out", log_softmax_out),
     ("_log_softmax_backward_data", log_softmax_backward),
     ("_log_softmax_backward_data.out", log_softmax_backward_out),
+    ("_pin_memory", _pin_memory),
     ("_safe_softmax", _safe_softmax),
     ("_softmax", softmax),
     ("_softmax.out", softmax_out),
