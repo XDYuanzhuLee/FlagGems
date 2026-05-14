@@ -193,6 +193,14 @@ from flag_gems.ops.log_softmax import (
     log_softmax_out,
 )
 from flag_gems.ops.logaddexp import logaddexp, logaddexp_out
+from flag_gems.ops.logcumsumexp import (
+    get_num_sms,
+    logcumsumexp,
+    logcumsumexp_kernel,
+    logcumsumexp_kernel_3d,
+    logcumsumexp_out,
+    logcumsumexp_wrapper,
+)
 from flag_gems.ops.logical_and import logical_and, logical_and_
 from flag_gems.ops.logical_not import logical_not
 from flag_gems.ops.logical_or import logical_or, logical_or_
@@ -557,6 +565,7 @@ __all__ = [
     "gelu",
     "gelu_",
     "gelu_backward",
+    "get_num_sms",
     "get_paged_mqa_logits_metadata",
     "get_scheduler_metadata",
     "glu",
@@ -622,6 +631,11 @@ __all__ = [
     "log1p_",
     "logaddexp",
     "logaddexp_out",
+    "logcumsumexp",
+    "logcumsumexp_kernel",
+    "logcumsumexp_kernel_3d",
+    "logcumsumexp_out",
+    "logcumsumexp_wrapper",
     "logical_and",
     "logical_and_",
     "logical_not",

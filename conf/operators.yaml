@@ -3277,6 +3277,18 @@ ops:
       - Math
     stages:
       - beta: '5.0'
+  - id: logcumsumexp
+    description: |
+      Computes the logcumsumexp operation.
+    for:
+      - logcumsumexp
+    labels:
+      - aten
+      - KernelGen
+    kind:
+      - Reduction
+    stages:
+      - alpha: '5.1'
   - id: logical_and
     description: |
       Computes the element-wise logical AND of the given `input` tensors.
@@ -3290,6 +3302,18 @@ ops:
       - Math
     stages:
       - stable: '2.2'
+  - id: logcumsumexp
+    description: |
+      Computes the logcumsumexp operation.
+    for:
+      - logcumsumexp
+    labels:
+      - aten
+      - KernelGen
+    kind:
+      - Reduction
+    stages:
+      - alpha: '5.1'
   - id: logical_and_
     description: The in-place version of `logical_and()`.
     for:
