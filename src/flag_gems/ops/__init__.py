@@ -312,6 +312,12 @@ from flag_gems.ops.smooth_l1_loss import (
     smooth_l1_loss_out,
 )
 from flag_gems.ops.soft_margin_loss import soft_margin_loss, soft_margin_loss_out
+from flag_gems.ops.soft_margin_loss_backward import (
+    _check_tensors,
+    _normalize_reduction,
+    _soft_margin_loss_backward_kernel,
+    soft_margin_loss_backward,
+)
 from flag_gems.ops.softmax import (
     softmax,
     softmax_backward,
@@ -372,11 +378,14 @@ from flag_gems.ops.zeros_like import zeros_like
 
 __all__ = [
     "_assert_async",
+    "_check_tensors",
     "_conv_depthwise2d",
     "_functional_sym_constrain_range_for_size",
     "_index_put_impl_",
     "_is_all_true",
+    "_normalize_reduction",
     "_safe_softmax",
+    "_soft_margin_loss_backward_kernel",
     "_unique2",
     "_upsample_bicubic2d_aa",
     "_upsample_bicubic2d_aa_backward",
@@ -765,6 +774,7 @@ __all__ = [
     "smooth_l1_loss_backward",
     "smooth_l1_loss_out",
     "soft_margin_loss",
+    "soft_margin_loss_backward",
     "soft_margin_loss_out",
     "softmax",
     "softmax_backward",
