@@ -170,6 +170,7 @@ _FULL_CONFIG = (
     ("copysign", copysign),
     ("copysign.out", copysign_out),
     ("count_nonzero", count_nonzero),
+    ("cross_attention", _cross_attention_dummy_kernel),
     ("cummax", cummax),
     ("cummin", cummin),
     ("cumprod", cumprod),
