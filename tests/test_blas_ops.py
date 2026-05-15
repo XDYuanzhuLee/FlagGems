@@ -562,3 +562,75 @@ def test_accuracy_addr(M, N, dtype):
         res_out = torch.addr(input_tensor, vec1, vec2, alpha=alpha, beta=beta)
 
     gems_assert_close(res_out, ref_out, dtype, equal_nan=True)
+
+
+def _reference_int4pack_mm_with_scales_and_zeros(act, weight, qGroupSize, qScale, qZero):
+    """Reference implementation of int4 weight matrix multiplication.
+
+    This is a CPU-based reference implementation for testing.
+    """
+    M, K = act.shape
+    N = weight.shape[0]
+
+    # Unpack int4 weights: each byte contains 2 int4 values
+    # Weight shape: (N, K/2) -> unpack to (N, K)
+    weight_unpacked = torch.zeros(N, K, dtype=torch.float32, device='cpu')
+
+    for i in range(K // 2):
+        byte = weight[:, i].cpu()
+        lower_nibble = (byte & 0x0F).to(torch.float32) - 8
+        upper_nibble = ((byte >> 4) & 0x0F).to(torch.float32) - 8
+        weight_unpacked[:, 2 * i] = lower_nibble
+        weight_unpacked[:, 2 * i + 1] = upper_nibble
+
+    # Apply scale and zero point per group
+    num_groups = K // qGroupSize
+    weight_dequant = torch.zeros(N, K, dtype=torch.float32, device='cpu')
+
+    for g in range(num_groups):
+        start_k = g * qGroupSize
+        end_k = min(start_k + qGroupSize, K)
+        scale = qScale[:, g].cpu().to(torch.float32)
+        zero = qZero[:, g].cpu().to(torch.float32)
+
+        for k in range(start_k, end_k):
+            weight_dequant[:, k] = (weight_unpacked[:, k] - zero) * scale
+
+    # Matrix multiplication: act (M, K) @ weight_dequant.T (K, N) = (M, N)
+    act_cpu = act.cpu().to(torch.float32)
+    output = torch.matmul(act_cpu, weight_dequant.T)
+
+    return output.to(act.dtype)
+
+
+@pytest.mark.weight_int4pack_mm_with_scales_and_zeros
+@pytest.mark.parametrize("M, N, K", [(128, 256, 128), (256, 128, 256)])
+@pytest.mark.parametrize("qGroupSize", [32, 64])
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_accuracy_weight_int4pack_mm_with_scales_and_zeros(M, N, K, qGroupSize, dtype):
+    if flag_gems.vendor_name not in ["iluvatar"]:
+        pytest.skip("This test is only for Iluvatar backend")
+
+    # Create activation tensor (M, K)
+    act = torch.randn(M, K, dtype=dtype, device=flag_gems.device)
+
+    # Create packed int4 weight tensor (N, K/2)
+    # Values should be 0-15 (representing int4)
+    weight_int4 = torch.randint(0, 16, (N, K // 2), dtype=torch.uint8, device=flag_gems.device)
+
+    # Create scale and zero tensors (N, K/qGroupSize)
+    num_groups = K // qGroupSize
+    qScale = torch.rand(N, num_groups, dtype=dtype, device=flag_gems.device) * 2
+    qZero = torch.zeros(N, num_groups, dtype=dtype, device=flag_gems.device)
+
+    # Reference implementation (CPU)
+    ref_out = _reference_int4pack_mm_with_scales_and_zeros(
+        act, weight_int4, qGroupSize, qScale, qZero
+    )
+
+    # Iluvatar specialized implementation
+    from flag_gems.runtime.backend._iluvatar.ops import _weight_int4pack_mm_with_scales_and_zeros as iluvatar_impl
+    res_out = iluvatar_impl(act, weight_int4, qGroupSize, qScale, qZero)
+
+    # Verify results
+    gems_assert_close(res_out.cpu(), ref_out, dtype)
