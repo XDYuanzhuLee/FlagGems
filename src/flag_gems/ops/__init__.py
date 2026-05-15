@@ -15,6 +15,7 @@ from flag_gems.ops.addmv import addmv, addmv_out
 from flag_gems.ops.addr import addr
 from flag_gems.ops.alias_copy import alias_copy, alias_copy_out
 from flag_gems.ops.all import all, all_dim, all_dims
+from flag_gems.ops._is_all_true import _is_all_true
 from flag_gems.ops.amax import amax
 from flag_gems.ops.angle import angle
 from flag_gems.ops.any import any, any_dim, any_dims

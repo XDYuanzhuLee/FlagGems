@@ -2777,3 +2777,45 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+# _is_all_true test
+@pytest.mark.is_all_true
+@pytest.mark.parametrize("shape", [(16,), (32, 64), (128, 256), (1, 8192)])
+def test_accuracy__is_all_true(shape):
+    inp = torch.randint(0, 2, shape, dtype=torch.bool, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+    ref_out = torch._is_all_true(ref_inp)
+    with flag_gems.use_gems():
+        res_out = torch._is_all_true(inp)
+    gems_assert_equal(res_out, ref_out)
+
+
+@pytest.mark.is_all_true
+def test_accuracy__is_all_true_empty():
+    inp = torch.tensor([], dtype=torch.bool, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+    ref_out = torch._is_all_true(ref_inp)
+    with flag_gems.use_gems():
+        res_out = torch._is_all_true(inp)
+    gems_assert_equal(res_out, ref_out)
+
+
+@pytest.mark.is_all_true
+def test_accuracy__is_all_true_single_true():
+    inp = torch.tensor([True], dtype=torch.bool, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+    ref_out = torch._is_all_true(ref_inp)
+    with flag_gems.use_gems():
+        res_out = torch._is_all_true(inp)
+    gems_assert_equal(res_out, ref_out)
+
+
+@pytest.mark.is_all_true
+def test_accuracy__is_all_true_single_false():
+    inp = torch.tensor([False], dtype=torch.bool, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+    ref_out = torch._is_all_true(ref_inp)
+    with flag_gems.use_gems():
+        res_out = torch._is_all_true(inp)
+    gems_assert_equal(res_out, ref_out)
