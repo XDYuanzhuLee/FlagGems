@@ -2232,3 +2232,106 @@ def test_accuracy_special_i0e_out(shape, dtype):
         act_out = torch.ops.aten.special_i0e.out(x, out=out_act)
     gems_assert_close(act_out, ref_out, dtype)
     gems_assert_close(out_act, out_ref, dtype)
+
+
+# Reference implementation for swiglu using PyTorch ops
+def swiglu_ref(x):
+    """Reference swiglu implementation using PyTorch operations."""
+    x_a, x_b = x.chunk(2, dim=-1)
+    # silu(x) = x * sigmoid(x)
+    silu_x_a = x_a * torch.sigmoid(x_a)
+    return silu_x_a * x_b
+
+
+def dswiglu_ref(grad_output, input_tensor):
+    """Reference dswiglu implementation using PyTorch operations."""
+    shape = input_tensor.shape
+    H = shape[-1] // 2
+    M = input_tensor.numel() // (2 * H)
+
+    # Reshape for easier computation
+    grad_out_2d = grad_output.contiguous().view(M, H)
+    input_2d = input_tensor.contiguous().view(M, 2 * H)
+
+    x_a, x_b = input_2d.chunk(2, dim=-1)
+
+    # Compute silu and its derivative
+    sig = torch.sigmoid(x_a)
+    silu = x_a * sig
+    d_silu = sig + x_a * sig * (1 - sig)
+
+    # Compute gradients
+    grad_a = grad_out_2d * x_b * d_silu
+    grad_b = grad_out_2d * silu
+
+    # Concatenate gradients
+    grad_in_2d = torch.cat([grad_a, grad_b], dim=-1)
+    return grad_in_2d.view_as(input_tensor)
+
+
+# Metax-specific swiglu tests that don't require transformer engine
+def filter_valid_shapes(shapes):
+    valid_shapes = []
+    for shape in shapes:
+        if not shape:
+            continue
+        if shape[-1] % 2 == 0:
+            valid_shapes.append(shape)
+    return valid_shapes
+
+
+SWIGLU_METAX_SHAPES = filter_valid_shapes(
+    [
+        (2,),
+        (64,),
+        (32, 64),
+        (256, 512),
+        (1, 128),
+        (8, 16, 32),
+        (16, 32, 64),
+    ]
+)
+
+
+@pytest.mark.swiglu
+@pytest.mark.parametrize("shape", SWIGLU_METAX_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_swiglu_metax(shape, dtype):
+    """Metax-specific swiglu test using PyTorch reference implementation."""
+    torch.manual_seed(42)
+    device = flag_gems.device
+
+    input_tensor = torch.randn(shape, dtype=dtype, device=device).contiguous()
+
+    # Compute reference using PyTorch operations
+    ref_out = swiglu_ref(input_tensor)
+
+    # Compute using flag_gems (metax implementation)
+    with flag_gems.use_gems():
+        fg_out = flag_gems.swiglu(input_tensor, quantizer=None)
+
+    gems_assert_close(fg_out, ref_out, dtype)
+
+
+@pytest.mark.swiglu
+@pytest.mark.parametrize("shape", SWIGLU_METAX_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_dswiglu_metax(shape, dtype):
+    """Metax-specific dswiglu test using PyTorch reference implementation."""
+    torch.manual_seed(42)
+    device = flag_gems.device
+
+    input_tensor = torch.randn(shape, dtype=dtype, device=device).contiguous()
+
+    grad_shape = list(shape)
+    grad_shape[-1] = grad_shape[-1] // 2
+    grad_output = torch.randn(tuple(grad_shape), dtype=dtype, device=device).contiguous()
+
+    # Compute reference using PyTorch operations
+    ref_grad_input = dswiglu_ref(grad_output, input_tensor)
+
+    # Compute using flag_gems (metax implementation)
+    with flag_gems.use_gems():
+        fg_grad_input = flag_gems.dswiglu(grad_output, input_tensor, quantizer=None)
+
+    gems_assert_close(fg_grad_input, ref_grad_input, dtype)
