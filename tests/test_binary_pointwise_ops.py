@@ -2540,3 +2540,22 @@ def test_accuracy_atan2_out(shape, dtype):
         res_out = torch.ops.aten.atan2.out(x, y, out=res_out_buf)
 
     gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.special_shifted_chebyshev_polynomial_t
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy_special_shifted_chebyshev_polynomial_t(shape, dtype):
+    # Generate x in [0, 1] range for valid shifted Chebyshev input
+    x = torch.rand(shape, dtype=dtype, device=flag_gems.device)
+    # Generate n as integer tensor for polynomial degree
+    n = torch.randint(0, 10, shape, dtype=dtype, device=flag_gems.device)
+
+    ref_x = to_reference(x)
+    ref_n = to_reference(n)
+    ref_out = torch.special.shifted_chebyshev_polynomial_t(ref_x, ref_n)
+
+    with flag_gems.use_gems():
+        res_out = torch.special.shifted_chebyshev_polynomial_t(x, n)
+
+    gems_assert_close(res_out, ref_out, dtype)

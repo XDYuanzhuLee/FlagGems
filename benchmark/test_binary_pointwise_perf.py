@@ -82,6 +82,8 @@ class BinaryPointwiseBenchmark(Benchmark):
             ("allclose", torch.allclose, FLOAT_DTYPES + INT_DTYPES),
             # Log operations
             ("logaddexp", torch.logaddexp, FLOAT_DTYPES),
+            # Special operations
+            ("special_shifted_chebyshev_polynomial_t", torch.special.shifted_chebyshev_polynomial_t, [torch.float32]),
         ]
     ],
 )
