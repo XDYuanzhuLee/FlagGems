@@ -796,3 +796,77 @@ def test_accuracy_batch_norm_backward(shape, dtype, affine):
             res_weight_grad, ref_weight_grad, dtype, reduce_dim=reduce_dim
         )
         gems_assert_close(res_bias_grad, ref_bias_grad, dtype, reduce_dim=reduce_dim)
+
+
+# LayerNorm_Dropout test: Fused LayerNorm + Dropout operator
+@pytest.mark.LayerNorm_Dropout
+@pytest.mark.parametrize(
+    "shape",
+    [
+        (2, 32),
+        (4, 64),
+        (8, 128),
+        (16, 256),
+        (32, 512),
+        (64, 1024),
+    ],
+)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+@pytest.mark.parametrize("p", [0.0, 0.1, 0.3, 0.5])
+@pytest.mark.parametrize("wb_none", [False, True])
+def test_accuracy_layernorm_dropout(shape, dtype, p, wb_none):
+    """Test fused LayerNorm + Dropout operator."""
+    if flag_gems.vendor_name == "kunlunxin":
+        torch.manual_seed(0)
+        torch.cuda.manual_seed_all(0)
+
+    normalized_shape = (shape[1],)
+    res_inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+
+    if wb_none:
+        res_weight = None
+        res_bias = None
+    else:
+        res_weight = torch.randn(normalized_shape, dtype=dtype, device=flag_gems.device)
+        res_bias = torch.randn(normalized_shape, dtype=dtype, device=flag_gems.device)
+
+    eps = 1e-5
+    train = True
+
+    # Reference: LayerNorm followed by Dropout
+    ref_inp = to_reference(res_inp, True)
+    ref_weight = to_reference(res_weight, True)
+    ref_bias = to_reference(res_bias, True)
+
+    # Apply LayerNorm
+    ref_normalized = torch.nn.functional.layer_norm(
+        ref_inp,
+        normalized_shape,
+        weight=ref_weight,
+        bias=ref_bias,
+        eps=eps,
+    )
+    # Apply Dropout during training
+    ref_out = torch.nn.functional.dropout(ref_normalized, p=p, training=train)
+
+    # Test with FlagGems implementation
+    res_out = flag_gems.layer_norm_dropout(
+        res_inp,
+        normalized_shape,
+        weight=res_weight,
+        bias=res_bias,
+        eps=eps,
+        p=p,
+        train=train,
+    )
+
+    # For dropout, we only check that shapes match since dropout is random
+    # The reference also has dropout so we compare deterministically when p=0
+    if p == 0.0:
+        # No dropout, should match exactly
+        gems_assert_close(res_out, ref_out, dtype)
+    else:
+        # With dropout, just verify shapes match and no NaN/Inf
+        assert res_out.shape == ref_out.shape
+        assert not torch.isnan(res_out).any()
+        assert not torch.isinf(res_out).any()

@@ -10,6 +10,7 @@ from .index import index
 from .index_put import index_put, index_put_
 from .index_select import index_select
 from .isin import isin
+from .LayerNorm_Dropout import layer_norm_dropout
 from .log_softmax import log_softmax, log_softmax_backward
 from .masked_fill import masked_fill, masked_fill_
 from .min import min, min_dim
@@ -47,6 +48,7 @@ __all__ = [
     "isin",
     "log_softmax",
     "log_softmax_backward",
+    "layer_norm_dropout",
     "masked_fill",
     "masked_fill_",
     "min_dim",
