@@ -467,3 +467,53 @@ def test_addr_benchmark():
         dtypes=FLOAT_DTYPES,
     )
     bench.run()
+
+
+class WeightInt4PackMmWithScalesAndZerosBenchmark(BlasBenchmark):
+    """
+    benchmark for weight_int4pack_mm_with_scales_and_zeros
+    """
+
+    def set_more_shapes(self):
+        return None
+
+    def get_tflops(self, op, *args, **kwargs):
+        # int4 weight-only mm: approximately 1 operation per int4 value
+        act, weight, qGroupSize, qScale, qZero = args
+        m, k = act.shape
+        n = weight.shape[0]
+        # For weight-only int4 mm, we count dequantization + matmul ops
+        # Each int4 requires: unpack + dequantize + multiply + add
+        # Approximate: 4 * m * n * k / 2 flops
+        return m * n * k * 4
+
+
+@pytest.mark.weight_int4pack_mm_with_scales_and_zeros
+def test_weight_int4pack_mm_with_scales_and_zeros_benchmark():
+    from flag_gems.runtime.backend._iluvatar.ops import (
+        _weight_int4pack_mm_with_scales_and_zeros as gems_op,
+    )
+
+    def int4pack_mm_input_fn(b, m, n, k, cur_dtype, device, b_column_major):
+        del b, b_column_major
+        k_aligned = (k + 31) // 32 * 32  # Align to multiple of 32
+        qGroupSize = 32
+        num_groups = k_aligned // qGroupSize
+
+        # Activation: (M, K)
+        act = torch.randn(m, k_aligned, dtype=cur_dtype, device=device)
+        # Weight: (N, K/2) packed int4
+        weight = torch.randint(0, 16, (n, k_aligned // 2), dtype=torch.uint8, device=device)
+        # Scale and zero: (N, K/qGroupSize)
+        qScale = torch.rand(n, num_groups, dtype=cur_dtype, device=device) * 2
+        qZero = torch.zeros(n, num_groups, dtype=cur_dtype, device=device)
+
+        yield act, weight, qGroupSize, qScale, qZero
+
+    bench = WeightInt4PackMmWithScalesAndZerosBenchmark(
+        input_fn=int4pack_mm_input_fn,
+        op_name="weight_int4pack_mm_with_scales_and_zeros",
+        torch_op=gems_op,
+        dtypes=[torch.float16, torch.bfloat16],
+    )
+    bench.run()
