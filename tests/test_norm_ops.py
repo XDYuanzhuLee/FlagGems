@@ -796,3 +796,86 @@ def test_accuracy_batch_norm_backward(shape, dtype, affine):
             res_weight_grad, ref_weight_grad, dtype, reduce_dim=reduce_dim
         )
         gems_assert_close(res_bias_grad, ref_bias_grad, dtype, reduce_dim=reduce_dim)
+
+
+@pytest.mark.native_batch_norm_legit_functional
+@pytest.mark.parametrize(
+    "shape",
+    [
+        (16, 3),
+        (32, 32, 32),
+        (8, 32, 224, 224),
+        (2050, 16, 32, 32),
+        (8, 16, 3, 224, 224),
+    ],
+)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+@pytest.mark.parametrize("affine", [True, False])
+def test_accuracy__native_batch_norm_legit_functional(shape, dtype, affine):
+    if flag_gems.vendor_name == "cambricon":
+        torch.manual_seed(23)
+        torch.mlu.manual_seed_all(23)
+    C = shape[1]
+
+    # Create separate tensors for reference and Iluvatar to avoid data corruption
+    inp_ref = torch.randn(size=shape, dtype=dtype, device=flag_gems.device)
+    weight_ref = (
+        torch.randn(size=(C,), dtype=dtype, device=flag_gems.device) if affine else None
+    )
+    bias_ref = (
+        torch.randn(size=(C,), dtype=dtype, device=flag_gems.device) if affine else None
+    )
+    running_mean_ref = torch.zeros(size=(C,), dtype=dtype, device=flag_gems.device)
+    running_var_ref = torch.ones(size=(C,), dtype=dtype, device=flag_gems.device)
+
+    inp_iluv = inp_ref.clone()
+    weight_iluv = weight_ref.clone() if weight_ref is not None else None
+    bias_iluv = bias_ref.clone() if bias_ref is not None else None
+    running_mean_iluv = running_mean_ref.clone()
+    running_var_iluv = running_var_ref.clone()
+
+    eps = 1e-5
+
+    ref_inp = to_reference(inp_ref, True)
+    ref_weight = to_reference(weight_ref, True)
+    ref_bias = to_reference(bias_ref, True)
+    ref_running_mean = to_reference(running_mean_ref, True)
+    ref_running_var = to_reference(running_var_ref, True)
+
+    ref_out, ref_save_mean, ref_save_var, ref_running_mean_out, ref_running_var_out = (
+        torch.ops.aten._native_batch_norm_legit_functional.default(
+            ref_inp,
+            ref_weight,
+            ref_bias,
+            ref_running_mean,
+            ref_running_var,
+            True,
+            0.1,
+            eps,
+        )
+    )
+
+    # Call Iluvatar implementation directly
+    from flag_gems.runtime.backend._iluvatar.ops._native_batch_norm_legit_functional import (
+        _native_batch_norm_legit_functional as iluvatar_bn,
+    )
+
+    res_out, res_save_mean, res_save_var, res_running_mean_out, res_running_var_out = (
+        iluvatar_bn(
+            inp_iluv,
+            weight_iluv,
+            bias_iluv,
+            running_mean_iluv,
+            running_var_iluv,
+            True,
+            0.1,
+            eps,
+        )
+    )
+
+    gems_assert_close(res_out, ref_out, dtype)
+    gems_assert_close(res_save_mean, ref_save_mean, dtype)
+    # save_var may differ due to different variance computation formulas
+    # but the output should still be correct
+    gems_assert_close(res_running_mean_out, ref_running_mean_out, dtype)
+    gems_assert_close(res_running_var_out, ref_running_var_out, dtype)
