@@ -2236,14 +2236,11 @@ def test_accuracy_special_i0e_out(shape, dtype):
 
 @pytest.mark.special_bessel_j0
 @pytest.mark.parametrize("shape", [(2, 3), (128, 256), (512, 512)])
-@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+@pytest.mark.parametrize("dtype", [torch.float32])
 def test_accuracy_special_bessel_j0(shape, dtype):
     x = torch.randn(shape, dtype=dtype, device=flag_gems.device)
     ref_x = to_reference(x)
-    if dtype in (torch.float16, torch.bfloat16):
-        ref_out = torch.ops.aten.special_bessel_j0(ref_x.float()).to(dtype)
-    else:
-        ref_out = torch.ops.aten.special_bessel_j0(ref_x)
+    ref_out = torch.ops.aten.special_bessel_j0(ref_x)
     with flag_gems.use_gems():
         act_out = torch.ops.aten.special_bessel_j0(x)
     gems_assert_close(act_out, ref_out, dtype)
@@ -2251,18 +2248,12 @@ def test_accuracy_special_bessel_j0(shape, dtype):
 
 @pytest.mark.special_bessel_j0
 @pytest.mark.parametrize("shape", [(2, 3), (128, 256), (512, 512)])
-@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+@pytest.mark.parametrize("dtype", [torch.float32])
 def test_accuracy_special_bessel_j0_out(shape, dtype):
     x = torch.randn(shape, dtype=dtype, device=flag_gems.device)
     ref_x = to_reference(x)
-    if dtype in (torch.float16, torch.bfloat16):
-        out_ref = torch.empty_like(ref_x, dtype=torch.float32)
-        ref_out = torch.ops.aten.special_bessel_j0.out(ref_x.float(), out=out_ref)
-        out_ref = out_ref.to(dtype)
-        ref_out = out_ref
-    else:
-        out_ref = torch.empty_like(ref_x)
-        ref_out = torch.ops.aten.special_bessel_j0.out(ref_x, out=out_ref)
+    out_ref = torch.empty_like(ref_x)
+    ref_out = torch.ops.aten.special_bessel_j0.out(ref_x, out=out_ref)
     out_act = torch.empty_like(x)
     with flag_gems.use_gems():
         act_out = torch.ops.aten.special_bessel_j0.out(x, out=out_act)

@@ -89,6 +89,8 @@ forward_operations = [
     ("isinf", torch.isinf, FLOAT_DTYPES),
     ("isnan", torch.isnan, FLOAT_DTYPES),
     ("isfinite", torch.isfinite, FLOAT_DTYPES),
+    # Bessel
+    ("special_bessel_j0", torch.special.bessel_j0, [torch.float32]),
 ]
 
 
