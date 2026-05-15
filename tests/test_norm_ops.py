@@ -796,3 +796,140 @@ def test_accuracy_batch_norm_backward(shape, dtype, affine):
             res_weight_grad, ref_weight_grad, dtype, reduce_dim=reduce_dim
         )
         gems_assert_close(res_bias_grad, ref_bias_grad, dtype, reduce_dim=reduce_dim)
+
+
+@pytest.mark.miopen_batch_norm
+@pytest.mark.parametrize(
+    "shape",
+    [
+        (16, 3),
+        (32, 32, 32),
+        (8, 32, 224, 224),
+    ],
+)
+@pytest.mark.parametrize("dtype", [torch.float32])
+@pytest.mark.parametrize("affine", [True, False])
+def test_accuracy_miopen_batch_norm(shape, dtype, affine):
+    r"""Test for iluvatar specialized miopen_batch_norm operator."""
+    C = shape[1]
+    inp = torch.randn(size=shape, dtype=dtype, device=flag_gems.device)
+    weight = (
+        torch.randn(size=(C,), dtype=dtype, device=flag_gems.device) if affine else None
+    )
+    bias = (
+        torch.randn(size=(C,), dtype=dtype, device=flag_gems.device) if affine else None
+    )
+
+    running_mean = torch.zeros(size=(C,), dtype=dtype, device=flag_gems.device)
+    running_var = torch.ones(size=(C,), dtype=dtype, device=flag_gems.device)
+
+    eps = 1e-5
+    exponential_average_factor = 0.1
+
+    # Use CPU for reference to avoid CUDA float16/32->float64 conversion bug
+    ref_inp = inp.to("cpu").to(torch.float64)
+    ref_weight = weight.to("cpu").to(torch.float64) if weight is not None else None
+    ref_bias = bias.to("cpu").to(torch.float64) if bias is not None else None
+    ref_running_mean = running_mean.to("cpu").to(torch.float64)
+    ref_running_var = running_var.to("cpu").to(torch.float64)
+
+    # Reference: call torch.nn.functional.batch_norm
+    ref_out = torch.nn.functional.batch_norm(
+        ref_inp,
+        ref_running_mean,
+        ref_running_var,
+        weight=ref_weight,
+        bias=ref_bias,
+        eps=eps,
+        momentum=1.0 - exponential_average_factor,
+    )
+    # Move reference to same device and dtype as result
+    ref_out = ref_out.to(device=inp.device, dtype=dtype)
+
+    # Test the iluvatar specialized miopen_batch_norm
+    res_out, res_save_mean, res_save_var = flag_gems.miopen_batch_norm(
+        inp,
+        weight,
+        bias,
+        running_mean,
+        running_var,
+        False,  # training
+        exponential_average_factor,
+        eps,
+    )
+
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.miopen_batch_norm
+@pytest.mark.parametrize(
+    "shape",
+    [
+        (16, 3),
+        (32, 32, 32),
+        (8, 32, 224, 224),
+    ],
+)
+@pytest.mark.parametrize("dtype", [torch.float32])
+@pytest.mark.parametrize("affine", [True, False])
+def test_accuracy_miopen_batch_norm_training(shape, dtype, affine):
+    r"""Test for iluvatar specialized miopen_batch_norm in training mode."""
+    C = shape[1]
+    inp = torch.randn(size=shape, dtype=dtype, device=flag_gems.device)
+    weight = (
+        torch.randn(size=(C,), dtype=dtype, device=flag_gems.device) if affine else None
+    )
+    bias = (
+        torch.randn(size=(C,), dtype=dtype, device=flag_gems.device) if affine else None
+    )
+
+    running_mean = torch.zeros(size=(C,), dtype=dtype, device=flag_gems.device)
+    running_var = torch.ones(size=(C,), dtype=dtype, device=flag_gems.device)
+
+    eps = 1e-5
+    exponential_average_factor = 0.1
+
+    # Use CPU for reference to avoid CUDA float16/32->float64 conversion bug
+    ref_inp = inp.to("cpu").to(torch.float64)
+    ref_weight = weight.to("cpu").to(torch.float64) if weight is not None else None
+    ref_bias = bias.to("cpu").to(torch.float64) if bias is not None else None
+
+    # Reference: call torch.nn.functional.batch_norm in training mode
+    # Note: In training mode, it only returns the output
+    ref_out = torch.nn.functional.batch_norm(
+        ref_inp,
+        None,  # running_mean
+        None,  # running_var
+        weight=ref_weight,
+        bias=ref_bias,
+        eps=eps,
+        momentum=1.0 - exponential_average_factor,
+        training=True,
+    )
+
+    # Compute mean and var manually for reference
+    # For batch norm, mean is computed per channel
+    ref_inp_reshaped = ref_inp.reshape(ref_inp.shape[0], ref_inp.shape[1], -1)
+    ref_save_mean = ref_inp_reshaped.mean(dim=(0, 2), keepdim=False)
+    ref_save_var = ref_inp_reshaped.var(dim=(0, 2), keepdim=False, unbiased=False)
+
+    # Move reference to same device and dtype as result
+    ref_out = ref_out.to(device=inp.device, dtype=dtype)
+    ref_save_mean = ref_save_mean.to(device=inp.device, dtype=dtype)
+    ref_save_var = ref_save_var.to(device=inp.device, dtype=dtype)
+
+    # Test the iluvatar specialized miopen_batch_norm in training mode
+    res_out, res_save_mean, res_save_var = flag_gems.miopen_batch_norm(
+        inp,
+        weight,
+        bias,
+        running_mean,
+        running_var,
+        True,  # training
+        exponential_average_factor,
+        eps,
+    )
+
+    gems_assert_close(res_out, ref_out, dtype)
+    gems_assert_close(res_save_mean.float(), ref_save_mean.float(), dtype)
+    gems_assert_close(res_save_var.float(), ref_save_var.float(), dtype)
