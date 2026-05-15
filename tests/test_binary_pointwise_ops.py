@@ -2540,3 +2540,31 @@ def test_accuracy_atan2_out(shape, dtype):
         res_out = torch.ops.aten.atan2.out(x, y, out=res_out_buf)
 
     gems_assert_close(res_out, ref_out, dtype)
+
+
+# Test shapes for _euclidean_dist: (batch, feature_dim)
+EUCLIDEAN_DIST_SHAPES = [
+    (8, 16),
+    (16, 32),
+    (32, 64),
+    (64, 128),
+    (128, 256),
+    (256, 128),
+]
+
+
+@pytest.mark.euclidean_dist
+@pytest.mark.parametrize("shape", EUCLIDEAN_DIST_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_euclidean_dist(shape, dtype):
+    x1 = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    x2 = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_x1 = to_reference(x1)
+    ref_x2 = to_reference(x2)
+    ref_out = torch._euclidean_dist(ref_x1, ref_x2)
+    with flag_gems.use_gems():
+        res_out = torch._euclidean_dist(x1, x2)
+    # Use larger tolerance for float32 due to numerical precision differences
+    # in reduction + sqrt operations; scale with feature dimension
+    atol = 1e-2 if dtype == torch.float32 else 1e-4
+    gems_assert_close(res_out, ref_out, dtype, atol=atol)

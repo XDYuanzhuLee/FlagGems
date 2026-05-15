@@ -28,6 +28,7 @@ from .unique import _unique2
 from .upsample_nearest2d import upsample_nearest2d
 from .zeros import zeros
 from .zeros_like import zeros_like
+from ._euclidean_dist import euclidean_dist
 
 __all__ = [
     "_unique2",
@@ -36,6 +37,7 @@ __all__ = [
     "arange",
     "arange_start",
     "bmm",
+    "euclidean_dist",
     "exponential_",
     "full",
     "full_like",
