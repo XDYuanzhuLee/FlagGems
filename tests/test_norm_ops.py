@@ -796,3 +796,83 @@ def test_accuracy_batch_norm_backward(shape, dtype, affine):
             res_weight_grad, ref_weight_grad, dtype, reduce_dim=reduce_dim
         )
         gems_assert_close(res_bias_grad, ref_bias_grad, dtype, reduce_dim=reduce_dim)
+
+
+@pytest.mark.miopen_batch_norm_backward
+@pytest.mark.parametrize(
+    "shape",
+    [
+        (16, 3),
+        (32, 32, 32),
+        (8, 32, 224, 224),
+        (2050, 16, 32, 32),
+        (8, 16, 3, 224, 224),
+    ],
+)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_miopen_batch_norm_backward(shape, dtype):
+    # Import the metax implementation directly since miopen is not compiled
+    from flag_gems.runtime.backend._metax.ops.miopen_batch_norm_backward import (
+        miopen_batch_norm_backward as metax_miopen_batch_norm_backward,
+    )
+
+    C = shape[1]
+    res_grad = torch.randn(size=shape, dtype=dtype, device=flag_gems.device)
+    res_inp = torch.randn_like(res_grad)
+    res_weight = torch.randn(size=(C,), dtype=dtype, device=flag_gems.device)
+    res_running_mean = torch.zeros(size=(C,), dtype=dtype, device=flag_gems.device)
+    res_running_var = torch.ones(size=(C,), dtype=dtype, device=flag_gems.device)
+    res_save_mean = torch.randn(C, dtype=torch.float32, device=flag_gems.device)
+    res_save_invstd = torch.randn(C, dtype=torch.float32, device=flag_gems.device)
+
+    ref_grad = to_reference(res_grad, True)
+    ref_inp = to_reference(res_inp, True)
+    ref_weight = to_reference(res_weight, True)
+    ref_running_mean = to_reference(res_running_mean, True)
+    ref_running_var = to_reference(res_running_var, True)
+    ref_save_mean = to_reference(res_save_mean, True)
+    ref_save_invstd = to_reference(res_save_invstd, True)
+
+    eps = 1e-05
+    output_mask = (True, True, True)
+
+    # Reference: use native batch norm backward as reference
+    (
+        ref_in_grad,
+        ref_weight_grad,
+        ref_bias_grad,
+    ) = torch.ops.aten.native_batch_norm_backward(
+        ref_grad,
+        ref_inp,
+        ref_weight,
+        ref_running_mean,
+        ref_running_var,
+        ref_save_mean,
+        ref_save_invstd,
+        True,  # train
+        eps,
+        output_mask,
+    )
+
+    # Test metax operator: call the metax implementation directly
+    (
+        res_in_grad,
+        res_weight_grad,
+        res_bias_grad,
+    ) = metax_miopen_batch_norm_backward(
+        res_grad,
+        res_inp,
+        res_weight,
+        res_running_mean,
+        res_running_var,
+        res_save_mean,
+        res_save_invstd,
+        eps,
+    )
+
+    reduce_dim = math.prod(shape) // C
+    gems_assert_close(res_in_grad, ref_in_grad, dtype, reduce_dim=reduce_dim)
+    gems_assert_close(
+        res_weight_grad, ref_weight_grad, dtype, reduce_dim=reduce_dim
+    )
+    gems_assert_close(res_bias_grad, ref_bias_grad, dtype, reduce_dim=reduce_dim)
