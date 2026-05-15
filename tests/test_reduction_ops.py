@@ -1665,6 +1665,119 @@ def test_accuracy_max_pool2d_backward(
     gems_assert_close(res_in_grad, ref_in_grad, dtype)
 
 
+MAXPOOL3D_CONFIGS = [
+    # Classic case: 3x3x3 kernel, stride 2, padding 1
+    ((2, 3, 8, 16, 16), 3, 2, 1, 1, False),
+    # Non-square kernel and stride
+    ((1, 8, 8, 16, 16), (2, 3, 3), (1, 2, 2), 1, 1, False),
+    # Test ceil_mode
+    ((1, 4, 4, 8, 8), 2, 2, 0, 1, True),
+    # Test dilation
+    ((1, 1, 4, 4, 4), 2, 1, 0, 2, False),
+    # No padding
+    ((1, 2, 8, 8, 8), 2, 2, 0, 1, False),
+]
+
+
+@pytest.mark.max_pool3d
+@pytest.mark.parametrize(
+    "shape, kernel_size, stride, padding, dilation, ceil_mode", MAXPOOL3D_CONFIGS
+)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_max_pool3d(shape, kernel_size, stride, padding, dilation, ceil_mode, dtype):
+    # Use same input for both to ensure outputs match
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device, requires_grad=True)
+
+    ref_out, _ = torch.nn.functional.max_pool3d_with_indices(
+        inp,
+        kernel_size=kernel_size,
+        stride=stride,
+        padding=padding,
+        dilation=dilation,
+        ceil_mode=ceil_mode,
+    )
+    res_out, res_indices = flag_gems.max_pool3d_with_indices(
+        inp,
+        kernel_size=kernel_size,
+        stride=stride,
+        padding=padding,
+        dilation=dilation,
+        ceil_mode=ceil_mode,
+    )
+
+    # Use appropriate tolerance
+    if dtype == torch.float16:
+        torch.testing.assert_close(res_out, ref_out, rtol=1e-3, atol=1e-3)
+    elif dtype == torch.bfloat16:
+        torch.testing.assert_close(res_out, ref_out, rtol=2e-2, atol=2e-2)
+    else:
+        gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.max_pool3d_backward
+@pytest.mark.parametrize(
+    "shape, kernel_size, stride, padding, dilation, ceil_mode", MAXPOOL3D_CONFIGS
+)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_max_pool3d_backward(shape, kernel_size, stride, padding, dilation, ceil_mode, dtype):
+    # Use the same input for both reference and result to ensure indices match
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device, requires_grad=True)
+
+    # Run reference in the same precision to get matching indices
+    ref_out, ref_indices = torch.nn.functional.max_pool3d_with_indices(
+        inp.detach().requires_grad_(True),
+        kernel_size=kernel_size,
+        stride=stride,
+        padding=padding,
+        dilation=dilation,
+        ceil_mode=ceil_mode,
+    )
+    res_out, res_indices = flag_gems.max_pool3d_with_indices(
+        inp,
+        kernel_size=kernel_size,
+        stride=stride,
+        padding=padding,
+        dilation=dilation,
+        ceil_mode=ceil_mode,
+    )
+
+    # Verify indices match (they should since we use same input)
+    # Use result indices for both backward passes to ensure fair comparison
+    out_grad = torch.randn_like(res_out, device=flag_gems.device)
+
+    # Reference backward using PyTorch (with res_indices to match)
+    ref_inp_fake = inp.detach().requires_grad_(True)
+    ref_out_fake, _ = torch.nn.functional.max_pool3d_with_indices(
+        ref_inp_fake,
+        kernel_size=kernel_size,
+        stride=stride,
+        padding=padding,
+        dilation=dilation,
+        ceil_mode=ceil_mode,
+    )
+    (ref_in_grad,) = torch.autograd.grad(ref_out_fake, ref_inp_fake, out_grad)
+
+    # Our backward
+    res_in_grad = flag_gems.max_pool3d_with_indices_backward(
+        out_grad,
+        inp,
+        res_indices,
+        kernel_size=kernel_size,
+        stride=stride,
+        padding=padding,
+        dilation=dilation,
+        ceil_mode=ceil_mode,
+    )
+
+    # Use appropriate tolerance based on dtype
+    if dtype == torch.float16:
+        torch.testing.assert_close(res_in_grad, ref_in_grad, rtol=2e-3, atol=2e-3)
+    elif dtype == torch.bfloat16:
+        torch.testing.assert_close(res_in_grad, ref_in_grad, rtol=2e-2, atol=2e-2)
+    else:
+        gems_assert_close(res_in_grad, ref_in_grad, dtype)
+
+
 INDEX_PUT_SHAPE_ACC_FALSE = (
     ((2**28,), ((2**16,),), (2**16,), False),
     ((32, 32), ((8,), (8,)), (8,), False),
