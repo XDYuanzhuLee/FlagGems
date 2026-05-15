@@ -146,6 +146,7 @@ forward_inplace_operations = [
     ("i0_", torch.Tensor.i0_, FLOAT_DTYPES),
     ("digamma_", lambda a: a.digamma_(), FLOAT_DTYPES),
     ("arctanh_", lambda a: a.arctanh_(), FLOAT_DTYPES),
+    ("arccosh_", lambda a: a.arccosh_(), FLOAT_DTYPES),
     ("digamma_", lambda a: a.digamma_(), FLOAT_DTYPES),
     ("asinh_", lambda a: a.asinh_(), FLOAT_DTYPES),
     ("digamma_", lambda a: a.digamma_(), FLOAT_DTYPES),
