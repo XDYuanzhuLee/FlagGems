@@ -2213,22 +2213,36 @@ def test_accuracy_special_i0e(shape, dtype):
     gems_assert_close(act_out, ref_out, dtype)
 
 
-@pytest.mark.special_i0e
+@pytest.mark.special_exp2
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_special_exp2(shape, dtype):
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    # Compute reference on CPU to avoid Iluvatar .to() dtype conversion bug
+    ref_out = torch.special.exp2(inp.cpu())
+    with flag_gems.use_gems():
+        res_out = torch.special.exp2(inp)
+
+    gems_assert_close(res_out, ref_out.to(flag_gems.device), dtype)
+
+
+@pytest.mark.special_exp2
 @pytest.mark.parametrize("shape", [(2, 3), (128, 256), (512, 512)])
 @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
-def test_accuracy_special_i0e_out(shape, dtype):
+def test_accuracy_special_exp2_out(shape, dtype):
     x = torch.randn(shape, dtype=dtype, device=flag_gems.device)
-    ref_x = to_reference(x)
+    # Compute reference on CPU to avoid Iluvatar .to() dtype conversion bug
+    ref_x = x.cpu()
     if dtype in (torch.float16, torch.bfloat16):
         out_ref = torch.empty_like(ref_x, dtype=torch.float32)
-        ref_out = torch.ops.aten.special_i0e.out(ref_x.float(), out=out_ref)
+        ref_out = torch.ops.aten.special_exp2.out(ref_x.float(), out=out_ref)
         out_ref = out_ref.to(dtype)
         ref_out = out_ref
     else:
         out_ref = torch.empty_like(ref_x)
-        ref_out = torch.ops.aten.special_i0e.out(ref_x, out=out_ref)
+        ref_out = torch.ops.aten.special_exp2.out(ref_x, out=out_ref)
     out_act = torch.empty_like(x)
     with flag_gems.use_gems():
-        act_out = torch.ops.aten.special_i0e.out(x, out=out_act)
-    gems_assert_close(act_out, ref_out, dtype)
-    gems_assert_close(out_act, out_ref, dtype)
+        act_out = torch.ops.aten.special_exp2.out(x, out=out_act)
+    gems_assert_close(act_out, ref_out.to(flag_gems.device), dtype)
+    gems_assert_close(out_act, out_ref.to(flag_gems.device), dtype)
