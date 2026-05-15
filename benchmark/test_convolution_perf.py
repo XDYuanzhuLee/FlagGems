@@ -168,3 +168,67 @@ def test_perf_conv3d():
     )
     bench.set_gems(flag_gems.conv3d)
     bench.run()
+
+
+# Benchmark for torch.convolution (the low-level convolution interface)
+class ConvolutionBenchmark(GenericBenchmark):
+    def set_more_shapes(self):
+        # Return empty list to avoid merging with default shapes
+        return []
+
+    def set_shapes(self, shape_file_path=None):
+        # Override to prevent loading from yaml - we set shapes manually
+        pass
+
+
+@pytest.mark.convolution
+def test_perf_convolution():
+    def convolution_input_fn(shape, dtype, device):
+        (
+            batch,
+            input_c,
+            input_h,
+            input_w,
+            out_c,
+            in_c_per_group,
+            kernel_h,
+            kernel_w,
+            stride,
+            padding,
+            groups,
+        ) = shape
+        input_shape = (batch, input_c, input_h, input_w)
+        weight_shape = (out_c, in_c_per_group, kernel_h, kernel_w)
+        input = torch.randn(size=input_shape, device=device, dtype=dtype)
+        weight = torch.randn(size=weight_shape, device=device, dtype=dtype)
+
+        yield {
+            "input": input,
+            "weight": weight,
+            "bias": None,
+            "stride": (stride, stride),  # Convert to tuple
+            "padding": (padding, padding),  # Convert to tuple
+            "dilation": (1, 1),  # Convert to tuple
+            "transposed": False,
+            "output_padding": (0, 0),  # Convert to tuple
+            "groups": groups,
+        },
+
+    torch.backends.cudnn.allow_tf32 = False
+    bench = ConvolutionBenchmark(
+        input_fn=convolution_input_fn,
+        op_name="convolution",
+        torch_op=torch.convolution,
+        dtypes=[
+            torch.float32,
+        ],  # Only float32 for metax backend
+    )
+    bench.set_gems(flag_gems.convolution)
+    # Override shapes to only use our custom shapes (after set_gems to avoid being overwritten)
+    bench.shapes = [
+        (1, 2, 5, 5, 1, 2, 3, 3, 1, 0, 1),
+        (2, 3, 9, 9, 1, 3, 3, 3, 1, 1, 1),
+        (32, 8, 8, 8, 32, 8, 2, 2, 1, 0, 1),
+        (32, 8, 8, 8, 32, 8, 2, 2, 2, 1, 1),
+    ]
+    bench.run()
