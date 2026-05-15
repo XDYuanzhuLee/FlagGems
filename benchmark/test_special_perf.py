@@ -205,12 +205,27 @@ def resolve_conj_input_fn(shape, dtype, device):
     yield x.conj(),
 
 
+def binary_cross_entropy_backward_input_fn(shape, dtype, device):
+    # pred should be in (0, 1) to avoid edge cases
+    pred = torch.rand(size=shape, dtype=dtype, device=device) * 0.9 + 0.05
+    target = torch.randint(0, 2, size=shape, dtype=dtype, device=device).to(dtype)
+    grad_output = torch.ones(size=shape, dtype=dtype, device=device)
+    yield grad_output, pred, target
+
+
 special_operations = [
     # Sorting Operations
     ("topk", torch.topk, FLOAT_DTYPES, topk_input_fn),
     # Complex Operations
     ("resolve_neg", torch.resolve_neg, [torch.cfloat], resolve_neg_input_fn),
     ("resolve_conj", torch.resolve_conj, [torch.cfloat], resolve_conj_input_fn),
+    # Loss backward operations
+    (
+        "binary_cross_entropy_backward",
+        torch.ops.aten.binary_cross_entropy_backward,
+        FLOAT_DTYPES,
+        binary_cross_entropy_backward_input_fn,
+    ),
 ]
 
 
