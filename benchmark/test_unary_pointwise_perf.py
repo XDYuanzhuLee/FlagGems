@@ -73,6 +73,8 @@ forward_operations = [
     ("sigmoid", torch.sigmoid, FLOAT_DTYPES),
     ("log_sigmoid", torch.nn.functional.logsigmoid, FLOAT_DTYPES),
     ("silu", torch.nn.functional.silu, FLOAT_DTYPES),
+    # SwiGLU is a special activation that splits the last dimension in half
+    ("swiglu", lambda x: flag_gems.swiglu(x, quantizer=None), FLOAT_DTYPES),
     # Trigonometric operations
     ("cos", torch.cos, FLOAT_DTYPES),
     ("sin", torch.sin, FLOAT_DTYPES),
