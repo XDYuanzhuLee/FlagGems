@@ -662,3 +662,26 @@ def test_perf_bincount_weighted(dtype):
     )
     bench.set_gems(flag_gems.bincount)
     bench.run()
+
+
+def vector_norm_input_fn(shape, dtype, device):
+    inp = generate_tensor_input(shape, dtype, device)
+    ndim = inp.ndim
+    # Test along the last dimension (common use case)
+    yield inp, 2, -1  # ord=2, dim=-1
+    if ndim > 1:
+        yield inp, 2, 1  # ord=2, dim=1
+    if Config.bench_level == BenchLevel.COMPREHENSIVE:
+        yield inp, 1, -1  # ord=1, dim=-1
+        yield inp, float("inf"), -1  # ord=inf, dim=-1
+
+
+@pytest.mark.vector_norm
+def test_perf_vector_norm():
+    bench = GenericBenchmark(
+        input_fn=vector_norm_input_fn,
+        op_name="vector_norm",
+        torch_op=torch.linalg.vector_norm,
+        dtypes=FLOAT_DTYPES,
+    )
+    bench.run()
