@@ -150,6 +150,7 @@ from flag_gems.ops.lerp import lerp_scalar, lerp_scalar_, lerp_tensor, lerp_tens
 from flag_gems.ops.lift_fresh_copy import lift_fresh_copy, lift_fresh_copy_out
 from flag_gems.ops.linspace import linspace
 from flag_gems.ops.log import log
+from flag_gems.ops.log10 import log10
 from flag_gems.ops.log1p_ import log1p_
 from flag_gems.ops.log_sigmoid import log_sigmoid
 from flag_gems.ops.log_softmax import log_softmax, log_softmax_backward
@@ -492,6 +493,7 @@ __all__ = [
     "lift_fresh_copy_out",
     "linspace",
     "log",
+    "log10",
     "log_sigmoid",
     "log_softmax",
     "log_softmax_backward",
