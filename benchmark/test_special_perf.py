@@ -1467,3 +1467,33 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+@pytest.mark.special_chebyshev_polynomial_t
+def test_perf_special_chebyshev_polynomial_t():
+    def chebyshev_input_fn(shape, dtype, device):
+        x = torch.randn(shape, dtype=dtype, device=device)
+        n = torch.randint(0, 11, shape, dtype=torch.int32, device=device)
+        yield x, n
+
+    class ChebyshevBenchmark(Benchmark):
+        def set_shapes(self, shape_file_path=None):
+            self.shapes = [
+                (1024, 1024),
+                (20, 320, 15),
+                (16, 128, 64, 60),
+            ]
+
+        def set_more_shapes(self):
+            return None
+
+        def get_input_iter(self, cur_dtype):
+            for shape in self.shapes:
+                yield from chebyshev_input_fn(shape, cur_dtype, self.device)
+
+    bench = ChebyshevBenchmark(
+        op_name="special_chebyshev_polynomial_t",
+        torch_op=torch.special.chebyshev_polynomial_t,
+        dtypes=[torch.float32],
+    )
+    bench.run()
