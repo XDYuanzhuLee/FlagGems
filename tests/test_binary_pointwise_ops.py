@@ -2540,3 +2540,40 @@ def test_accuracy_atan2_out(shape, dtype):
         res_out = torch.ops.aten.atan2.out(x, y, out=res_out_buf)
 
     gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.bitwise_right_shift_
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", INT_DTYPES)
+def test_accuracy_bitwise_right_shift_(shape, dtype):
+    inp1 = torch.randint(
+        low=1, high=0x7FFF, size=shape, dtype=dtype, device="cpu"
+    ).to(flag_gems.device)
+    inp2 = torch.randint(
+        low=1, high=16, size=shape, dtype=dtype, device="cpu"
+    ).to(flag_gems.device)
+    ref_inp1 = to_reference(inp1)
+    ref_inp2 = to_reference(inp2)
+
+    ref_out = ref_inp1.bitwise_right_shift_(ref_inp2)
+    with flag_gems.use_gems():
+        res_out = inp1.bitwise_right_shift_(inp2)
+
+    gems_assert_equal(res_out, ref_out)
+
+
+@pytest.mark.bitwise_right_shift_
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", INT_DTYPES)
+def test_accuracy_bitwise_right_shift_scalar(shape, dtype):
+    inp1 = torch.randint(
+        low=1, high=0x7FFF, size=shape, dtype=dtype, device="cpu"
+    ).to(flag_gems.device)
+    inp2 = random.randint(1, 16)
+    ref_inp1 = to_reference(inp1)
+
+    ref_out = torch.bitwise_right_shift(ref_inp1, inp2)
+    with flag_gems.use_gems():
+        res_out = torch.bitwise_right_shift(inp1, inp2)
+
+    gems_assert_equal(res_out, ref_out)
