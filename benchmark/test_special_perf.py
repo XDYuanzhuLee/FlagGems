@@ -1467,3 +1467,21 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+def _binary_cross_entropy_with_logits_input_fn(shape, cur_dtype, device):
+    logits = torch.randn(shape, dtype=cur_dtype, device=device)
+    target = torch.randint(0, 2, shape, dtype=cur_dtype, device=device)
+    yield logits, target
+
+
+@pytest.mark.binary_cross_entropy_with_logits
+@pytest.mark.performance
+def test_perf_binary_cross_entropy_with_logits():
+    bench = GenericBenchmark(
+        op_name="binary_cross_entropy_with_logits",
+        torch_op=torch.ops.aten.binary_cross_entropy_with_logits,
+        dtypes=FLOAT_DTYPES,
+        input_fn=_binary_cross_entropy_with_logits_input_fn,
+    )
+    bench.run()
