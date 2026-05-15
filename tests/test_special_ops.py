@@ -2777,3 +2777,22 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.special_shifted_chebyshev_polynomial_w
+@pytest.mark.parametrize("shape", SPECIAL_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+def test_accuracy_special_shifted_chebyshev_polynomial_w(shape, dtype):
+    # Test with n=0,1,2 for simplicity as these are binary pointwise ops
+    for n_val in [0, 1, 2, 3, 5]:
+        x = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+        n = torch.tensor(n_val, device=flag_gems.device)
+
+        ref_x = to_reference(x)
+        ref_n = to_reference(n)
+
+        ref_out = torch.special.shifted_chebyshev_polynomial_w(ref_x, ref_n)
+        with flag_gems.use_gems():
+            res_out = torch.special.shifted_chebyshev_polynomial_w(x, n)
+
+        gems_assert_close(res_out, ref_out, dtype)

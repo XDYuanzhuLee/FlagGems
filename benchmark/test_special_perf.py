@@ -1467,3 +1467,24 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+class ShiftedChebyshevPolynomialWBenchmark(Benchmark):
+    def set_shapes(self, shape_file_path=None):
+        self.shapes = [(512, 512), (1024, 1024), (2048, 2048)]
+
+    def get_input_iter(self, cur_dtype):
+        for shape in self.shapes:
+            x = torch.randn(shape, dtype=cur_dtype, device=self.device)
+            n = torch.tensor(5, dtype=torch.int32, device=self.device)
+            yield x, n
+
+
+@pytest.mark.special_shifted_chebyshev_polynomial_w
+def test_perf_special_shifted_chebyshev_polynomial_w():
+    bench = ShiftedChebyshevPolynomialWBenchmark(
+        op_name="special_shifted_chebyshev_polynomial_w",
+        torch_op=torch.special.shifted_chebyshev_polynomial_w,
+        dtypes=[torch.float32, torch.float64],
+    )
+    bench.run()
