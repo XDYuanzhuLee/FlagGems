@@ -163,14 +163,19 @@ def miopen_batch_norm_backward(
     save_mean,
     save_invstd,
     epsilon=1e-05,
+    *args,
 ):
     """
     MIOpen batch norm backward operator.
     This is similar to native_batch_norm_backward but uses the MIOpen operator schema.
+
+    Note: This function accepts additional optional arguments (*args) for compatibility
+    with the native_batch_norm_backward benchmark (train, output_mask), but ignores them
+    as the MIOpen version always computes all gradients.
     """
     logger.debug("METAX GEMS MIOPEN_BATCH_NORM_BACKWARD")
 
-    # Make 3D for batch normalization
+    # Make 3d for batch normalization
     input_3d = make_3d_for_bn(input)
     grad_output_3d = make_3d_for_bn(grad_output)
 

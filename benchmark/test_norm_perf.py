@@ -257,3 +257,61 @@ def test_perf_rms_norm():
         torch_op=torch.nn.functional.rms_norm,
     )
     bench.run()
+
+
+@pytest.mark.miopen_batch_norm_backward
+def test_perf_miopen_batch_norm_backward():
+    def miopen_batch_norm_backward_input_fn(shape, dtype, device):
+        # Generate input similar to batch_norm_backward
+        for batchnorm_args in batchnorm_input_fn(shape, dtype, device):
+            (
+                inp,
+                weight,
+                bias,
+                running_mean,
+                running_var,
+                training,
+                _,
+                eps,
+                _,
+            ) = batchnorm_args
+
+            grad_output = torch.randn_like(inp)
+            channels = weight.shape[0] if weight is not None else inp.shape[1]
+
+            if running_mean is None:
+                running_mean = torch.zeros(channels, dtype=dtype, device=device)
+            if running_var is None:
+                running_var = torch.ones(channels, dtype=dtype, device=device)
+
+            save_mean = torch.randn(channels, dtype=torch.float32, device=device)
+            save_invstd = torch.randn(channels, dtype=torch.float32, device=device)
+
+            # For torch reference: grad_out, input, weight, running_mean, running_var,
+            # save_mean, save_invstd, train, eps, output_mask
+            yield (
+                grad_output,
+                inp,
+                weight,
+                running_mean,
+                running_var,
+                save_mean,
+                save_invstd,
+                training,
+                eps,
+                (True, weight is not None, bias is not None),
+            )
+
+    # Import metax implementation directly
+    from flag_gems.runtime.backend._metax.ops.miopen_batch_norm_backward import (
+        miopen_batch_norm_backward as metax_miopen_batch_norm_backward,
+    )
+
+    bench = NormBenchmark(
+        input_fn=miopen_batch_norm_backward_input_fn,
+        op_name="miopen_batch_norm_backward",
+        torch_op=torch.ops.aten.native_batch_norm_backward,
+        dtypes=[torch.float32] if vendor_name == "mthreads" else FLOAT_DTYPES,
+    )
+    bench.set_gems(metax_miopen_batch_norm_backward)
+    bench.run()
