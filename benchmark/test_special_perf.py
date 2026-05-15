@@ -205,6 +205,29 @@ def resolve_conj_input_fn(shape, dtype, device):
     yield x.conj(),
 
 
+def special_bessel_y1_input_fn(shape, dtype, device):
+    # bessel_y1 has singularities for negative values close to zero
+    # use positive values to avoid NaN in reference
+    x = torch.abs(torch.randn(size=shape, dtype=dtype, device=device)) + 0.1
+    yield x,
+
+
+# Custom benchmark for special_bessel_y1 that uses CPU reference
+@pytest.mark.special_bessel_y1
+def test_perf_special_bessel_y1():
+    # Use CPU reference since CUDA reference doesn't work on Metax
+    def bessel_y1_cpu_ref(x):
+        return torch.special.bessel_y1(x.cpu()).to(x.device)
+
+    bench = GenericBenchmarkExcluse1D(
+        input_fn=special_bessel_y1_input_fn,
+        op_name="special_bessel_y1",
+        dtypes=[torch.float32],
+        torch_op=bessel_y1_cpu_ref,
+    )
+    bench.run()
+
+
 special_operations = [
     # Sorting Operations
     ("topk", torch.topk, FLOAT_DTYPES, topk_input_fn),

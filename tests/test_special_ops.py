@@ -2777,3 +2777,19 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+# Test for special_bessel_y1
+@pytest.mark.special_bessel_y1
+@pytest.mark.parametrize("shape", SPECIAL_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy_special_bessel_y1(shape, dtype):
+    # special_bessel_y1 is only supported on float32 for reference
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    # Compute reference on CPU (the only supported dtype)
+    ref_out = torch.special.bessel_y1(inp.cpu()).to(inp.device)
+    # Compute result using FlagGems
+    with flag_gems.use_gems():
+        res_out = torch.ops.aten.special_bessel_y1(inp)
+    # bessel_y1 produces NaN for certain inputs (singularities) - this is correct
+    gems_assert_close(res_out, ref_out, dtype, equal_nan=True)
