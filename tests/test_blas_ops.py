@@ -562,3 +562,58 @@ def test_accuracy_addr(M, N, dtype):
         res_out = torch.addr(input_tensor, vec1, vec2, alpha=alpha, beta=beta)
 
     gems_assert_close(res_out, ref_out, dtype, equal_nan=True)
+
+
+@pytest.mark.linear_backward
+@pytest.mark.parametrize("M, K, N", MNK_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_linear_backward(M, K, N, dtype):
+    """Test linear_backward: backward pass for torch.nn.functional.linear.
+
+    Args:
+        self: Input tensor (batch_size, input_dim) = (M, K)
+        grad_output: Gradient of loss w.r.t. output (batch_size, output_dim) = (M, N)
+        weight: Linear weight (output_dim, input_dim) = (N, K)
+
+    Returns:
+        grad_input: (M, K) = (batch_size, input_dim)
+        grad_weight: (N, K) = (output_dim, input_dim)
+        grad_bias: (N,) = (output_dim,)
+    """
+    if flag_gems.vendor_name == "tsingmicro" and dtype == torch.float32:
+        pytest.skip("Skiping fp32 linear_backward test on tsingmicro platform")
+
+    # Skip float32 and bfloat16 tests on metax due to precision differences
+    if flag_gems.vendor_name == "metax" and dtype in [torch.float32, torch.bfloat16]:
+        pytest.skip(f"Skipping {dtype} linear_backward test on metax platform")
+
+    # Input tensor: (M, K) - batch_size x input_dim
+    inp = torch.randn((M, K), dtype=dtype, device=flag_gems.device, requires_grad=True)
+    # Weight tensor: (N, K) - output_dim x input_dim
+    weight = torch.randn((N, K), dtype=dtype, device=flag_gems.device, requires_grad=True)
+    # Grad output: (M, N) - batch_size x output_dim
+    grad_output = torch.randn((M, N), dtype=dtype, device=flag_gems.device)
+
+    # Reference: use autograd to compute expected gradients
+    # Move to float64 for precision
+    ref_inp = inp.detach().clone().to(torch.float64).requires_grad_(True)
+    ref_weight = weight.detach().clone().to(torch.float64).requires_grad_(True)
+    ref_grad_output = grad_output.detach().clone().to(torch.float64)
+
+    # Forward: y = x @ W.T (without bias for simplicity)
+    ref_y = torch.nn.functional.linear(ref_inp, ref_weight)
+    # Backward using autograd
+    ref_y.backward(ref_grad_output)
+
+    # Move results back to GPU and target dtype
+    ref_grad_input = ref_inp.grad.to(device=flag_gems.device, dtype=dtype)
+    ref_grad_weight = ref_weight.grad.to(device=flag_gems.device, dtype=dtype)
+
+    # Call metax linear_backward directly (not registered in torch.ops.aten)
+    res_grad_input, res_grad_weight, _ = flag_gems.linear_backward(
+        inp, grad_output, weight, output_mask=(True, True, False)
+    )
+
+    # Check gradients match
+    gems_assert_close(res_grad_input, ref_grad_input, dtype, reduce_dim=K)
+    gems_assert_close(res_grad_weight, ref_grad_weight, dtype, reduce_dim=M)
