@@ -796,3 +796,67 @@ def test_accuracy_batch_norm_backward(shape, dtype, affine):
             res_weight_grad, ref_weight_grad, dtype, reduce_dim=reduce_dim
         )
         gems_assert_close(res_bias_grad, ref_bias_grad, dtype, reduce_dim=reduce_dim)
+
+
+@pytest.mark.native_batch_norm_legit_no_training
+@pytest.mark.parametrize(
+    "shape",
+    [
+        (16, 3),
+        (32, 32, 32),
+        (8, 32, 224, 224),
+        (2050, 16, 32, 32),
+        (8, 16, 3, 224, 224),
+    ],
+)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+@pytest.mark.parametrize("affine", [True, False])
+def test_accuracy_native_batch_norm_legit_no_training(shape, dtype, affine):
+    C = shape[1]
+    inp = torch.randn(size=shape, dtype=dtype, device=flag_gems.device)
+    weight = (
+        torch.randn(size=(C,), dtype=dtype, device=flag_gems.device) if affine else None
+    )
+    bias = (
+        torch.randn(size=(C,), dtype=dtype, device=flag_gems.device) if affine else None
+    )
+
+    running_mean = torch.zeros(size=(C,), dtype=dtype, device=flag_gems.device)
+    running_var = torch.ones(size=(C,), dtype=dtype, device=flag_gems.device)
+
+    eps = 1e-5
+    momentum = 0.1
+
+    # Get reference result using PyTorch on CPU to bypass flag_gems patching
+    ref_inp = inp.to("cpu").to(dtype)
+    ref_weight = weight.to("cpu").to(dtype) if weight is not None else None
+    ref_bias = bias.to("cpu").to(dtype) if bias is not None else None
+    ref_running_mean = running_mean.to("cpu").to(dtype)
+    ref_running_var = running_var.to("cpu").to(dtype)
+
+    ref_out, ref_mean, ref_var = torch._native_batch_norm_legit_no_training(
+        ref_inp,
+        ref_weight,
+        ref_bias,
+        ref_running_mean,
+        ref_running_var,
+        momentum,
+        eps,
+    )
+
+    # Get result using flag_gems
+    with flag_gems.use_gems():
+        res_out, res_mean, res_var = torch._native_batch_norm_legit_no_training(
+            inp,
+            weight,
+            bias,
+            running_mean,
+            running_var,
+            momentum,
+            eps,
+        )
+
+    gems_assert_close(res_out, ref_out.to(res_out.device), dtype)
+    # In inference mode, mean and var returned are empty tensors
+    assert res_mean.shape == ref_mean.shape
+    assert res_var.shape == ref_var.shape

@@ -285,6 +285,7 @@ _FULL_CONFIG = (
     ("nan_to_num", nan_to_num),
     ("native_batch_norm", batch_norm),
     ("native_batch_norm_backward", batch_norm_backward),
+    ("_native_batch_norm_legit_no_training", _native_batch_norm_legit_no_training),
     ("native_dropout", dropout),
     ("native_dropout_backward", dropout_backward),
     ("native_group_norm", group_norm),

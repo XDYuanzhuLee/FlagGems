@@ -257,3 +257,32 @@ def test_perf_rms_norm():
         torch_op=torch.nn.functional.rms_norm,
     )
     bench.run()
+
+
+def native_batch_norm_legit_no_training_input_fn(shape, dtype, device):
+    """Input function for _native_batch_norm_legit_no_training (inference mode)."""
+    C = shape[1]
+    inp = torch.randn(shape, dtype=dtype, device=device)
+    weight = torch.randn((C,), dtype=dtype, device=device)
+    bias = torch.randn((C,), dtype=dtype, device=device)
+    running_mean = torch.zeros((C,), dtype=dtype, device=device)
+    running_var = torch.ones((C,), dtype=dtype, device=device)
+    momentum = 0.1
+    eps = 1e-5
+    yield inp, weight, bias, running_mean, running_var, momentum, eps
+    if Config.bench_level == BenchLevel.COMPREHENSIVE:
+        running_mean = torch.randn((C,), dtype=dtype, device=device)
+        running_var = torch.rand((C,), dtype=dtype, device=device)
+        yield inp, weight, bias, running_mean, running_var, momentum, eps
+
+
+@pytest.mark.native_batch_norm_legit_no_training
+def test_perf_native_batch_norm_legit_no_training():
+    bench = NormBenchmark(
+        input_fn=native_batch_norm_legit_no_training_input_fn,
+        op_name="_native_batch_norm_legit_no_training",
+        torch_op=torch._native_batch_norm_legit_no_training,
+        dtypes=FLOAT_DTYPES,
+    )
+    bench.set_gems(flag_gems._native_batch_norm_legit_no_training)
+    bench.run()

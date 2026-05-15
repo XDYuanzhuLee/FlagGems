@@ -358,6 +358,31 @@ def batch_norm(
     return output.view_as(input), mean, inv_std
 
 
+def _native_batch_norm_legit_no_training(
+    input: Tensor,
+    weight=None,
+    bias=None,
+    running_mean=None,
+    running_var=None,
+    momentum=0.1,
+    eps=1e-05,
+):
+    """
+    Batch norm for inference mode (_native_batch_norm_legit_no_training).
+    This is a convenience function that calls batch_norm with training=False.
+    """
+    return batch_norm(
+        input=input,
+        weight=weight,
+        bias=bias,
+        running_mean=running_mean,
+        running_var=running_var,
+        training=False,
+        momentum=momentum,
+        eps=eps,
+    )
+
+
 def batch_norm_backward(
     grad_out,
     input,
