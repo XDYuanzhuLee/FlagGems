@@ -253,6 +253,7 @@ _FULL_CONFIG = (
     ("logical_xor", logical_xor),
     ("logit", logit),
     ("logit_", logit_),
+    ("logit_backward", logit_backward),
     ("logspace", logspace),
     ("lt.Scalar", lt_scalar),
     ("lt.Tensor", lt),

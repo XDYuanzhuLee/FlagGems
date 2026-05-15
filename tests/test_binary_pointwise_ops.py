@@ -2540,3 +2540,41 @@ def test_accuracy_atan2_out(shape, dtype):
         res_out = torch.ops.aten.atan2.out(x, y, out=res_out_buf)
 
     gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.logit_backward
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_logit_backward(shape, dtype):
+    # grad_output and self must be in (0, 1) for logit to be valid
+    # Using sigmoid to ensure valid inputs
+    self_tensor = torch.sigmoid(torch.randn(shape, dtype=dtype, device=flag_gems.device))
+    grad_output = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+
+    ref_grad_output = to_reference(grad_output, True)
+    ref_self = to_reference(self_tensor, True)
+    ref_out = torch.ops.aten.logit_backward.default(ref_grad_output, ref_self)
+
+    with flag_gems.use_gems():
+        res_out = torch.ops.aten.logit_backward.default(grad_output, self_tensor)
+
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.logit_backward
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_logit_backward_with_eps(shape, dtype):
+    # Test with eps parameter
+    self_tensor = torch.rand(shape, dtype=dtype, device=flag_gems.device)
+    grad_output = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    eps = 1e-4
+
+    ref_grad_output = to_reference(grad_output, True)
+    ref_self = to_reference(self_tensor, True)
+    ref_out = torch.ops.aten.logit_backward.default(ref_grad_output, ref_self, eps)
+
+    with flag_gems.use_gems():
+        res_out = torch.ops.aten.logit_backward.default(grad_output, self_tensor, eps)
+
+    gems_assert_close(res_out, ref_out, dtype)

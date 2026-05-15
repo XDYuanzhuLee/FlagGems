@@ -160,6 +160,7 @@ from flag_gems.ops.logical_or import logical_or, logical_or_
 from flag_gems.ops.logical_xor import logical_xor
 from flag_gems.ops.logit import logit, logit_out
 from flag_gems.ops.logit_ import logit_
+from flag_gems.ops.logit_backward import logit_backward
 from flag_gems.ops.logspace import logspace
 from flag_gems.ops.lt import lt, lt_scalar
 from flag_gems.ops.margin_ranking_loss import margin_ranking_loss
@@ -507,6 +508,7 @@ __all__ = [
     "logit",
     "logit_out",
     "logit_",
+    "logit_backward",
     "logspace",
     "lt",
     "lt_scalar",
