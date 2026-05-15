@@ -56,6 +56,7 @@ forward_operations = [
     ("logical_not", torch.logical_not, INT_DTYPES + BOOL_DTYPES),
     ("log", torch.log, FLOAT_DTYPES),
     ("special_i1", torch.special.i1, FLOAT_DTYPES),
+    ("special_modified_bessel_i1", torch.special.modified_bessel_i1, FLOAT_DTYPES),
     ("logit", lambda a: torch.logit(a, eps=1e-6), FLOAT_DTYPES),
     # ("triu", torch.triu, FLOAT_DTYPES),  # do not support 1d shapes
     # Dropout
