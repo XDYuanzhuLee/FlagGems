@@ -2777,3 +2777,73 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.binary_cross_entropy_with_logits
+@pytest.mark.parametrize("shape", [(2, 3), (128, 256), (512, 512), (1024, 1024)])
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+@pytest.mark.parametrize("reduction", [0, 1, 2])
+def test_accuracy_binary_cross_entropy_with_logits(shape, dtype, reduction):
+    input = torch.randn(shape, dtype=dtype, device=device)
+    target = torch.randint(0, 2, shape, dtype=dtype, device=device)
+
+    ref_input = to_reference(input)
+    ref_target = to_reference(target)
+
+    ref_out = torch.ops.aten.binary_cross_entropy_with_logits(
+        ref_input, ref_target, None, None, reduction
+    )
+    with flag_gems.use_gems():
+        res_out = torch.ops.aten.binary_cross_entropy_with_logits(
+            input, target, None, None, reduction
+        )
+
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.binary_cross_entropy_with_logits
+@pytest.mark.parametrize("shape", [(2, 3), (128, 256), (512, 512), (1024, 1024)])
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+@pytest.mark.parametrize("reduction", [0, 1, 2])
+def test_accuracy_binary_cross_entropy_with_logits_weight(shape, dtype, reduction):
+    input = torch.randn(shape, dtype=dtype, device=device)
+    target = torch.randint(0, 2, shape, dtype=dtype, device=device)
+    weight = torch.rand(shape, dtype=dtype, device=device)
+
+    ref_input = to_reference(input)
+    ref_target = to_reference(target)
+    ref_weight = to_reference(weight)
+
+    ref_out = torch.ops.aten.binary_cross_entropy_with_logits(
+        ref_input, ref_target, ref_weight, None, reduction
+    )
+    with flag_gems.use_gems():
+        res_out = torch.ops.aten.binary_cross_entropy_with_logits(
+            input, target, weight, None, reduction
+        )
+
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.binary_cross_entropy_with_logits
+@pytest.mark.parametrize("shape", [(2, 3), (128, 256), (512, 512), (1024, 1024)])
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+@pytest.mark.parametrize("reduction", [0, 1, 2])
+def test_accuracy_binary_cross_entropy_with_logits_pos_weight(shape, dtype, reduction):
+    input = torch.randn(shape, dtype=dtype, device=device)
+    target = torch.randint(0, 2, shape, dtype=dtype, device=device)
+    pos_weight = torch.rand(shape, dtype=dtype, device=device)
+
+    ref_input = to_reference(input)
+    ref_target = to_reference(target)
+    ref_pos_weight = to_reference(pos_weight)
+
+    ref_out = torch.ops.aten.binary_cross_entropy_with_logits(
+        ref_input, ref_target, None, ref_pos_weight, reduction
+    )
+    with flag_gems.use_gems():
+        res_out = torch.ops.aten.binary_cross_entropy_with_logits(
+            input, target, None, pos_weight, reduction
+        )
+
+    gems_assert_close(res_out, ref_out, dtype)
