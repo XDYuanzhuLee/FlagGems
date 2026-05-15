@@ -2232,3 +2232,41 @@ def test_accuracy_special_i0e_out(shape, dtype):
         act_out = torch.ops.aten.special_i0e.out(x, out=out_act)
     gems_assert_close(act_out, ref_out, dtype)
     gems_assert_close(out_act, out_ref, dtype)
+
+
+@pytest.mark.special_ndtri
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_special_ndtri(shape, dtype):
+    # ndtri expects input in range [0, 1] (probability)
+    # We exclude exact 0 and 1 to avoid -inf and +inf issues
+    x = torch.rand(shape, dtype=dtype, device=flag_gems.device) * 0.999 + 0.0005
+    ref_x = to_reference(x)
+    if dtype in (torch.float16, torch.bfloat16):
+        ref_out = torch.ops.aten.special_ndtri(ref_x.float()).to(dtype)
+    else:
+        ref_out = torch.ops.aten.special_ndtri(ref_x)
+    with flag_gems.use_gems():
+        act_out = torch.ops.aten.special_ndtri(x)
+    gems_assert_close(act_out, ref_out, dtype)
+
+
+@pytest.mark.special_ndtri
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_special_ndtri_out(shape, dtype):
+    x = torch.rand(shape, dtype=dtype, device=flag_gems.device) * 0.999 + 0.0005
+    ref_x = to_reference(x)
+    if dtype in (torch.float16, torch.bfloat16):
+        out_ref = torch.empty_like(ref_x, dtype=torch.float32)
+        ref_out = torch.ops.aten.special_ndtri.out(ref_x.float(), out=out_ref)
+        out_ref = out_ref.to(dtype)
+        ref_out = out_ref
+    else:
+        out_ref = torch.empty_like(ref_x)
+        ref_out = torch.ops.aten.special_ndtri.out(ref_x, out=out_ref)
+    out_act = torch.empty_like(x)
+    with flag_gems.use_gems():
+        act_out = torch.ops.aten.special_ndtri.out(x, out=out_act)
+    gems_assert_close(act_out, ref_out, dtype)
+    gems_assert_close(out_act, out_ref, dtype)
