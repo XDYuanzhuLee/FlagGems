@@ -55,6 +55,7 @@ forward_operations = [
     ("special_i0e", torch.ops.aten.special_i0e, FLOAT_DTYPES),
     ("logical_not", torch.logical_not, INT_DTYPES + BOOL_DTYPES),
     ("log", torch.log, FLOAT_DTYPES),
+    ("log2", torch.log2, FLOAT_DTYPES),
     ("special_i1", torch.special.i1, FLOAT_DTYPES),
     ("logit", lambda a: torch.logit(a, eps=1e-6), FLOAT_DTYPES),
     # ("triu", torch.triu, FLOAT_DTYPES),  # do not support 1d shapes
@@ -153,6 +154,7 @@ forward_inplace_operations = [
     ("digamma_", lambda a: a.digamma_(), FLOAT_DTYPES),
     ("arcsinh_", lambda a: a.arcsinh_(), FLOAT_DTYPES),
     ("log1p_", lambda a: a.log1p_(), FLOAT_DTYPES),
+    ("log2_", lambda a: a.log2_(), FLOAT_DTYPES),
     ("logit_", lambda a: a.logit_(eps=1e-6), FLOAT_DTYPES),
     # Bitwise operations
     ("bitwise_not_", lambda a: a.bitwise_not_(), INT_DTYPES),
