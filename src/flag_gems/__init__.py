@@ -133,6 +133,8 @@ _FULL_CONFIG = (
     ),
     ("cos", cos),
     ("cos_", cos_),
+    ("cosh", cosh),
+    ("cosh_", cosh_),
     ("copysign", copysign),
     ("copysign.out", copysign_out),
     ("count_nonzero", count_nonzero),
