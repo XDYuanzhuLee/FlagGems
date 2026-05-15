@@ -473,3 +473,92 @@ def test_accuracy_depthwise2d(
         inp, weight, kernel, bias=None, stride=stride, padding=padding, dilation=1
     )
     gems_assert_close(res_out, ref_out, dtype)
+
+
+# Test for torch.convolution (the low-level convolution interface)
+SHAPE_CONVOLUTION = [
+    # 2D convolution: input [N, C, H, W], weight [out_c, in_c, kH, kW]
+    ((1, 2, 5, 5), (1, 2, 3, 3)),
+    ((2, 3, 9, 9), (1, 3, 3, 3)),
+    ((32, 8, 8, 8), (32, 8, 2, 2)),
+]
+
+
+@pytest.mark.convolution
+@pytest.mark.parametrize("shape, kernel", SHAPE_CONVOLUTION)
+@pytest.mark.parametrize("stride", [1, 2])
+@pytest.mark.parametrize("padding", [0, 1])
+@pytest.mark.parametrize("dtype", [torch.float32])
+@pytest.mark.parametrize("dilation", [1, 2])
+@pytest.mark.parametrize("groups", [1])
+@pytest.mark.parametrize("bias", [True, False])
+def test_accuracy_convolution(
+    shape, kernel, stride, padding, dtype, dilation, groups, bias
+):
+    """Test torch.convolution interface (2D convolution)"""
+    if flag_gems.vendor_name == "mthreads" and dtype == torch.float16:
+        os.environ["MUSA_ENABLE_SQMMA"] = "1"
+
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device, requires_grad=True)
+    ref_inp = to_reference(inp, True)
+    torch.backends.cudnn.allow_tf32 = False
+    weight = torch.randn(
+        kernel, dtype=dtype, device=flag_gems.device, requires_grad=True
+    )
+    if bias is True:
+        bias_tensor = torch.randn(
+            [weight.shape[0]], dtype=dtype, device=flag_gems.device, requires_grad=True
+        )
+        bias_ref = to_reference(bias_tensor, True)
+    else:
+        bias_tensor = None
+        bias_ref = None
+
+    ref_weight = to_reference(weight, True)
+
+    # Reference implementation using torch.convolution
+    ref_out = torch.convolution(
+        ref_inp,
+        ref_weight,
+        bias_ref,
+        stride=(stride, stride),
+        padding=(padding, padding),
+        dilation=(dilation, dilation),
+        transposed=False,
+        output_padding=(0, 0),
+        groups=groups,
+    )
+
+    # Our implementation
+    res_out = flag_gems.convolution(
+        inp,
+        weight,
+        bias=bias_tensor,
+        stride=stride,
+        padding=padding,
+        dilation=dilation,
+        transposed=False,
+        output_padding=0,
+        groups=groups,
+    )
+
+    gems_assert_close(res_out, ref_out, dtype)
+
+    # Test backward
+    out_grad = torch.randn_like(ref_out).to(flag_gems.device)
+    ref_grad = to_reference(out_grad, True)
+
+    (ref_in_grad, ref_weight_grad) = torch.autograd.grad(
+        ref_out, (ref_inp, ref_weight), ref_grad
+    )
+    (res_in_grad, res_weight_grad) = torch.autograd.grad(
+        res_out, (inp, weight), out_grad
+    )
+
+    gems_assert_close(res_in_grad, ref_in_grad, dtype, reduce_dim=weight.shape[2])
+    gems_assert_close(
+        res_weight_grad, ref_weight_grad, dtype, reduce_dim=weight.shape[0]
+    )
+
+    if flag_gems.vendor_name == "mthreads" and dtype == torch.float16:
+        del os.environ["MUSA_ENABLE_SQMMA"]
