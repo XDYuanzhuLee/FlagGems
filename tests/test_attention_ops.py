@@ -1771,3 +1771,65 @@ def test_scheduler_metadata_correctness(
         )
 
     gems_assert_close(gems_metadata, ref_metadata, dtype=torch.int32)
+
+
+# Reference implementation for Swin Transformer Attention
+def swin_transformer_attention_ref(q, k, v, scale=None, attention_mask=None):
+    """
+    Reference implementation of Swin Transformer Attention.
+    This is standard scaled dot-product attention.
+    """
+    if scale is None:
+        scale = 1.0 / math.sqrt(q.shape[-1])
+
+    # Compute attention scores
+    q = q.transpose(1, 2)  # [B, S, H, D]
+    k = k.transpose(1, 2)
+    v = v.transpose(1, 2)
+
+    attn_weights = torch.matmul(q, k.transpose(-2, -1)) * scale
+
+    if attention_mask is not None:
+        attn_weights = attn_weights + attention_mask
+
+    attn_weights = torch.softmax(attn_weights, dim=-1)
+
+    output = torch.matmul(attn_weights, v)
+
+    # Back to [B, H, S, D]
+    output = output.transpose(1, 2)
+
+    return output
+
+
+@pytest.mark.Swin_Transformer_Attention
+@pytest.mark.parametrize("batch", [1, 2])
+@pytest.mark.parametrize("num_heads", [4, 8])
+@pytest.mark.parametrize("seq_len", [128, 256])
+@pytest.mark.parametrize("head_dim", [32, 64])
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_accuracy_swin_transformer_attention(
+    batch, num_heads, seq_len, head_dim, dtype
+):
+    """Test accuracy of Swin Transformer Attention"""
+    device = torch_device_fn.current_device()
+
+    # Create random Q, K, V
+    q = torch.randn(batch, num_heads, seq_len, head_dim, dtype=dtype, device=device)
+    k = torch.randn(batch, num_heads, seq_len, head_dim, dtype=dtype, device=device)
+    v = torch.randn(batch, num_heads, seq_len, head_dim, dtype=dtype, device=device)
+
+    scale = 1.0 / math.sqrt(head_dim)
+
+    # Reference output
+    ref_q = to_reference(q)
+    ref_k = to_reference(k)
+    ref_v = to_reference(v)
+    ref_output = swin_transformer_attention_ref(ref_q, ref_k, ref_v, scale)
+
+    # GEMS output using metax specialized operator
+    from flag_gems.runtime.backend._metax.ops import swin_transformer_attention
+
+    gems_output = swin_transformer_attention(q, k, v, scale)
+
+    gems_assert_close(gems_output, ref_output, dtype)
