@@ -17,6 +17,7 @@ from .accuracy_utils import (
     FP8_QUANT_SHAPES,
     INT_DTYPES,
     KRON_SHAPES,
+    POINTWISE_SHAPES,
     SPECIAL_SHAPES,
     STACK_DIM_LIST,
     STACK_SHAPES,
@@ -2776,4 +2777,35 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
     gems_assert_equal(res_is_target, ref_is_target, dtype)
 
     # Compare output tensors
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.special_chebyshev_polynomial_t
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy_special_chebyshev_polynomial_t(shape, dtype):
+    # Test with scalar n (degree of polynomial)
+    # Use n=0, 1, 2, 3, 4, 5 as common test values
+    for n in [0, 1, 2, 3, 4, 5]:
+        x = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+        ref_x = to_reference(x)
+        ref_out = torch.special.chebyshev_polynomial_t(ref_x, n)
+        with flag_gems.use_gems():
+            res_out = torch.special.chebyshev_polynomial_t(x, n)
+        gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.special_chebyshev_polynomial_t
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy_special_chebyshev_polynomial_t_tensor_n(shape, dtype):
+    # Test with tensor n (degree of polynomial)
+    # Use small positive integers for n
+    n = torch.randint(0, 11, shape, dtype=torch.int32, device=flag_gems.device)
+    x = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_x = to_reference(x)
+    ref_n = to_reference(n)
+    ref_out = torch.special.chebyshev_polynomial_t(ref_x, ref_n)
+    with flag_gems.use_gems():
+        res_out = torch.special.chebyshev_polynomial_t(x, n)
     gems_assert_close(res_out, ref_out, dtype)
