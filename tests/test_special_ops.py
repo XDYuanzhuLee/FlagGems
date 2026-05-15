@@ -2777,3 +2777,37 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+# Renorm test - normalize sub-tensors along a dimension based on p-norm
+RENORM_SHAPES = [(2, 32), (4, 16, 8), (2, 8, 4, 16)]
+RENORM_DIMS = [0, 1, -1]
+RENORM_P_VALUES = [1.0, 2.0, 3.0]
+RENORM_MAXNORM_VALUES = [0.5, 1.0, 2.0]
+
+
+@pytest.mark.renorm
+@pytest.mark.parametrize("shape", RENORM_SHAPES)
+@pytest.mark.parametrize("p", RENORM_P_VALUES)
+@pytest.mark.parametrize("dim", RENORM_DIMS)
+@pytest.mark.parametrize("maxnorm", RENORM_MAXNORM_VALUES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_renorm(shape, p, dim, maxnorm, dtype):
+    # Skip invalid dim for certain shapes
+    if dim >= len(shape) or dim < -len(shape):
+        pytest.skip(f"dim {dim} is invalid for shape {shape}")
+
+    # Generate random input
+    torch.manual_seed(42)
+    input = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+
+    # Get reference output using PyTorch
+    ref_input = to_reference(input)
+    ref_out = torch.renorm(ref_input, p, dim, maxnorm)
+
+    # Get GEMS output
+    with flag_gems.use_gems():
+        res_out = torch.renorm(input, p, dim, maxnorm)
+
+    # Compare results
+    gems_assert_close(res_out, ref_out, dtype)
