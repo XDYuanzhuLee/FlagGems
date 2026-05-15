@@ -1467,3 +1467,35 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+BUCKETIZE_SHAPES = [
+    (32, 32),
+    (64, 64),
+    (128, 128),
+    (256, 256),
+    (512, 512),
+    (1024, 1024),
+]
+
+
+def _bucketize_input_fn(shape, cur_dtype, device):
+    if cur_dtype in INT_DTYPES:
+        inp = torch.randint(-10, 10, shape, dtype=cur_dtype, device=device)
+    else:
+        inp = torch.randn(shape, dtype=cur_dtype, device=device)
+    boundaries = torch.tensor([0.0, 0.25, 0.5, 0.75, 1.0], device=device)
+    if cur_dtype in INT_DTYPES:
+        boundaries = boundaries.to(cur_dtype)
+    yield inp, boundaries
+
+
+@pytest.mark.bucketize
+def test_perf_bucketize():
+    bench = GenericBenchmark(
+        op_name="bucketize",
+        torch_op=torch.bucketize,
+        dtypes=FLOAT_DTYPES + INT_DTYPES,
+        input_fn=_bucketize_input_fn,
+    )
+    bench.run()
