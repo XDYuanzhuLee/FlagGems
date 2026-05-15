@@ -10,7 +10,13 @@ import triton
 import flag_gems
 from benchmark.attri_util import FLOAT_DTYPES
 
-from .performance_utils import Benchmark, GenericBenchmark, SkipVersion, vendor_name
+from .performance_utils import (
+    Benchmark,
+    GenericBenchmark,
+    GenericBenchmark4DOnly,
+    SkipVersion,
+    vendor_name,
+)
 
 
 class AttentionBenchmark(GenericBenchmark):
@@ -1118,4 +1124,65 @@ def test_perf_reshape_and_cache():
         dtypes=FLOAT_DTYPES,
     )
     bench.set_gems(flag_gems.reshape_and_cache)
+    bench.run()
+
+
+# Benchmark for Metax specialized _efficient_attention_backward operator
+@pytest.mark.efficient_attention_backward
+def test_perf_efficient_attention_backward():
+    """Benchmark the Metax specialized _efficient_attention_backward operator."""
+    # Define a simple test shape
+    test_shape = (1, 2, 32, 32)
+
+    def efficient_attention_backward_kwargs(shape, dtype, device):
+        batch, num_heads, seq_len, head_dim = test_shape
+        query = torch.randn(test_shape, device=device, dtype=dtype, requires_grad=True)
+        key = torch.randn(test_shape, device=device, dtype=dtype, requires_grad=True)
+        value = torch.randn(test_shape, device=device, dtype=dtype, requires_grad=True)
+        grad_out = torch.randn(test_shape, device=device, dtype=dtype)
+        out = torch.randn(test_shape, device=device, dtype=dtype)
+        M = torch.ones(batch, num_heads, seq_len, dtype=torch.float32, device=device)
+        return (
+            (grad_out, query, key, value, None, out, None, None, seq_len, seq_len,
+             M, 0.0, torch.tensor([0], dtype=torch.long, device=device),
+             torch.tensor([0], dtype=torch.long, device=device), 0, False),
+        )
+
+    def torch_efficient_attention_backward(
+        grad_out, query, key, value, bias, out, cu_seqlens_q, cu_seqlens_k,
+        max_seqlen_q, max_seqlen_k, logsumexp, dropout_p, philox_seed, philox_offset,
+        custom_mask_type, bias_requires_grad
+    ):
+        # Use scaled_dot_product_attention backward as reference
+        scale = 1.0 / (query.shape[-1] ** 0.5)
+        query.requires_grad_(True)
+        key.requires_grad_(True)
+        value.requires_grad_(True)
+        out = torch.nn.functional.scaled_dot_product_attention(
+            query, key, value, scale=scale
+        )
+        out.backward(grad_out)
+
+    def gems_efficient_attention_backward(
+        grad_out, query, key, value, bias, out, cu_seqlens_q, cu_seqlens_k,
+        max_seqlen_q, max_seqlen_k, logsumexp, dropout_p, philox_seed, philox_offset,
+        custom_mask_type, bias_requires_grad
+    ):
+        from flag_gems.runtime.backend._metax.ops._efficient_attention_backward import (
+            _efficient_attention_backward as metax_efficient_attention_backward,
+        )
+        return metax_efficient_attention_backward(
+            grad_out, query, key, value, bias, out, cu_seqlens_q, cu_seqlens_k,
+            max_seqlen_q, max_seqlen_k, logsumexp, dropout_p, philox_seed, philox_offset,
+            custom_mask_type, bias_requires_grad
+        )
+
+    bench = GenericBenchmark(
+        op_name="efficient_attention_backward",
+        input_fn=efficient_attention_backward_kwargs,
+        torch_op=torch_efficient_attention_backward,
+        dtypes=[torch.float16, torch.bfloat16],
+        shapes=[test_shape],
+    )
+    bench.set_gems(gems_efficient_attention_backward)
     bench.run()

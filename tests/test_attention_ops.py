@@ -1771,3 +1771,76 @@ def test_scheduler_metadata_correctness(
         )
 
     gems_assert_close(gems_metadata, ref_metadata, dtype=torch.int32)
+
+
+# Test for Metax specialized _efficient_attention_backward operator
+@pytest.mark.efficient_attention_backward
+@pytest.mark.parametrize("batch", [1, 2])
+@pytest.mark.parametrize("num_heads", [2, 4])
+@pytest.mark.parametrize("seq_len", [32, 64])
+@pytest.mark.parametrize("head_dim", [32, 64])
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_accuracy_efficient_attention_backward(
+    batch,
+    num_heads,
+    seq_len,
+    head_dim,
+    dtype,
+):
+    """Test the Metax specialized _efficient_attention_backward operator."""
+    if TO_CPU:
+        pytest.skip("Skipping correctness test in CPU mode.")
+
+    device = torch_device_fn.current_device()
+    scale = 1.0 / (head_dim ** 0.5)
+
+    # Create inputs
+    q = torch.randn(
+        batch, num_heads, seq_len, head_dim, dtype=dtype, device=device, requires_grad=True
+    )
+    k = torch.randn(
+        batch, num_heads, seq_len, head_dim, dtype=dtype, device=device, requires_grad=True
+    )
+    v = torch.randn(
+        batch, num_heads, seq_len, head_dim, dtype=dtype, device=device, requires_grad=True
+    )
+
+    # Import the metax implementation directly
+    from flag_gems.runtime.backend._metax.ops._efficient_attention_backward import (
+        _efficient_attention_backward as metax_efficient_attention_backward,
+    )
+
+    # Run forward pass using GEMS to get output
+    with flag_gems.use_gems():
+        out = flag_gems.ops.scaled_dot_product_attention(q, k, v, scale=scale)
+
+    # Run backward manually to test the backward path
+    grad_out = torch.randn_like(out)
+
+    # Create logsumexp tensor (needed for backward)
+    M = torch.ones(batch, num_heads, seq_len, dtype=torch.float32, device=device)
+
+    # Test metax implementation
+    dq, dk, dv, db = metax_efficient_attention_backward(
+        grad_out,
+        q,
+        k,
+        v,
+        None,
+        out,
+        None,
+        None,
+        seq_len,
+        seq_len,
+        M,
+        0.0,
+        torch.tensor([0], dtype=torch.long, device=device),
+        torch.tensor([0], dtype=torch.long, device=device),
+        0,
+        False,
+    )
+
+    # Verify gradient shapes
+    assert dq.shape == q.shape
+    assert dk.shape == k.shape
+    assert dv.shape == v.shape

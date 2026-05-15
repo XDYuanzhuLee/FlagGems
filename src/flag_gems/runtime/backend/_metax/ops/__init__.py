@@ -1,3 +1,4 @@
+from ._efficient_attention_backward import _efficient_attention_backward
 from .addmm import addmm
 from .amax import amax
 from .arange import arange, arange_start
@@ -30,6 +31,7 @@ from .zeros import zeros
 from .zeros_like import zeros_like
 
 __all__ = [
+    "_efficient_attention_backward",
     "_unique2",
     "addmm",
     "amax",
