@@ -2777,3 +2777,47 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+# Test for special_chebyshev_polynomial_u
+# Note: torch.special.chebyshev_polynomial_u is not implemented for float16 on CPU/CUDA
+# Note: function signature is (x, n) - x comes first!
+# So we compute the reference on CPU with float32 and move back to GPU for comparison
+@pytest.mark.special_chebyshev_polynomial_u
+@pytest.mark.parametrize("shape", SPECIAL_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float16, torch.float32])
+@pytest.mark.parametrize("n", [0, 1, 2, 3, 4, 5])
+def test_accuracy_special_chebyshev_polynomial_u(shape, dtype, n):
+    """Test special_chebyshev_polynomial_u accuracy against PyTorch reference."""
+    x = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    # Compute reference on CPU with float32 (the only dtype supported by torch.special.chebyshev_polynomial_u)
+    # Note: x comes first, n comes second!
+    ref_x = x.cpu().to(torch.float32)
+    ref_out = torch.special.chebyshev_polynomial_u(ref_x, n).to(dtype).to(x.device)
+
+    # Compute with GEMS
+    with flag_gems.use_gems():
+        res_out = flag_gems.special_chebyshev_polynomial_u(x, n)
+
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.special_chebyshev_polynomial_u
+@pytest.mark.parametrize("shape", SPECIAL_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float16, torch.float32])
+def test_accuracy_special_chebyshev_polynomial_u_tensor_n(shape, dtype):
+    """Test special_chebyshev_polynomial_u with tensor n (limited to 0-5 for now)."""
+    # Limit n to 0-5 since our implementation only handles up to n=5
+    n = torch.randint(0, 6, shape, dtype=torch.int32, device=flag_gems.device)
+    x = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    # Compute reference on CPU with float32
+    # Note: x comes first, n comes second!
+    ref_n = n.cpu()
+    ref_x = x.cpu().to(torch.float32)
+    ref_out = torch.special.chebyshev_polynomial_u(ref_x, ref_n).to(dtype).to(x.device)
+
+    # Compute with GEMS
+    with flag_gems.use_gems():
+        res_out = flag_gems.special_chebyshev_polynomial_u(x, n)
+
+    gems_assert_close(res_out, ref_out, dtype)
