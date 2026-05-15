@@ -1467,3 +1467,38 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+# Renorm benchmark - normalize sub-tensors along a dimension based on p-norm
+RENORM_SHAPES = [
+    (1024, 1024),
+    (2048, 512),
+    (4096, 256),
+    (512, 4096),
+]
+
+
+class RenormBenchmark(Benchmark):
+    def set_shapes(self, shape_file_path=None):
+        self.shapes = RENORM_SHAPES
+
+    def get_input_iter(self, cur_dtype):
+        for shape in self.shapes:
+            inp = torch.randn(shape, dtype=cur_dtype, device=self.device)
+            # Use typical values for p, dim, maxnorm
+            yield inp, 2.0, 1, 1.0
+
+    def get_tflops(self, op, *args, **kwargs):
+        inp = args[0]
+        return inp.numel()
+
+
+@pytest.mark.renorm
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_perf_renorm(dtype):
+    bench = RenormBenchmark(
+        op_name="renorm",
+        torch_op=torch.renorm,
+        dtypes=[dtype],
+    )
+    bench.run()

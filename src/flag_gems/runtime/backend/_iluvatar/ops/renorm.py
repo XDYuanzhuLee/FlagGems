@@ -10,6 +10,14 @@ logger = logging.getLogger(__name__)
 
 
 @libentry()
+@triton.autotune(
+    configs=[
+        triton.Config({"BLOCK_SIZE": 256}, num_warps=4),
+        triton.Config({"BLOCK_SIZE": 512}, num_warps=4),
+        triton.Config({"BLOCK_SIZE": 1024}, num_warps=8),
+    ],
+    key=["dim_size"],
+)
 @triton.jit
 def renorm_kernel(
     input_ptr,
@@ -21,6 +29,8 @@ def renorm_kernel(
     input_strides: tl.constexpr,
     output_strides: tl.constexpr,
     input_shape: tl.constexpr,
+    num_sub_tensors: tl.constexpr,
+    dim_size: tl.constexpr,
     BLOCK_SIZE: tl.constexpr,
 ):
     # Renorm normalizes sub-tensors along dimension `dim` such that their p-norm <= maxnorm
@@ -28,7 +38,6 @@ def renorm_kernel(
     # If norm > maxnorm, scale all elements by maxnorm / norm
 
     pid = tl.program_id(0)
-    num_sub_tensors = input_shape[0]  # total number of sub-tensors (product of all dims except dim)
     if pid >= num_sub_tensors:
         return
 
@@ -57,9 +66,9 @@ def renorm_kernel(
 
     norm = 0.0
     # Load and compute norm
-    for i in range(0, input_shape[dim], BLOCK_SIZE):
+    for i in range(0, dim_size, BLOCK_SIZE):
         offs = i + tl.arange(0, BLOCK_SIZE)
-        mask = offs < input_shape[dim]
+        mask = offs < dim_size
         full_offset = offset + offs * input_strides[dim]
         vals = tl.load(input_ptr + full_offset, mask=mask, other=0.0)
         # Compute |x|^p
@@ -74,9 +83,9 @@ def renorm_kernel(
     scale = tl.where(norm > maxnorm_scalar, maxnorm_scalar / norm, 1.0)
 
     # Now apply scaling and store result
-    for i in range(0, input_shape[dim], BLOCK_SIZE):
+    for i in range(0, dim_size, BLOCK_SIZE):
         offs = i + tl.arange(0, BLOCK_SIZE)
-        mask = offs < input_shape[dim]
+        mask = offs < dim_size
         full_offset = offset + offs * input_strides[dim]
         vals = tl.load(input_ptr + full_offset, mask=mask, other=0.0)
         scaled_vals = vals * scale
@@ -93,10 +102,8 @@ def renorm(input: torch.Tensor, p: float, dim: int, maxnorm: float) -> torch.Ten
         dim = input.dim() + dim
 
     ndim = input.dim()
-    # Flatten the tensor to get the number of sub-tensors
-    # We need to iterate over all dimensions except dim
 
-    # Compute total number of sub-tensors
+    # Compute total number of sub-tensors (product of all dims except dim)
     num_sub_tensors = 1
     for i in range(ndim):
         if i != dim:
@@ -106,9 +113,7 @@ def renorm(input: torch.Tensor, p: float, dim: int, maxnorm: float) -> torch.Ten
     input_strides = input.stride()
     output_strides = output.stride()
     input_shape = input.shape
-
-    # Define block size
-    BLOCK_SIZE = 1024
+    dim_size = input.shape[dim]
 
     # Launch kernel
     grid = (num_sub_tensors,)
@@ -124,7 +129,9 @@ def renorm(input: torch.Tensor, p: float, dim: int, maxnorm: float) -> torch.Ten
             input_strides,
             output_strides,
             input_shape,
-            BLOCK_SIZE,
+            num_sub_tensors,
+            dim_size,
+            BLOCK_SIZE=1024,  # Default, will be overridden by autotune
         )
 
     return output
