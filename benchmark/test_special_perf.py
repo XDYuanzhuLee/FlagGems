@@ -1467,3 +1467,31 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+# Benchmark for hermite_polynomial_he - probabilists' Hermite polynomial
+class HermitePolynomialHeBenchmark(Benchmark):
+    def set_shapes(self, shape_file_path=None):
+        self.shapes = [
+            (1024,),
+            (1024, 1024),
+            (2048,),
+            (4096,),
+            (8192,),
+        ]
+
+    def get_input_iter(self, cur_dtype):
+        for shape in self.shapes:
+            x = torch.randn(shape, dtype=cur_dtype, device=self.device)
+            n = 3  # Fixed order for benchmark
+            yield x, n
+
+
+@pytest.mark.special_hermite_polynomial_he
+def test_perf_special_hermite_polynomial_he():
+    bench = HermitePolynomialHeBenchmark(
+        op_name="special_hermite_polynomial_he",
+        torch_op=torch.special.hermite_polynomial_he,
+        dtypes=[torch.float32],
+    )
+    bench.run()
