@@ -2232,3 +2232,23 @@ def test_accuracy_special_i0e_out(shape, dtype):
         act_out = torch.ops.aten.special_i0e.out(x, out=out_act)
     gems_assert_close(act_out, ref_out, dtype)
     gems_assert_close(out_act, out_ref, dtype)
+
+
+@pytest.mark.special_ndtr
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_special_ndtr(shape, dtype):
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+
+    ref_out = torch.special.ndtr(ref_inp)
+    # Exclude _to_copy to avoid precision differences between flag_gems and PyTorch
+    # This is a known limitation of the metax backend
+    with flag_gems.use_gems(exclude=["_to_copy"]):
+        res_out = torch.special.ndtr(inp)
+
+    # Use higher tolerance for float16/bfloat16 due to metax _to_copy precision
+    if dtype in (torch.float16, torch.bfloat16):
+        gems_assert_close(res_out, ref_out, dtype, atol=0.02)
+    else:
+        gems_assert_close(res_out, ref_out, dtype)
