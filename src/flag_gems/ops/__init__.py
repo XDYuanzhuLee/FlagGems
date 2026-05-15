@@ -137,6 +137,9 @@ from flag_gems.ops.i0_ import i0_
 from flag_gems.ops.index import index
 from flag_gems.ops.index_add import index_add, index_add_
 from flag_gems.ops.index_put import index_put, index_put_
+from flag_gems.ops._unsafe_masked_index_put_accumulate import (
+    _unsafe_masked_index_put_accumulate,
+)
 from flag_gems.ops.index_select import index_select
 from flag_gems.ops.isclose import allclose, isclose
 from flag_gems.ops.isfinite import isfinite
@@ -473,6 +476,7 @@ __all__ = [
     "index_add_",
     "index_put",
     "index_put_",
+    "_unsafe_masked_index_put_accumulate",
     "index_select",
     "isclose",
     "isfinite",

@@ -2513,3 +2513,53 @@ def test_accuracy_bincount_minlength(shape, num_classes, minlength):
     ref_out_w = torch.bincount(ref_inp, weights=ref_weights, minlength=minlength)
     res_out_w = flag_gems.bincount(inp, weights=weights, minlength=minlength)
     _assert_bincount(res_out_w, ref_out_w, dtype, shape, num_classes)
+
+
+# Test shapes for _unsafe_masked_index_put_accumulate
+_UNSAFE_MASKED_INDEX_PUT_SHAPES = [
+    (16,),
+    (32, 32),
+    (8, 16, 24),
+]
+
+
+@pytest.mark.unsafe_masked_index_put_accumulate
+@pytest.mark.parametrize("shape", _UNSAFE_MASKED_INDEX_PUT_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float16, torch.float32])
+def test_accuracy__unsafe_masked_index_put_accumulate(shape, dtype):
+    """Test for _unsafe_masked_index_put_accumulate operator."""
+    # Create input tensor
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+
+    # Create mask with same shape as input
+    mask = torch.rand(shape, device=flag_gems.device) > 0.5
+
+    # Create indices - one per dimension of input, each with same shape as mask
+    ndim = len(shape)
+    indices = []
+    for dim_size in shape:
+        idx = torch.randint(0, dim_size, shape, dtype=torch.long, device=flag_gems.device)
+        indices.append(idx)
+
+    # Create values with same shape as mask
+    values = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+
+    # Reference implementation
+    ref_inp = to_reference(inp)
+    ref_mask = to_reference(mask)
+    ref_indices = [to_reference(idx) for idx in indices]
+    ref_values = to_reference(values)
+
+    ref_out = torch._unsafe_masked_index_put_accumulate(
+        ref_inp, ref_mask, ref_indices, ref_values
+    )
+
+    # GEMS implementation
+    with flag_gems.use_gems():
+        out = flag_gems._unsafe_masked_index_put_accumulate(inp, mask, indices, values)
+
+    # Use looser tolerance for float16 due to atomic add precision
+    if dtype == torch.float16:
+        gems_assert_close(out, ref_out, dtype, atol=1e-2)
+    else:
+        gems_assert_close(out, ref_out, dtype)

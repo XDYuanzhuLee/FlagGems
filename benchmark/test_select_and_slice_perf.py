@@ -713,3 +713,54 @@ def test_index_acc_perf():
     )
     bench.set_gems(gems_op)
     bench.run()
+
+
+def _unsafe_masked_index_put_accumulate_input_fn(shapes, dtype, device):
+    """Input function for _unsafe_masked_index_put_accumulate benchmark."""
+    input_shape = shapes
+    inp = torch.randn(
+        input_shape, dtype=dtype, device=flag_gems.device, requires_grad=False
+    )
+
+    # Create mask with same shape as input
+    mask = torch.rand(input_shape, device=flag_gems.device) > 0.5
+
+    # Create indices - one per dimension of input
+    ndim = len(input_shape)
+    indices = []
+    for dim_size in input_shape:
+        idx = torch.randint(0, dim_size, input_shape, dtype=torch.long, device=flag_gems.device)
+        indices.append(idx)
+
+    # Create values with same shape as mask
+    values = torch.randn(input_shape, dtype=dtype, device=flag_gems.device)
+
+    yield inp, mask, indices, values
+
+
+class UnsafeMaskedIndexPutAccumulateBenchmark(GenericBenchmark):
+    def set_more_shapes(self):
+        UNSAFE_MASKED_INDEX_PUT_SHAPES = [
+            (16,),
+            (32, 32),
+            (64, 64),
+            (128, 128),
+            (256, 256),
+            (512, 512),
+            (8, 16, 24),
+            (16, 32, 48),
+        ]
+        self.shapes = UNSAFE_MASKED_INDEX_PUT_SHAPES
+        return None
+
+
+@pytest.mark.unsafe_masked_index_put_accumulate
+def test_unsafe_masked_index_put_accumulate_perf():
+    bench = UnsafeMaskedIndexPutAccumulateBenchmark(
+        op_name="_unsafe_masked_index_put_accumulate",
+        torch_op=torch._unsafe_masked_index_put_accumulate,
+        input_fn=_unsafe_masked_index_put_accumulate_input_fn,
+        dtypes=FLOAT_DTYPES,
+    )
+    bench.set_gems(flag_gems._unsafe_masked_index_put_accumulate)
+    bench.run()

@@ -222,6 +222,7 @@ _FULL_CONFIG = (
     ("index_add_", index_add_),
     ("index_put", index_put),
     ("index_put_", index_put_),
+    ("_unsafe_masked_index_put_accumulate", _unsafe_masked_index_put_accumulate),
     ("index_select", index_select),
     ("isclose", isclose),
     ("isfinite", isfinite),
