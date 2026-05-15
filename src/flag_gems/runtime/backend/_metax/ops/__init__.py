@@ -22,6 +22,7 @@ from .polar import polar
 from .prod import prod, prod_dim
 from .repeat_interleave import repeat_interleave_self_tensor
 from .resolve_conj import resolve_conj
+from .rms_norm import rms_norm
 from .sigmoid import sigmoid
 from .tanh import tanh
 from .unique import _unique2
@@ -62,6 +63,7 @@ __all__ = [
     "prod_dim",
     "repeat_interleave_self_tensor",
     "resolve_conj",
+    "rms_norm",
     "sigmoid",
     "tanh",
     "upsample_nearest2d",
