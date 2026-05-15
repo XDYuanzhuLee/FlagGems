@@ -1467,3 +1467,46 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+# _is_all_true benchmark
+_IS_ALL_TRUE_SHAPES = [
+    (16,),
+    (64,),
+    (256,),
+    (1024,),
+    (4096,),
+    (16384,),
+    (65536,),
+    (262144,),
+    (1048576,),
+    (4194304,),
+    (16, 16),
+    (32, 32),
+    (64, 64),
+    (128, 128),
+    (256, 256),
+    (512, 512),
+    (1024, 1024),
+]
+
+
+class IsAllTrueBenchmark(Benchmark):
+    def set_shapes(self, shape_file_path=None):
+        self.shapes = _IS_ALL_TRUE_SHAPES
+
+    def get_input_iter(self, cur_dtype):
+        for shape in self.shapes:
+            inp = torch.randint(0, 2, shape, dtype=torch.bool, device=self.device)
+            yield inp,
+
+
+@pytest.mark.is_all_true
+def test_perf_is_all_true():
+    bench = IsAllTrueBenchmark(
+        op_name="_is_all_true",
+        torch_op=torch._is_all_true,
+        dtypes=[torch.bool],
+    )
+    bench.set_gems(flag_gems._is_all_true)
+    bench.run()
