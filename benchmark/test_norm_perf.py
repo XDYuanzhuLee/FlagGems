@@ -200,6 +200,71 @@ def test_perf_batch_norm_backward():
     bench.run()
 
 
+@pytest.mark.cudnn_batch_norm_backward
+def test_perf_cudnn_batch_norm_backward():
+    def cudnn_batch_norm_backward_input_fn(shape, dtype, device):
+        C = shape[1]
+        inp = torch.randn(shape, dtype=dtype, device=device)
+        weight = torch.randn((C,), dtype=dtype, device=device)
+        bias = torch.randn((C,), dtype=dtype, device=device)
+        running_mean = torch.zeros(size=(C,), dtype=dtype, device=device)
+        running_var = torch.ones(size=(C,), dtype=dtype, device=device)
+
+        # Forward pass to get save_mean and save_var
+        output, save_mean, save_var, reserve = torch.ops.aten.cudnn_batch_norm(
+            inp, weight, bias, running_mean, running_var, True, 0.1, 1e-5
+        )
+
+        # Compute save_invstd from save_var
+        save_invstd = 1.0 / torch.sqrt(save_var + 1e-5)
+
+        # Generate grad_output from the output
+        grad_output = torch.randn_like(output)
+
+        yield (
+            grad_output,
+            inp,
+            weight,
+            running_mean,
+            running_var,
+            save_mean,
+            save_invstd,
+            1e-5,
+            reserve,
+        )
+
+        # Comprehensive mode - use different running_mean/var
+        if Config.bench_level == BenchLevel.COMPREHENSIVE:
+            running_mean = torch.randn(size=(C,), dtype=dtype, device=device)
+            running_var = torch.randn(size=(C,), dtype=dtype, device=device) + 1.0
+            output, save_mean, save_var, reserve = torch.ops.aten.cudnn_batch_norm(
+                inp, weight, bias, running_mean, running_var, True, 0.1, 1e-5
+            )
+            save_invstd = 1.0 / torch.sqrt(save_var + 1e-5)
+            grad_output = torch.randn_like(output)
+
+            yield (
+                grad_output,
+                inp,
+                weight,
+                running_mean,
+                running_var,
+                save_mean,
+                save_invstd,
+                1e-5,
+                reserve,
+            )
+
+    bench = NormBenchmark(
+        input_fn=cudnn_batch_norm_backward_input_fn,
+        op_name="cudnn_batch_norm_backward",
+        torch_op=torch.ops.aten.cudnn_batch_norm_backward,
+        dtypes=FLOAT_DTYPES,
+    )
+    bench.set_gems(flag_gems.cudnn_batch_norm_backward)
+    bench.run()
+
+
 def weight_norm_interface_input_fn(shape, dtype, device):
     dim = 0
     v = torch.randn(shape, dtype=dtype, device=device)
