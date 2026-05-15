@@ -2777,3 +2777,33 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+# Test for hermite_polynomial_he - probabilists' Hermite polynomial
+# Note: torch.special.hermite_polynomial_he only supports float32 on CUDA
+@pytest.mark.special_hermite_polynomial_he
+@pytest.mark.parametrize("shape", SPECIAL_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float32])
+@pytest.mark.parametrize("n", [0, 1, 2, 3, 4, 5])
+def test_accuracy_special_hermite_polynomial_he(shape, dtype, n):
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+    ref_out = torch.special.hermite_polynomial_he(ref_inp, n)
+    with flag_gems.use_gems():
+        res_out = torch.special.hermite_polynomial_he(inp, n)
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.special_hermite_polynomial_he
+@pytest.mark.parametrize("shape", SPECIAL_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float32])
+@pytest.mark.parametrize("n", [0, 1, 2, 3])
+def test_accuracy_special_hermite_polynomial_he_large_n(shape, dtype, n):
+    # Test with larger n values
+    large_n = n + 10
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+    ref_out = torch.special.hermite_polynomial_he(ref_inp, large_n)
+    with flag_gems.use_gems():
+        res_out = torch.special.hermite_polynomial_he(inp, large_n)
+    gems_assert_close(res_out, ref_out, dtype)
