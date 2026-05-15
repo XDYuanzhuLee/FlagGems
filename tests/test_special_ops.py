@@ -17,6 +17,7 @@ from .accuracy_utils import (
     FP8_QUANT_SHAPES,
     INT_DTYPES,
     KRON_SHAPES,
+    POINTWISE_SHAPES,
     SPECIAL_SHAPES,
     STACK_DIM_LIST,
     STACK_SHAPES,
@@ -2776,4 +2777,90 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
     gems_assert_equal(res_is_target, ref_is_target, dtype)
 
     # Compare output tensors
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+# Test for binary_cross_entropy_backward
+@pytest.mark.binary_cross_entropy_backward
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_binary_cross_entropy_backward(shape, dtype):
+    # Create input tensors
+    # pred should be in (0, 1) to avoid edge cases
+    pred = torch.rand(shape, dtype=dtype, device=flag_gems.device) * 0.9 + 0.05
+    target = torch.randint(0, 2, shape, dtype=dtype, device=flag_gems.device)
+    grad_output = torch.ones(shape, dtype=dtype, device=flag_gems.device)
+
+    # Reference implementation
+    ref_pred = to_reference(pred)
+    ref_target = to_reference(target)
+    ref_grad_output = to_reference(grad_output)
+
+    ref_out = torch.ops.aten.binary_cross_entropy_backward(
+        ref_grad_output, ref_pred, ref_target
+    )
+
+    # FlagGems implementation
+    with flag_gems.use_gems():
+        res_out = torch.ops.aten.binary_cross_entropy_backward(
+            grad_output, pred, target
+        )
+
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.binary_cross_entropy_backward
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_binary_cross_entropy_backward_with_weight(shape, dtype):
+    # Test with weight tensor
+    pred = torch.rand(shape, dtype=dtype, device=flag_gems.device) * 0.9 + 0.05
+    target = torch.randint(0, 2, shape, dtype=dtype, device=flag_gems.device)
+    grad_output = torch.ones(shape, dtype=dtype, device=flag_gems.device)
+    weight = torch.rand(shape, dtype=dtype, device=flag_gems.device)
+
+    # Reference implementation
+    ref_pred = to_reference(pred)
+    ref_target = to_reference(target)
+    ref_grad_output = to_reference(grad_output)
+    ref_weight = to_reference(weight)
+
+    ref_out = torch.ops.aten.binary_cross_entropy_backward(
+        ref_grad_output, ref_pred, ref_target, weight=ref_weight
+    )
+
+    # FlagGems implementation
+    with flag_gems.use_gems():
+        res_out = torch.ops.aten.binary_cross_entropy_backward(
+            grad_output, pred, target, weight=weight
+        )
+
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.binary_cross_entropy_backward
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+@pytest.mark.parametrize("reduction", [0, 1, 2])
+def test_accuracy_binary_cross_entropy_backward_reduction(shape, dtype, reduction):
+    # Test with different reduction modes
+    pred = torch.rand(shape, dtype=dtype, device=flag_gems.device) * 0.9 + 0.05
+    target = torch.randint(0, 2, shape, dtype=dtype, device=flag_gems.device)
+    grad_output = torch.ones(shape, dtype=dtype, device=flag_gems.device)
+
+    # Reference implementation
+    ref_pred = to_reference(pred)
+    ref_target = to_reference(target)
+    ref_grad_output = to_reference(grad_output)
+
+    ref_out = torch.ops.aten.binary_cross_entropy_backward(
+        ref_grad_output, ref_pred, ref_target, reduction=reduction
+    )
+
+    # FlagGems implementation
+    with flag_gems.use_gems():
+        res_out = torch.ops.aten.binary_cross_entropy_backward(
+            grad_output, pred, target, reduction=reduction
+        )
+
     gems_assert_close(res_out, ref_out, dtype)
