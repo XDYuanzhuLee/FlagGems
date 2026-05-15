@@ -2777,3 +2777,98 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+PERMUTE_COPY_SHAPES = [
+    (2, 3),
+    (4, 8),
+    (2, 3, 4),
+    (2, 4, 6, 8),
+    (3, 5, 7, 9, 11),
+]
+
+
+@pytest.mark.permute_copy
+@pytest.mark.parametrize("shape", PERMUTE_COPY_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_permute_copy_basic(shape, dtype):
+    x = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_x = to_reference(x)
+
+    # Test with identity permutation
+    dims = list(range(len(shape)))
+    ref_out = torch.permute_copy(ref_x, dims)
+    with flag_gems.use_gems():
+        res_out = torch.permute_copy(x, dims)
+
+    gems_assert_equal(res_out, ref_out)
+
+
+@pytest.mark.permute_copy
+@pytest.mark.parametrize("shape", [(2, 3), (4, 8), (2, 3, 4)])
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_permute_copy_transpose(shape, dtype):
+    if len(shape) < 2:
+        pytest.skip("Need at least 2 dimensions for transpose")
+
+    x = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_x = to_reference(x)
+
+    # Test with transpose permutation
+    dims = list(reversed(range(len(shape))))
+    ref_out = torch.permute_copy(ref_x, dims)
+    with flag_gems.use_gems():
+        res_out = torch.permute_copy(x, dims)
+
+    gems_assert_equal(res_out, ref_out)
+
+
+@pytest.mark.permute_copy
+@pytest.mark.parametrize("shape", [(2, 3, 4)])
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_permute_copy_3d(shape, dtype):
+    x = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_x = to_reference(x)
+
+    # Test various 3D permutations
+    for dims in [(0, 2, 1), (1, 0, 2), (2, 0, 1), (1, 2, 0)]:
+        ref_out = torch.permute_copy(ref_x, dims)
+        with flag_gems.use_gems():
+            res_out = torch.permute_copy(x, dims)
+        gems_assert_equal(res_out, ref_out)
+
+
+@pytest.mark.permute_copy
+@pytest.mark.parametrize("shape", [(2, 3, 4, 5)])
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_permute_copy_4d(shape, dtype):
+    x = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_x = to_reference(x)
+
+    # Test 4D permutation
+    dims = (0, 3, 2, 1)
+    ref_out = torch.permute_copy(ref_x, dims)
+    with flag_gems.use_gems():
+        res_out = torch.permute_copy(x, dims)
+
+    gems_assert_equal(res_out, ref_out)
+
+
+@pytest.mark.permute_copy
+@pytest.mark.parametrize("shape", [(2, 3)])
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_permute_copy_out(shape, dtype):
+    x = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_x = to_reference(x)
+
+    # Test with output tensor
+    out_shape = (3, 2)
+    out = torch.empty(out_shape, dtype=dtype, device=flag_gems.device)
+    ref_out = torch.empty(out_shape, dtype=dtype, device=flag_gems.device)
+
+    dims = (1, 0)
+    torch.ops.aten.permute_copy.out(ref_x, dims, out=ref_out)
+    with flag_gems.use_gems():
+        torch.ops.aten.permute_copy.out(x, dims, out=out)
+
+    gems_assert_equal(out, ref_out)
