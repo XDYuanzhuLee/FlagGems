@@ -183,6 +183,19 @@ log_softmax:
 - META:
     BLOCK_M: 8
     BLOCK_N: 512
+logsumexp:
+- META:
+    BLOCK_M: 1
+    BLOCK_N: 256
+- META:
+    BLOCK_M: 2
+    BLOCK_N: 512
+- META:
+    BLOCK_M: 4
+    BLOCK_N: 512
+- META:
+    BLOCK_M: 8
+    BLOCK_N: 512
 mm:
 - META:
     BLOCK_M: 128
