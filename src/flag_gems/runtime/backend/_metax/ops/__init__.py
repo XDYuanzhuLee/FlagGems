@@ -6,6 +6,7 @@ from .exponential_ import exponential_
 from .full import full
 from .full_like import full_like
 from .groupnorm import group_norm
+from .If import if_function
 from .index import index
 from .index_put import index_put, index_put_
 from .index_select import index_select
@@ -40,6 +41,7 @@ __all__ = [
     "full",
     "full_like",
     "group_norm",
+    "if_function",
     "index",
     "index_put",
     "index_put_",

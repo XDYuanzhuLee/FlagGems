@@ -134,6 +134,7 @@ from flag_gems.ops.hstack import hstack
 from flag_gems.ops.hypot import hypot, hypot_out
 from flag_gems.ops.i0 import i0, i0_out
 from flag_gems.ops.i0_ import i0_
+from flag_gems.ops.if_ import if_
 from flag_gems.ops.index import index
 from flag_gems.ops.index_add import index_add, index_add_
 from flag_gems.ops.index_put import index_put, index_put_
@@ -468,6 +469,7 @@ __all__ = [
     "i0",
     "i0_out",
     "i0_",
+    "if_",
     "index",
     "index_add",
     "index_add_",

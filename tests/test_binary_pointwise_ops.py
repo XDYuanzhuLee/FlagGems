@@ -2540,3 +2540,28 @@ def test_accuracy_atan2_out(shape, dtype):
         res_out = torch.ops.aten.atan2.out(x, y, out=res_out_buf)
 
     gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.If
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_If(shape, dtype):
+    """Test If (conditional select) operator."""
+    # Create condition tensor (boolean), true_val, and false_val
+    condition = torch.randint(0, 2, shape, dtype=torch.bool, device=flag_gems.device)
+    true_val = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    false_val = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+
+    # Reference implementation using torch.where
+    ref_condition = to_reference(condition, True)
+    ref_true_val = to_reference(true_val, True)
+    ref_false_val = to_reference(false_val, True)
+    # Ensure condition is boolean after reference conversion
+    ref_condition = ref_condition.to(torch.bool)
+    ref_out = torch.where(ref_condition, ref_true_val, ref_false_val)
+
+    # FlagGems implementation
+    with flag_gems.use_gems():
+        res_out = flag_gems.if_(condition, true_val, false_val)
+
+    gems_assert_close(res_out, ref_out, dtype)
