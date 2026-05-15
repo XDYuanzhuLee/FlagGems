@@ -102,6 +102,7 @@ def test_general_binary_pointwise_perf(op_name, torch_op, dtypes):
         for name, op, dtype in [
             # Arithmetic operations
             ("add_", lambda a, b: a.add_(b), FLOAT_DTYPES),
+            ("copysign_", lambda a, b: a.copysign_(b), FLOAT_DTYPES),
             ("div_", lambda a, b: a.div_(b), FLOAT_DTYPES),
             ("mul_", lambda a, b: a.mul_(b), FLOAT_DTYPES),
             ("sub_", lambda a, b: a.sub_(b), FLOAT_DTYPES),
