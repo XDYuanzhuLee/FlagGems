@@ -2540,3 +2540,23 @@ def test_accuracy_atan2_out(shape, dtype):
         res_out = torch.ops.aten.atan2.out(x, y, out=res_out_buf)
 
     gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.float_power_
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy_float_power_(shape, dtype):
+    # float_power_ only supports float32 and above due to PyTorch limitation
+    # float16 in-place operation fails with "result requires dtype Float"
+    inp1 = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    inp2 = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+
+    ref_inp1 = to_reference(inp1)
+    ref_inp2 = to_reference(inp2)
+
+    # Use non-in-place float_power for reference
+    ref_out = torch.float_power(ref_inp1, ref_inp2)
+    with flag_gems.use_gems():
+        res_out = inp1.float_power_(inp2)
+
+    gems_assert_close(res_out, ref_out, dtype, equal_nan=True)
