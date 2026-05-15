@@ -2540,3 +2540,70 @@ def test_accuracy_atan2_out(shape, dtype):
         res_out = torch.ops.aten.atan2.out(x, y, out=res_out_buf)
 
     gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.bucketize
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES + INT_DTYPES)
+def test_accuracy_bucketize(shape, dtype):
+    if dtype in INT_DTYPES:
+        input = torch.randint(-10, 10, shape, dtype=dtype, device=flag_gems.device)
+    else:
+        input = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    boundaries = torch.tensor([1.0, 3.0, 5.0, 7.0, 9.0], device=flag_gems.device)
+    if dtype in INT_DTYPES:
+        boundaries = boundaries.to(torch.int64)
+
+    ref_input = to_reference(input)
+    ref_boundaries = to_reference(boundaries)
+    ref_out = torch.bucketize(ref_input, ref_boundaries)
+
+    with flag_gems.use_gems():
+        res_out = torch.bucketize(input, boundaries)
+
+    gems_assert_equal(res_out, ref_out)
+
+
+@pytest.mark.bucketize
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES + INT_DTYPES)
+def test_accuracy_bucketize_right(shape, dtype):
+    if dtype in INT_DTYPES:
+        input = torch.randint(-10, 10, shape, dtype=dtype, device=flag_gems.device)
+    else:
+        input = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    boundaries = torch.tensor([1.0, 3.0, 5.0, 7.0, 9.0], device=flag_gems.device)
+    if dtype in INT_DTYPES:
+        boundaries = boundaries.to(torch.int64)
+
+    ref_input = to_reference(input)
+    ref_boundaries = to_reference(boundaries)
+    ref_out = torch.bucketize(ref_input, ref_boundaries, right=True)
+
+    with flag_gems.use_gems():
+        res_out = torch.bucketize(input, boundaries, right=True)
+
+    gems_assert_equal(res_out, ref_out)
+
+
+@pytest.mark.bucketize
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES + INT_DTYPES)
+def test_accuracy_bucketize_int32(shape, dtype):
+    if dtype in INT_DTYPES:
+        input = torch.randint(-10, 10, shape, dtype=dtype, device=flag_gems.device)
+    else:
+        input = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    boundaries = torch.tensor([1.0, 3.0, 5.0, 7.0, 9.0], device=flag_gems.device)
+    if dtype in INT_DTYPES:
+        boundaries = boundaries.to(torch.int64)
+
+    ref_input = to_reference(input)
+    ref_boundaries = to_reference(boundaries)
+    ref_out = torch.bucketize(ref_input, ref_boundaries, out_int32=True)
+
+    with flag_gems.use_gems():
+        res_out = torch.bucketize(input, boundaries, out_int32=True)
+
+    gems_assert_equal(res_out, ref_out)
+    assert res_out.dtype == torch.int32
