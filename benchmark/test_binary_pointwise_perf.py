@@ -82,6 +82,8 @@ class BinaryPointwiseBenchmark(Benchmark):
             ("allclose", torch.allclose, FLOAT_DTYPES + INT_DTYPES),
             # Log operations
             ("logaddexp", torch.logaddexp, FLOAT_DTYPES),
+            # Conditional operation (ternary)
+            ("If", lambda a, b: torch.where(a > 0, a, b), FLOAT_DTYPES),
         ]
     ],
 )
