@@ -200,6 +200,30 @@ def test_perf_batch_norm_backward():
     bench.run()
 
 
+@pytest.mark.native_batch_norm_legit_functional
+def test_perf__native_batch_norm_legit_functional():
+    def native_batch_norm_legit_functional_input_fn(shape, dtype, device):
+        C = shape[1]
+        inp = torch.randn(shape, dtype=dtype, device=device)
+        weight = torch.randn(C, dtype=dtype, device=device)
+        bias = torch.randn(C, dtype=dtype, device=device)
+        running_mean = torch.zeros(C, dtype=dtype, device=device)
+        running_var = torch.ones(C, dtype=dtype, device=device)
+        yield inp, weight, bias, running_mean, running_var, True, 0.1, 1e-5
+
+    bench = NormBenchmark(
+        input_fn=native_batch_norm_legit_functional_input_fn,
+        op_name="_native_batch_norm_legit_functional",
+        torch_op=torch.ops.aten._native_batch_norm_legit_functional.default,
+    )
+    # Import and set the Iluvatar implementation
+    from flag_gems.runtime.backend._iluvatar.ops._native_batch_norm_legit_functional import (
+        _native_batch_norm_legit_functional as iluvatar_bn,
+    )
+    bench.set_gems(iluvatar_bn)
+    bench.run()
+
+
 def weight_norm_interface_input_fn(shape, dtype, device):
     dim = 0
     v = torch.randn(shape, dtype=dtype, device=device)
