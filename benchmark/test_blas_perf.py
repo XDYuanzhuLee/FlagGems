@@ -123,6 +123,16 @@ def addmm_input_fn(b, m, n, k, cur_dtype, device, b_column_major):
         yield bias, inp1, inp2,
 
 
+def matmuladd_input_fn(b, m, n, k, cur_dtype, device, b_column_major):
+    mat1 = torch.randn([m, k], dtype=cur_dtype, device=device)
+    if b_column_major:
+        mat2 = torch.randn([n, k], dtype=cur_dtype, device=device)
+        yield mat1, mat2.t(), torch.randn([m, n], dtype=cur_dtype, device=device)
+    else:
+        mat2 = torch.randn([k, n], dtype=cur_dtype, device=device)
+        yield mat1, mat2, torch.randn([m, n], dtype=cur_dtype, device=device)
+
+
 def bmm_input_fn(b, m, n, k, cur_dtype, device, b_column_major):
     inp1 = torch.randn([b, m, k], dtype=cur_dtype, device=device)
     if b_column_major:
@@ -259,6 +269,13 @@ class W8A8BlockFP8MatmulBenchmark(Benchmark):
             addmm_input_fn,
             BlasBenchmark,
             marks=pytest.mark.addmm,
+        ),
+        pytest.param(
+            "matmuladd",
+            flag_gems.matmuladd,
+            matmuladd_input_fn,
+            BlasBenchmark,
+            marks=pytest.mark.matmuladd,
         ),
         pytest.param(
             "bmm",
