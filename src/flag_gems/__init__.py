@@ -145,6 +145,7 @@ _FULL_CONFIG = (
     ("diag_embed", diag_embed),
     ("diagonal_backward", diagonal_backward),
     ("digamma_", digamma_),
+    ("igamma", igamma),
     ("div.Scalar", true_divide),
     ("div.Scalar_mode", div_mode),
     ("div.Tensor", true_divide),

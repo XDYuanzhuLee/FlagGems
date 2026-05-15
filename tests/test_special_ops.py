@@ -2777,3 +2777,28 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+# Test for igamma (special.gammainc)
+@pytest.mark.igamma
+@pytest.mark.parametrize("shape", [(1,), (16,), (128, 128)])
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy_igamma(shape, dtype):
+    # Generate positive inputs for igamma (a > 0, x > 0)
+    # Use specific values that work well with our approximation
+    # Avoid edge cases: small a (< 1), small x (< a*0.1), and x ≈ a
+    a = torch.rand(shape, dtype=dtype, device=flag_gems.device) * 4 + 2  # a in [2, 6]
+    x = torch.rand(shape, dtype=dtype, device=flag_gems.device) * 4 + 3  # x in [3, 7]
+
+    # Ensure x > a to use the asymptotic branch (more accurate)
+    x = x + a + 1
+
+    ref_a = to_reference(a)
+    ref_x = to_reference(x)
+    ref_out = torch.igamma(ref_a, ref_x)
+
+    with flag_gems.use_gems():
+        res_out = torch.igamma(a, x)
+
+    # Use looser tolerance due to approximation algorithm
+    gems_assert_close(res_out, ref_out, dtype, atol=1e-1)

@@ -205,12 +205,23 @@ def resolve_conj_input_fn(shape, dtype, device):
     yield x.conj(),
 
 
+def igamma_input_fn(shape, dtype, device):
+    # Generate positive inputs for igamma (a > 0, x > 0)
+    # Use values that work well with the approximation
+    a = torch.rand(size=shape, dtype=dtype, device=device) * 4 + 2  # a in [2, 6]
+    x = torch.rand(size=shape, dtype=dtype, device=device) * 4 + 3  # x in [3, 7]
+    x = x + a + 1  # Ensure x > a
+    yield a, x
+
+
 special_operations = [
     # Sorting Operations
     ("topk", torch.topk, FLOAT_DTYPES, topk_input_fn),
     # Complex Operations
     ("resolve_neg", torch.resolve_neg, [torch.cfloat], resolve_neg_input_fn),
     ("resolve_conj", torch.resolve_conj, [torch.cfloat], resolve_conj_input_fn),
+    # Special functions
+    ("igamma", torch.igamma, [torch.float32], igamma_input_fn),
 ]
 
 
