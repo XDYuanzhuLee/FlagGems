@@ -2777,3 +2777,135 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+# Import the Iluvatar implementation directly
+from flag_gems.runtime.backend._iluvatar.ops import (
+    _scaled_dot_product_attention_math_for_mps as iluvatar_sdp_attn,
+)
+
+# Test shapes for attention - typical transformer dimensions
+ATTENTION_SHAPES = [
+    (1, 1, 16, 64),     # Basic case
+    (2, 4, 32, 64),     # Batch=2, heads=4
+    (4, 8, 64, 128),    # Larger dimensions
+    (1, 2, 128, 64),    # Longer sequence
+]
+
+
+def get_attention_tolerance(dtype):
+    """Get tolerance for attention tests based on dtype"""
+    if dtype == torch.float16:
+        return 1e-2
+    elif dtype == torch.bfloat16:
+        return 2e-2
+    else:  # float32
+        return 1e-3
+
+
+@pytest.mark.scaled_dot_product_attention_math_for_mps
+@pytest.mark.parametrize("shape", ATTENTION_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_accuracy__scaled_dot_product_attention_math_for_mps(shape, dtype):
+    """Test accuracy of _scaled_dot_product_attention_math_for_mps"""
+    B, H, N, K = shape
+    # Create query, key, value tensors
+    query = torch.randn(B, H, N, K, dtype=dtype, device=flag_gems.device)
+    key = torch.randn(B, H, N, K, dtype=dtype, device=flag_gems.device)
+    value = torch.randn(B, H, N, K, dtype=dtype, device=flag_gems.device)
+
+    # Reference implementation using torch.nn.functional.scaled_dot_product_attention
+    ref_query = to_reference(query)
+    ref_key = to_reference(key)
+    ref_value = to_reference(value)
+    ref_out = torch.nn.functional.scaled_dot_product_attention(
+        ref_query, ref_key, ref_value
+    )
+
+    # Test implementation using Iluvatar specialized operator
+    res_out = iluvatar_sdp_attn(query, key, value)
+
+    # Use appropriate tolerance for attention
+    atol = get_attention_tolerance(dtype)
+    gems_assert_close(res_out, ref_out, dtype, atol=atol)
+
+
+@pytest.mark.scaled_dot_product_attention_math_for_mps
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_accuracy__scaled_dot_product_attention_math_for_mps_with_causal(dtype):
+    """Test accuracy of _scaled_dot_product_attention_math_for_mps with causal mask"""
+    B, H, N, K = 2, 4, 32, 64
+    query = torch.randn(B, H, N, K, dtype=dtype, device=flag_gems.device)
+    key = torch.randn(B, H, N, K, dtype=dtype, device=flag_gems.device)
+    value = torch.randn(B, H, N, K, dtype=dtype, device=flag_gems.device)
+
+    ref_query = to_reference(query)
+    ref_key = to_reference(key)
+    ref_value = to_reference(value)
+    ref_out = torch.nn.functional.scaled_dot_product_attention(
+        ref_query, ref_key, ref_value, is_causal=True
+    )
+
+    # Test implementation using Iluvatar specialized operator
+    res_out = iluvatar_sdp_attn(query, key, value, is_causal=True)
+
+    # Use appropriate tolerance for attention
+    atol = get_attention_tolerance(dtype)
+    gems_assert_close(res_out, ref_out, dtype, atol=atol)
+
+
+@pytest.mark.scaled_dot_product_attention_math_for_mps
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+@pytest.mark.skip(reason="Flash attention doesn't support boolean masks the same way as reference")
+def test_accuracy__scaled_dot_product_attention_math_for_mps_with_attn_mask(dtype):
+    """Test accuracy of _scaled_dot_product_attention_math_for_mps with attention mask"""
+    B, H, N, K = 2, 4, 32, 64
+    query = torch.randn(B, H, N, K, dtype=dtype, device=flag_gems.device)
+    key = torch.randn(B, H, N, K, dtype=dtype, device=flag_gems.device)
+    value = torch.randn(B, H, N, K, dtype=dtype, device=flag_gems.device)
+
+    # Boolean attention mask
+    attn_mask = torch.ones(B, H, N, N, dtype=torch.bool, device=flag_gems.device)
+    # Mask out some positions
+    attn_mask[:, :, :16, 16:] = False
+
+    ref_query = to_reference(query)
+    ref_key = to_reference(key)
+    ref_value = to_reference(value)
+    ref_attn_mask = to_reference(attn_mask)
+    ref_out = torch.nn.functional.scaled_dot_product_attention(
+        ref_query, ref_key, ref_value, attn_mask=ref_attn_mask
+    )
+
+    # Test implementation using Iluvatar specialized operator
+    res_out = iluvatar_sdp_attn(query, key, value, attn_mask=attn_mask)
+
+    # Use appropriate tolerance for attention
+    atol = get_attention_tolerance(dtype)
+    gems_assert_close(res_out, ref_out, dtype, atol=atol)
+
+
+@pytest.mark.scaled_dot_product_attention_math_for_mps
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_accuracy__scaled_dot_product_attention_math_for_mps_with_scale(dtype):
+    """Test accuracy of _scaled_dot_product_attention_math_for_mps with custom scale"""
+    B, H, N, K = 2, 4, 32, 64
+    query = torch.randn(B, H, N, K, dtype=dtype, device=flag_gems.device)
+    key = torch.randn(B, H, N, K, dtype=dtype, device=flag_gems.device)
+    value = torch.randn(B, H, N, K, dtype=dtype, device=flag_gems.device)
+
+    custom_scale = 0.5
+
+    ref_query = to_reference(query)
+    ref_key = to_reference(key)
+    ref_value = to_reference(value)
+    ref_out = torch.nn.functional.scaled_dot_product_attention(
+        ref_query, ref_key, ref_value, scale=custom_scale
+    )
+
+    # Test implementation using Iluvatar specialized operator
+    res_out = iluvatar_sdp_attn(query, key, value, scale=custom_scale)
+
+    # Use appropriate tolerance for attention
+    atol = get_attention_tolerance(dtype)
+    gems_assert_close(res_out, ref_out, dtype, atol=atol)

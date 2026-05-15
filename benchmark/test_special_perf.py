@@ -1467,3 +1467,40 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+# Attention benchmark shapes
+SDP_ATTENTION_SHAPES = [
+    (1, 1, 16, 64),
+    (2, 4, 32, 64),
+    (4, 8, 64, 128),
+    (1, 2, 128, 64),
+]
+
+
+class ScaledDotProductAttentionMathForMpsBenchmark(Benchmark):
+    def set_shapes(self, shape_file_path=None):
+        self.shapes = SDP_ATTENTION_SHAPES
+
+    def get_input_iter(self, cur_dtype):
+        for shape in self.shapes:
+            query = torch.randn(shape, dtype=cur_dtype, device=self.device)
+            key = torch.randn(shape, dtype=cur_dtype, device=self.device)
+            value = torch.randn(shape, dtype=cur_dtype, device=self.device)
+            yield query, key, value
+
+
+@pytest.mark.scaled_dot_product_attention_math_for_mps
+def test_perf_scaled_dot_product_attention_math_for_mps():
+    # Import the Iluvatar implementation
+    from flag_gems.runtime.backend._iluvatar.ops import (
+        _scaled_dot_product_attention_math_for_mps as iluvatar_sdp_attn,
+    )
+
+    bench = ScaledDotProductAttentionMathForMpsBenchmark(
+        op_name="_scaled_dot_product_attention_math_for_mps",
+        torch_op=torch.nn.functional.scaled_dot_product_attention,
+        dtypes=[torch.float16, torch.bfloat16],
+    )
+    bench.set_gems(iluvatar_sdp_attn)
+    bench.run()
