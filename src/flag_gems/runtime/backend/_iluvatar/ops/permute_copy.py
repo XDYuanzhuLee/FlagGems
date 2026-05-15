@@ -156,7 +156,7 @@ def permute_copy_out(x: torch.Tensor, dims, out: torch.Tensor):
     out_strides_t = torch.tensor(out.stride(), device=x.device, dtype=torch.int64)
     perm_t = torch.tensor(dims, device=x.device, dtype=torch.int64)
 
-    BLOCK_SIZE = 1024
+    BLOCK_SIZE = 2048
     grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
 
     with torch_device_fn.device(x.device):

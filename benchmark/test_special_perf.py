@@ -1467,3 +1467,46 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+PERMUTE_COPY_SHAPES = [
+    (2, 3),
+    (4, 8),
+    (16, 32),
+    (32, 64),
+    (64, 128),
+    (128, 256),
+    (256, 512),
+    (2, 3, 4),
+    (4, 8, 16),
+    (2, 4, 8, 16),
+]
+
+
+class PermuteCopyBenchmark(Benchmark):
+    def set_shapes(self, shape_file_path=None):
+        self.shapes = PERMUTE_COPY_SHAPES
+
+    def get_input_iter(self, cur_dtype):
+        for shape in self.shapes:
+            x = torch.randn(shape, dtype=cur_dtype, device=self.device)
+            # Generate a valid permutation
+            dims = list(range(len(shape)))
+            # Use a few different permutations based on shape length
+            if len(shape) == 2:
+                perm = (1, 0)  # transpose
+            elif len(shape) == 3:
+                perm = (0, 2, 1)  # swap last two dims
+            else:
+                perm = (0, 3, 2, 1)  # swap last two dims for 4D
+            yield x, perm
+
+
+@pytest.mark.permute_copy
+def test_perf_permute_copy():
+    bench = PermuteCopyBenchmark(
+        op_name="permute_copy",
+        torch_op=torch.permute_copy,
+        dtypes=FLOAT_DTYPES,
+    )
+    bench.run()
