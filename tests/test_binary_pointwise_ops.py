@@ -2540,3 +2540,68 @@ def test_accuracy_atan2_out(shape, dtype):
         res_out = torch.ops.aten.atan2.out(x, y, out=res_out_buf)
 
     gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.divide
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_divide(shape, dtype):
+    inp1 = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    inp2 = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp1 = to_reference(inp1, False)
+    ref_inp2 = to_reference(inp2, False)
+
+    ref_out = torch.divide(ref_inp1, ref_inp2)
+    with flag_gems.use_gems():
+        res_out = torch.divide(inp1, inp2)
+
+    gems_assert_close(res_out, ref_out, dtype, equal_nan=True)
+
+
+@pytest.mark.inplace
+@pytest.mark.divide_
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_divide_(shape, dtype):
+    inp1 = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    inp2 = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp1 = to_reference(inp1.clone(), False)
+    ref_inp2 = to_reference(inp2, False)
+
+    ref_out = ref_inp1.divide_(ref_inp2)
+    with flag_gems.use_gems():
+        res_out = inp1.divide_(inp2)
+
+    gems_assert_close(res_out, ref_out, dtype, equal_nan=True)
+
+
+@pytest.mark.divide
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("scalar", SCALARS)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_divide_tensor_scalar(shape, scalar, dtype):
+    inp1 = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    inp2 = scalar
+    ref_inp1 = to_reference(inp1, False)
+
+    ref_out = torch.divide(ref_inp1, inp2)
+    with flag_gems.use_gems():
+        res_out = torch.divide(inp1, inp2)
+
+    gems_assert_close(res_out, ref_out, dtype, equal_nan=True)
+
+
+@pytest.mark.divide
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("scalar", SCALARS)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_divide_scalar_tensor(shape, scalar, dtype):
+    inp1 = scalar
+    inp2 = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp2 = to_reference(inp2, False)
+
+    ref_out = torch.divide(inp1, ref_inp2)
+    with flag_gems.use_gems():
+        res_out = torch.divide(inp1, inp2)
+
+    gems_assert_close(res_out, ref_out, dtype, equal_nan=True)
