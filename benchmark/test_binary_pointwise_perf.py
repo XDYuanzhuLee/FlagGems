@@ -56,6 +56,7 @@ class BinaryPointwiseBenchmark(Benchmark):
             ("sub", torch.sub, FLOAT_DTYPES + COMPLEX_DTYPES),
             ("pow", torch.pow, FLOAT_DTYPES),
             ("polar", torch.polar, [torch.float32]),
+            ("euclidean_dist", torch._euclidean_dist, FLOAT_DTYPES),
             ("floor_divide", torch.floor_divide, INT_DTYPES),
             ("remainder", torch.remainder, INT_DTYPES),
             ("logical_or", torch.logical_or, INT_DTYPES + BOOL_DTYPES),
