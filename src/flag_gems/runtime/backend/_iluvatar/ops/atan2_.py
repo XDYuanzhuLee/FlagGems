@@ -1,5 +1,6 @@
 import logging
 
+import torch
 import triton
 import triton.language as tl
 
@@ -7,7 +8,7 @@ from flag_gems.utils import pointwise_dynamic, tl_extra_shim
 
 _atan2 = tl_extra_shim.atan2
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("flag_gems." + __name__)
 
 
 @pointwise_dynamic(promotion_methods=[(0, 1, "DEFAULT")])
@@ -17,15 +18,15 @@ def atan2_kernel(x, y):
 
 
 def atan2(input, other):
-    logger.debug("GEMS ATAN2")
+    logger.debug("ILUVATAR GEMS ATAN2")
     return atan2_kernel(input, other)
 
 
 def atan2_out(input, other, out):
-    logger.debug("GEMS ATAN2_OUT")
+    logger.debug("ILUVATAR GEMS ATAN2_OUT")
     return atan2_kernel(input, other, out0=out)
 
 
 def atan2_(input, other):
-    logger.debug("GEMS ATAN2_")
+    logger.debug("ILUVATAR GEMS ATAN2_")
     return atan2_kernel(input, other, out0=input)

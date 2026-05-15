@@ -2540,3 +2540,20 @@ def test_accuracy_atan2_out(shape, dtype):
         res_out = torch.ops.aten.atan2.out(x, y, out=res_out_buf)
 
     gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.atan2_
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_atan2_(shape, dtype):
+    x = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    y = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+
+    ref_x = to_reference(x.clone(), True)
+    ref_y = to_reference(y, True)
+    ref_out = torch.ops.aten.atan2_(ref_x, ref_y)
+
+    with flag_gems.use_gems():
+        res_out = torch.ops.aten.atan2_(x, y)
+
+    gems_assert_close(res_out, ref_out, dtype)
