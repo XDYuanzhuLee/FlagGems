@@ -2540,3 +2540,31 @@ def test_accuracy_atan2_out(shape, dtype):
         res_out = torch.ops.aten.atan2.out(x, y, out=res_out_buf)
 
     gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.igammac_
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy_igammac_(shape, dtype):
+    """Test accuracy of igammac_ (regularized upper incomplete gamma function).
+
+    Computes Q(a, x) = 1 - P(a, x) where P is the regularized lower incomplete gamma.
+    The first tensor (a) is modified in-place to contain the result.
+
+    Note: Only float32 is tested because PyTorch's CUDA igammac_ does not support
+    float16 or bfloat16.
+    """
+    # Use positive values for 'a' and 'x' as igamma is undefined for negative values
+    # Generate a in (0, 10] and x in (0, 20] for numerical stability
+    a = torch.rand(shape, dtype=dtype, device=flag_gems.device) * 9 + 1  # a in [1, 10]
+    x = torch.rand(shape, dtype=dtype, device=flag_gems.device) * 19 + 0.1  # x in [0.1, 20]
+
+    ref_a = to_reference(a, True)
+    ref_x = to_reference(x, True)
+
+    # torch.igammac_(self, other) - modifies self in place
+    ref_out = torch.ops.aten.igammac_(ref_a, ref_x)
+    with flag_gems.use_gems():
+        res_out = torch.ops.aten.igammac_(a, x)
+
+    gems_assert_close(res_out, ref_out, dtype)
