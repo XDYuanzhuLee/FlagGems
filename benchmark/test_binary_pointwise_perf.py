@@ -121,3 +121,15 @@ def test_general_inplace_binary_pointwise_perf(op_name, torch_op, dtypes):
         op_name=op_name, torch_op=torch_op, dtypes=dtypes, is_inplace=True
     )
     bench.run()
+
+
+@pytest.mark.float_power_
+def test_float_power__perf():
+    # float_power_ only supports float32 due to PyTorch limitation
+    bench = BinaryPointwiseBenchmark(
+        op_name="float_power_",
+        torch_op=lambda a, b: a.float_power_(b),
+        dtypes=[torch.float32],
+        is_inplace=True,
+    )
+    bench.run()
