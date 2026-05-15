@@ -2506,6 +2506,24 @@ def test_accuracy_copysign_out(shape, dtype):
     gems_assert_close(out, ref_out, dtype)
 
 
+@pytest.mark.copysign_
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_copysign_(shape, dtype):
+    # Test copysign_: in-place version, magnitude of input, sign of other
+    input = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    other = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+
+    ref_input = to_reference(input).clone()
+    ref_other = to_reference(other)
+    ref_input.copysign_(ref_other)
+
+    with flag_gems.use_gems():
+        input.copysign_(other)
+
+    gems_assert_close(input, ref_input, dtype)
+
+
 @pytest.mark.atan2
 @pytest.mark.parametrize("shape", POINTWISE_SHAPES)
 @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
