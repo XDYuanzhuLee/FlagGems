@@ -121,3 +121,45 @@ def test_general_inplace_binary_pointwise_perf(op_name, torch_op, dtypes):
         op_name=op_name, torch_op=torch_op, dtypes=dtypes, is_inplace=True
     )
     bench.run()
+
+
+# Custom operator benchmark for Beam_Search_Score
+from flag_gems.runtime.backend._metax.ops import beam_search_score
+
+
+class BeamSearchScoreBenchmark(Benchmark):
+    """Benchmark for Beam_Search_Score custom operator."""
+
+    DEFAULT_METRICS = DEFAULT_METRICS[:]
+
+    def set_more_shapes(self):
+        # Beam search shapes: (batch, beam) and (batch, beam, vocab)
+        shapes = [
+            (16, 4),  # Small beam search
+            (32, 8),  # Medium beam search
+            (64, 16),  # Large beam search
+            (128, 32),  # Very large beam search
+        ]
+        return shapes
+
+    def get_input_iter(self, cur_dtype) -> Generator:
+        for shape in self.shapes:
+            inp1 = generate_tensor_input(shape, cur_dtype, self.device)
+            inp2 = generate_tensor_input(shape, cur_dtype, self.device)
+            yield inp1, inp2
+
+    def get_tflops(self, op, *args, **kwargs):
+        shape1 = list(args[0].shape)
+        shape2 = list(args[1].shape)
+        return torch.tensor(shape1).prod().item() + torch.tensor(shape2).prod().item()
+
+
+@pytest.mark.Beam_Search_Score
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_Beam_Search_Score_perf(dtype):
+    bench = BeamSearchScoreBenchmark(
+        op_name="Beam_Search_Score",
+        torch_op=beam_search_score,
+        dtypes=[dtype],
+    )
+    bench.run()
