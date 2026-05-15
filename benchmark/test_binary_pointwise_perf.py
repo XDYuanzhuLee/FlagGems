@@ -121,3 +121,42 @@ def test_general_inplace_binary_pointwise_perf(op_name, torch_op, dtypes):
         op_name=op_name, torch_op=torch_op, dtypes=dtypes, is_inplace=True
     )
     bench.run()
+
+
+# Special benchmark for _masked_scale which requires 3 inputs (input, mask, scale)
+class MaskedScaleBenchmark(Benchmark):
+    """Benchmark for _masked_scale operation which takes (input, mask, scale)"""
+
+    def set_more_shapes(self):
+        special_shapes_2d = [(1024, 2**i) for i in range(0, 20, 4)]
+        shapes_3d = [(64, 64, 2**i) for i in range(0, 20, 4)]
+        return special_shapes_2d + shapes_3d
+
+    def get_input_iter(self, cur_dtype) -> Generator:
+        for shape in self.shapes:
+            inp1 = generate_tensor_input(shape, cur_dtype, self.device)
+            mask = torch.randint(0, 2, shape, dtype=torch.uint8, device=self.device)
+            scale = 2.0
+            yield inp1, mask, scale
+
+    def get_tflops(self, op, *args, **kwargs):
+        # TFLOPS calculation for masked_scale
+        shape = list(args[0].shape)
+        return torch.tensor(shape).prod().item()
+
+
+@pytest.mark.masked_scale
+@pytest.mark.parametrize(
+    "dtype",
+    FLOAT_DTYPES,
+)
+def test_masked_scale_perf(dtype):
+    # _masked_scale requires input tensor, mask tensor (uint8), and scale
+    # We need a wrapper function that takes (input, mask, scale)
+    torch_op = lambda inp, mask, scale: torch._masked_scale(inp, mask, scale)
+    bench = MaskedScaleBenchmark(
+        op_name="masked_scale",
+        torch_op=torch_op,
+        dtypes=[dtype],
+    )
+    bench.run()
