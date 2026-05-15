@@ -662,3 +662,65 @@ def test_perf_bincount_weighted(dtype):
     )
     bench.set_gems(flag_gems.bincount)
     bench.run()
+
+
+def max_pool3d_input_fn(shape, dtype, device):
+    inp = generate_tensor_input(shape, dtype, device)
+    yield inp, {
+        "kernel_size": 3,
+        "stride": 2,
+        "padding": 1,
+        "dilation": 1,
+        "ceil_mode": False,
+    }
+    if Config.bench_level == BenchLevel.COMPREHENSIVE:
+        # Non-square kernel/stride/padding
+        if shape[-3] > 5 and shape[-2] > 5 and shape[-1] > 5:
+            yield inp, {
+                "kernel_size": (2, 3, 3),
+                "stride": (1, 2, 2),
+                "padding": (1, 1, 1),
+                "dilation": 1,
+                "ceil_mode": False,
+            }
+        # With dilation
+        yield inp, {
+            "kernel_size": 2,
+            "stride": 1,
+            "padding": 1,
+            "dilation": 2,
+            "ceil_mode": False,
+        }
+        # With ceil_mode
+        yield inp, {
+            "kernel_size": 3,
+            "stride": 2,
+            "padding": 1,
+            "dilation": 1,
+            "ceil_mode": True,
+        }
+
+
+class MaxPool3dBenchmark(GenericBenchmark):
+    def get_input_iter(self, cur_dtype) -> Generator:
+        shapes_5d = [
+            (4, 3, 8, 32, 32),  # Typical 3D input
+            (8, 16, 8, 16, 16),  # Early 3D CNN layer output
+            (16, 32, 4, 16, 16),  # Mid 3D CNN layer output
+            (2, 64, 8, 8, 8),  # Later 3D CNN layer output
+        ]
+
+        for shape in shapes_5d:
+            yield from self.input_fn(shape, cur_dtype, self.device)
+
+
+@pytest.mark.max_pool3d_with_indices
+def test_perf_max_pool3d():
+    bench = MaxPool3dBenchmark(
+        input_fn=max_pool3d_input_fn,
+        op_name="max_pool3d_with_indices",
+        torch_op=torch.nn.functional.max_pool3d_with_indices,
+        dtypes=FLOAT_DTYPES,
+    )
+    bench.set_gems(flag_gems.max_pool3d_with_indices)
+    bench.run()
