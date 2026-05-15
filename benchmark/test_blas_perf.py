@@ -467,3 +467,50 @@ def test_addr_benchmark():
         dtypes=FLOAT_DTYPES,
     )
     bench.run()
+
+
+@pytest.mark.linear_backward
+def test_linear_backward_benchmark():
+    """Benchmark for linear_backward backward operation."""
+
+    class LinearBackwardBenchmark(BlasBenchmark):
+        """Benchmark for linear_backward operation."""
+
+        def set_more_shapes(self):
+            return None
+
+        def get_input_iter(self, cur_dtype) -> Generator:
+            for m, n, k in self.shapes:
+                yield from self.input_fn(m, n, k, cur_dtype, self.device)
+
+    def linear_backward_input_fn(m, n, k, cur_dtype, device):
+        """Generate input for linear_backward.
+
+        Args:
+            m: batch size
+            n: output dimension
+            k: input dimension
+        """
+        # Input tensor: (m, k) - batch_size x input_dim
+        inp = torch.randn([m, k], dtype=cur_dtype, device=device)
+        # Weight tensor: (n, k) - output_dim x input_dim
+        weight = torch.randn([n, k], dtype=cur_dtype, device=device)
+        # Grad output: (m, n) - batch_size x output_dim
+        grad_output = torch.randn([m, n], dtype=cur_dtype, device=device)
+        yield inp, grad_output, weight, {"output_mask": (True, True, False)}
+
+    shapes = [
+        (1, 32, 32),
+        (16, 512, 512),
+        (32, 1024, 1024),
+        (64, 2048, 2048),
+    ]
+
+    bench = LinearBackwardBenchmark(
+        input_fn=linear_backward_input_fn,
+        op_name="linear_backward",
+        torch_op=flag_gems.linear_backward,
+        dtypes=FLOAT_DTYPES,
+    )
+    bench.shapes = shapes
+    bench.run()
