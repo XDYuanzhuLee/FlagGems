@@ -417,6 +417,33 @@ def test_accuracy_cumsum(shape, dtype):
     gems_assert_close(res_out, ref_out, check_dtype, reduce_dim=shape[dim])
 
 
+@pytest.mark.cumsum_
+@pytest.mark.parametrize("shape", CUMSUM_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES + INT_DTYPES)
+def test_accuracy_cumsum_(shape, dtype):
+    if flag_gems.vendor_name == "kunlunxin":
+        torch.manual_seed(0)
+        torch.cuda.manual_seed_all(0)
+
+    dim = 1 if shape == REDUCTION_SHAPES[-1] else -1
+    if dtype in INT_DTYPES:
+        inp = torch.randint(-3, 3, shape, device=flag_gems.device).to(dtype)
+        ref_inp = to_reference(inp)
+    else:
+        inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+        ref_inp = to_reference(inp, True)
+
+    # Use reference implementation's output for comparison
+    # Note: On Iluvatar, cumsum_ keeps the input dtype (unlike NVIDIA PyTorch)
+    ref_out = torch.cumsum(ref_inp.clone(), dim=dim)
+    with flag_gems.use_gems():
+        res_out = inp.cumsum_(dim=dim)
+
+    # On Iluvatar, cumsum_ keeps input dtype
+    check_dtype = dtype
+    gems_assert_close(inp, ref_out.to(inp.dtype), check_dtype, reduce_dim=shape[dim])
+
+
 CUMMIN_SHAPES = (
     [(2, 32)] if QUICK_MODE else REDUCTION_SHAPES + [(2637,), (16, 1025, 255)]
 )

@@ -79,7 +79,7 @@ from flag_gems.ops.cos import cos, cos_
 from flag_gems.ops.count_nonzero import count_nonzero
 from flag_gems.ops.cummax import cummax
 from flag_gems.ops.cummin import cummin
-from flag_gems.ops.cumsum import cumsum, cumsum_out, normed_cumsum
+from flag_gems.ops.cumsum import cumsum, cumsum_, cumsum_out, normed_cumsum
 from flag_gems.ops.diag import diag
 from flag_gems.ops.diag_embed import diag_embed
 from flag_gems.ops.diagonal import diagonal_backward
@@ -398,6 +398,7 @@ __all__ = [
     "cummax",
     "cummin",
     "cumsum",
+    "cumsum_",
     "cumsum_out",
     "conj_physical",
     "diag",

@@ -139,6 +139,7 @@ _FULL_CONFIG = (
     ("cummax", cummax),
     ("cummin", cummin),
     ("cumsum", cumsum),
+    ("cumsum_", cumsum_),
     ("cumsum.out", cumsum_out),
     ("conj_physical", conj_physical),
     ("diag", diag),

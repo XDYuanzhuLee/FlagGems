@@ -375,6 +375,11 @@ def cumsum_out(inp, dim=1, *, dtype=None, out):
     return cumsum_wrapper(inp, dim, dtype, out)
 
 
+def cumsum_(inp, dim=1, *, dtype=None):
+    logger.debug("GEMS CUMSUM_")
+    return cumsum_wrapper(inp, dim, dtype, inplace=True)
+
+
 @libentry()
 @triton.jit(do_not_specialize=["K"])
 def normed_cumsum_kernel(inp, out, K, BLOCK: tl.constexpr):
