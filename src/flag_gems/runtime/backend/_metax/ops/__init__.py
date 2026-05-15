@@ -28,6 +28,7 @@ from .unique import _unique2
 from .upsample_nearest2d import upsample_nearest2d
 from .zeros import zeros
 from .zeros_like import zeros_like
+from .Beam_Search_Score import beam_search_score
 
 __all__ = [
     "_unique2",
@@ -35,6 +36,7 @@ __all__ = [
     "amax",
     "arange",
     "arange_start",
+    "beam_search_score",
     "bmm",
     "exponential_",
     "full",

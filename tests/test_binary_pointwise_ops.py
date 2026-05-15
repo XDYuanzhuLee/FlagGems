@@ -2540,3 +2540,23 @@ def test_accuracy_atan2_out(shape, dtype):
         res_out = torch.ops.aten.atan2.out(x, y, out=res_out_buf)
 
     gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.Beam_Search_Score
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_Beam_Search_Score(shape, dtype):
+    """Test Beam_Search_Score accuracy against torch.add as reference.
+
+    Beam_Search_Score is a beam search scoring function that computes
+    element-wise addition of two score tensors (e.g., accumulating log probabilities).
+    """
+    from flag_gems.runtime.backend._metax.ops import beam_search_score
+
+    inp1 = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    inp2 = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+
+    ref_out = inp1 + inp2
+    res_out = beam_search_score(inp1, inp2)
+
+    gems_assert_close(res_out, ref_out, dtype)
