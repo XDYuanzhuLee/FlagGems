@@ -205,12 +205,24 @@ def resolve_conj_input_fn(shape, dtype, device):
     yield x.conj(),
 
 
+def special_chebyshev_polynomial_u_input_fn(shape, dtype, device):
+    # Note: torch.special.chebyshev_polynomial_u is only available for float32 on CPU/CUDA
+    # So we use float32 for benchmarking and convert if needed
+    x = torch.randn(shape, dtype=torch.float32, device=device)
+    # Use a fixed n value for benchmarking (n=3 is a good middle ground)
+    n = 3
+    yield x, n
+
+
 special_operations = [
     # Sorting Operations
     ("topk", torch.topk, FLOAT_DTYPES, topk_input_fn),
     # Complex Operations
     ("resolve_neg", torch.resolve_neg, [torch.cfloat], resolve_neg_input_fn),
     ("resolve_conj", torch.resolve_conj, [torch.cfloat], resolve_conj_input_fn),
+    # Special Math Functions
+    # Note: torch.special.chebyshev_polynomial_u only supports float32
+    ("special_chebyshev_polynomial_u", torch.special.chebyshev_polynomial_u, [torch.float32], special_chebyshev_polynomial_u_input_fn),
 ]
 
 
