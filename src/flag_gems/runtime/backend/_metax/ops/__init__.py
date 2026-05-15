@@ -1,3 +1,4 @@
+from ._dyn_quant_pack_4bit_weight import dyn_quant_pack_4bit_weight
 from .addmm import addmm
 from .amax import amax
 from .arange import arange, arange_start
@@ -36,6 +37,7 @@ __all__ = [
     "arange",
     "arange_start",
     "bmm",
+    "dyn_quant_pack_4bit_weight",
     "exponential_",
     "full",
     "full_like",
