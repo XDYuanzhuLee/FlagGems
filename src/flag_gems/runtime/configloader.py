@@ -21,6 +21,7 @@ DEFAULT_EXPAND_CONFIG_PATH = os.path.normpath(
 DEFAULT_STRATEGIES = {
     "bmm": ["log", "log", "log", "align32", "align32"],
     "addmm": ["align32", "align32", "align32"],
+    "matmuladd": ["align32", "align32", "align32"],
     "baddbmm": ["align32", "align32", "align32"],
     "mv": ["align32", "align32"],
     "mm_general_tma": [
@@ -37,6 +38,7 @@ DEFAULT_STRATEGIES = {
 OP_KEY_ORDERS = {
     "bmm": ["M", "N", "K", "stride_am", "stride_bk"],
     "addmm": ["M", "N", "K"],
+    "matmuladd": ["M", "N", "K"],
     "baddbmm": ["M", "N", "K"],
     "mv": ["M", "N"],
     "mm_general_tma": ["M", "N", "K", "stride_am", "stride_bk", "dtype"],

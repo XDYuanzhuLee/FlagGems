@@ -19,6 +19,7 @@ from flag_gems.ops.amax import amax
 from flag_gems.ops.angle import angle
 from flag_gems.ops.any import any, any_dim, any_dims
 from flag_gems.ops.arange import arange, arange_start
+from flag_gems.ops.matmuladd import matmuladd
 from flag_gems.ops.arcsinh import arcsinh, arcsinh_out
 from flag_gems.ops.arcsinh_ import arcsinh_
 from flag_gems.ops.arctanh_ import arctanh_
@@ -326,6 +327,7 @@ __all__ = [
     "addmv",
     "addmv_out",
     "addr",
+    "matmuladd",
     "alias_copy",
     "alias_copy_out",
     "all",

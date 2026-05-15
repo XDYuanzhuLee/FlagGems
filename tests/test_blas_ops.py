@@ -562,3 +562,25 @@ def test_accuracy_addr(M, N, dtype):
         res_out = torch.addr(input_tensor, vec1, vec2, alpha=alpha, beta=beta)
 
     gems_assert_close(res_out, ref_out, dtype, equal_nan=True)
+
+
+@pytest.mark.matmuladd
+@pytest.mark.parametrize("M, N, K", MNK_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_matmuladd(M, N, K, dtype):
+    if flag_gems.vendor_name == "tsingmicro" and dtype == torch.float32:
+        pytest.skip("Skipping fp32 matmuladd test on tsingmicro platform")
+
+    mat1 = torch.randn((M, K), dtype=dtype, device=flag_gems.device)
+    mat2 = torch.randn((K, N), dtype=dtype, device=flag_gems.device)
+    bias = torch.randn((M, N), dtype=dtype, device=flag_gems.device)
+
+    ref_mat1 = to_reference(mat1, True)
+    ref_mat2 = to_reference(mat2, True)
+    ref_bias = to_reference(bias, True)
+
+    ref_out = torch.matmul(ref_mat1, ref_mat2) + ref_bias
+    with flag_gems.use_gems():
+        res_out = flag_gems.matmuladd(mat1, mat2, bias)
+
+    gems_assert_close(res_out, ref_out, dtype, equal_nan=True)
