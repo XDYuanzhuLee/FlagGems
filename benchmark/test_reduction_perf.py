@@ -223,6 +223,13 @@ def mse_loss_input_fn(shape, cur_dtype, device):
             FLOAT_DTYPES,
             marks=pytest.mark.mse_loss,
         ),
+        pytest.param(
+            "binary_cross_entropy",
+            torch.nn.functional.binary_cross_entropy,
+            mse_loss_input_fn,
+            FLOAT_DTYPES,
+            marks=pytest.mark.binary_cross_entropy,
+        ),
     ],
 )
 def test_generic_reduction_benchmark(op_name, torch_op, input_fn, dtypes):

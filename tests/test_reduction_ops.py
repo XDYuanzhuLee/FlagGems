@@ -2220,6 +2220,37 @@ def test_accuracy_mse_loss(shape, dtype, reduction):
     gems_assert_close(res_out, ref_out, dtype, equal_nan=True, reduce_dim=shape[dim])
 
 
+@pytest.mark.binary_cross_entropy
+@pytest.mark.parametrize("reduction", ["mean", "none", "sum"])
+@pytest.mark.parametrize("shape", REDUCTION_SHAPES[:2])  # Skip largest shape for float32 precision
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy_binary_cross_entropy(shape, dtype, reduction):
+    if flag_gems.vendor_name == "metax":
+        torch.manual_seed(0)
+        torch.cuda.manual_seed_all(0)
+    if flag_gems.vendor_name == "kunlunxin":
+        torch.manual_seed(0)
+        torch.cuda.manual_seed_all(0)
+
+    # Input and target for binary cross entropy should be in [0, 1]
+    inp = torch.rand(shape, dtype=dtype, device=flag_gems.device)
+    target = torch.rand(shape, dtype=dtype, device=flag_gems.device)
+
+    # Use CPU for reference to avoid CUDA float16->float64 conversion issue
+    # Note: Iluvatar has issues converting float64->float16 on CUDA, so compute on CPU
+    ref_inp = inp.to("cpu")
+    ref_target = target.to("cpu")
+
+    ref_out = torch.nn.functional.binary_cross_entropy(ref_inp, ref_target, reduction=reduction)
+
+    with flag_gems.use_gems():
+        res_out = torch.nn.functional.binary_cross_entropy(inp, target, reduction=reduction)
+
+    # Compare on CPU to avoid device conversion issues
+    res_cpu = res_out.to("cpu")
+    gems_assert_close(res_cpu, ref_out, dtype, equal_nan=True)
+
+
 def generate_test_params():
     params = [torch.int32, torch.int64]
     if SkipVersion("torch", ">2.2"):

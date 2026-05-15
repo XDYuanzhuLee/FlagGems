@@ -37,6 +37,7 @@ from flag_gems.ops.attention import (
 )
 from flag_gems.ops.avg_pool2d import avg_pool2d, avg_pool2d_backward
 from flag_gems.ops.baddbmm import baddbmm
+from flag_gems.ops.binary_cross_entropy import binary_cross_entropy
 from flag_gems.ops.batch_norm import batch_norm, batch_norm_backward
 from flag_gems.ops.bitwise_and import (
     bitwise_and_scalar,
