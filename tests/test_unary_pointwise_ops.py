@@ -2232,3 +2232,20 @@ def test_accuracy_special_i0e_out(shape, dtype):
         act_out = torch.ops.aten.special_i0e.out(x, out=out_act)
     gems_assert_close(act_out, ref_out, dtype)
     gems_assert_close(out_act, out_ref, dtype)
+
+
+@pytest.mark.special_logit
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_special_logit(shape, dtype):
+    torch.manual_seed(0)
+    base = torch.empty(shape, device=flag_gems.device, dtype=torch.float32).uniform_(
+        -4.0, 4.0
+    )
+    inp = torch.sigmoid(base).to(dtype=dtype)
+    # Use flag_gems.logit directly to avoid to_reference issue on iluvatar
+    with flag_gems.use_gems():
+        res_out = flag_gems.logit(inp, eps=1e-6)
+    # Reference on same device and dtype
+    ref_out = torch.special.logit(inp.to(torch.float32), eps=1e-6).to(dtype)
+    gems_assert_close(res_out, ref_out, dtype)
