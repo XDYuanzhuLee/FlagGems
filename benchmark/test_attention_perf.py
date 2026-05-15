@@ -1119,3 +1119,57 @@ def test_perf_reshape_and_cache():
     )
     bench.set_gems(flag_gems.reshape_and_cache)
     bench.run()
+
+
+# Benchmark for Swin Transformer Attention
+class SwinTransformerAttentionBenchmark(GenericBenchmark):
+    def set_shapes(self, shape_file_path=None):
+        # Shapes: (batch, num_heads, seq_len, head_dim)
+        self.shapes = []
+        for batch in [1, 2]:
+            for num_heads in [4, 8]:
+                for seq_len in [128, 256]:
+                    for head_dim in [32, 64]:
+                        self.shapes.append((batch, num_heads, seq_len, head_dim))
+
+
+def input_kwargs_swin_attention(shape, dtype, device):
+    batch, num_heads, seq_len, head_dim = shape
+    q = torch.randn(batch, num_heads, seq_len, head_dim, dtype=dtype, device=device)
+    k = torch.randn(batch, num_heads, seq_len, head_dim, dtype=dtype, device=device)
+    v = torch.randn(batch, num_heads, seq_len, head_dim, dtype=dtype, device=device)
+    scale = 1.0 / math.sqrt(head_dim)
+    yield q, k, v, scale
+
+
+def torch_swin_attention_ref(q, k, v, scale):
+    """Reference implementation for Swin Transformer Attention"""
+    q_t = q.transpose(1, 2)
+    k_t = k.transpose(1, 2)
+    v_t = v.transpose(1, 2)
+    qk = torch.matmul(q_t, k_t.transpose(-2, -1)) * scale
+    attn_weights = torch.softmax(qk, dim=-1)
+    output = torch.matmul(attn_weights, v_t)
+    return output.transpose(1, 2)
+
+
+@pytest.mark.Swin_Transformer_Attention
+def test_perf_swin_transformer_attention():
+    """Benchmark for Swin Transformer Attention"""
+
+    def input_kwargs_fn(shape, dtype, device):
+        return input_kwargs_swin_attention(shape, dtype, device)
+
+    from flag_gems.runtime.backend._metax.ops import swin_transformer_attention
+
+    def gems_swin_attention(q, k, v, scale):
+        return swin_transformer_attention(q, k, v, scale)
+
+    bench = SwinTransformerAttentionBenchmark(
+        op_name="Swin_Transformer_Attention",
+        input_fn=input_kwargs_fn,
+        torch_op=torch_swin_attention_ref,
+        dtypes=FLOAT_DTYPES,
+    )
+    bench.set_gems(gems_swin_attention)
+    bench.run()
