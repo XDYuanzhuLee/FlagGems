@@ -1467,3 +1467,40 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+# Adaptive max pool 2D benchmark
+ADAPTIVE_MAX_POOL_SHAPES = [
+    (1, 3, 8, 8),
+    (2, 8, 16, 16),
+    (4, 16, 32, 32),
+    (8, 32, 64, 64),
+    (16, 64, 128, 128),
+]
+
+
+class AdaptiveMaxPool2dBenchmark(Benchmark):
+    def set_shapes(self, shape_file_path=None):
+        self.shapes = ADAPTIVE_MAX_POOL_SHAPES
+
+    def get_input_iter(self, cur_dtype):
+        for shape in self.shapes:
+            inp = torch.randn(shape, dtype=cur_dtype, device=self.device)
+            # Use small output size to simulate realistic pooling
+            out_h = max(1, shape[2] // 4)
+            out_w = max(1, shape[3] // 4)
+            yield inp, (out_h, out_w)
+
+
+# Import Iluvatar implementation directly
+from flag_gems.runtime.backend._iluvatar.ops import adaptive_max_pool2d as gems_adaptive_max_pool2d
+
+
+@pytest.mark.adaptive_max_pool2d
+def test_perf_adaptive_max_pool2d():
+    bench = AdaptiveMaxPool2dBenchmark(
+        op_name="adaptive_max_pool2d",
+        torch_op=gems_adaptive_max_pool2d,
+        dtypes=FLOAT_DTYPES,
+    )
+    bench.run()
