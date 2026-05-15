@@ -61,6 +61,18 @@ def layernorm_input_fn(shape, dtype, device):
     yield inp, layer_shape, weight, bias
 
 
+def layernorm_dropout_input_fn(shape, dtype, device):
+    """Input function for LayerNorm + Dropout fused operator."""
+    inp = torch.randn(shape, dtype=dtype, device=device)
+    layer_shape = shape[1:]
+    weight = torch.randn(layer_shape, dtype=dtype, device=device)
+    bias = torch.randn(layer_shape, dtype=dtype, device=device)
+    eps = 1e-5
+    p = 0.5  # dropout probability
+    train = True
+    yield inp, layer_shape, weight, bias, eps, p, train
+
+
 def instancenorm_input_fn(shape, dtype, device):
     C = shape[1]
     inp = torch.randn(shape, dtype=dtype, device=device)
@@ -256,4 +268,28 @@ def test_perf_rms_norm():
         op_name="rms_norm",
         torch_op=torch.nn.functional.rms_norm,
     )
+    bench.run()
+
+
+@pytest.mark.LayerNorm_Dropout
+def test_perf_layernorm_dropout():
+    """Benchmark for fused LayerNorm + Dropout operator."""
+
+    def torch_layernorm_dropout(inp, normalized_shape, weight, bias, eps, p, train):
+        """Reference implementation: LayerNorm followed by Dropout."""
+        normalized = torch.nn.functional.layer_norm(
+            inp, normalized_shape, weight=weight, bias=bias, eps=eps
+        )
+        if train:
+            normalized = torch.nn.functional.dropout(normalized, p=p, training=True)
+        return normalized
+
+    bench = NormBenchmark(
+        input_fn=layernorm_dropout_input_fn,
+        op_name="layer_norm_dropout",
+        torch_op=torch_layernorm_dropout,
+        dtypes=FLOAT_DTYPES,
+    )
+    # Set the gems operation manually
+    bench.set_gems(flag_gems.layer_norm_dropout)
     bench.run()
