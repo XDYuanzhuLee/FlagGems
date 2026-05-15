@@ -2232,3 +2232,20 @@ def test_accuracy_special_i0e_out(shape, dtype):
         act_out = torch.ops.aten.special_i0e.out(x, out=out_act)
     gems_assert_close(act_out, ref_out, dtype)
     gems_assert_close(out_act, out_ref, dtype)
+
+
+@pytest.mark.special_modified_bessel_k1
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy_special_modified_bessel_k1(shape, dtype):
+    # K1 is only defined for positive inputs, use abs to ensure positive values
+    inp = torch.abs(torch.randn(shape, dtype=dtype, device=flag_gems.device)) + 0.1
+    # Compute reference using CPU with float32
+    ref_inp = inp.cpu()
+    ref_out = torch.special.modified_bessel_k1(ref_inp)
+    # Move reference to CUDA for comparison
+    ref_out = ref_out.to(inp.device)
+    with flag_gems.use_gems():
+        res_out = torch.special.modified_bessel_k1(inp)
+    # Use explicit comparison on CUDA
+    torch.testing.assert_close(res_out, ref_out, atol=1e-4, rtol=1e-5)
