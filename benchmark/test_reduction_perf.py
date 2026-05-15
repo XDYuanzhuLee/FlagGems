@@ -475,6 +475,57 @@ def test_perf_max_pool2d_backward():
     bench.run()
 
 
+def max_pool3d_input_fn(shape, dtype, device):
+    for inp in generate_tensor_input(shape, dtype, device):
+        params = {
+            "kernel_size": 2,
+            "stride": 2,
+            "padding": 0,
+        }
+        yield inp, params
+
+
+@pytest.mark.max_pool3d
+def test_perf_max_pool3d():
+    bench = GenericBenchmark(
+        input_fn=max_pool3d_input_fn,
+        op_name="max_pool3d",
+        torch_op=torch.nn.functional.max_pool3d_with_indices,
+        dtypes=FLOAT_DTYPES,
+        is_backward=False,
+    )
+
+    bench.set_gems(flag_gems.max_pool3d_with_indices)
+    bench.run()
+
+
+@pytest.mark.max_pool3d
+def test_perf_max_pool3d_backward():
+    def max_pool3d_backward_input_fn(shape, dtype, device):
+        for forward_args in max_pool3d_input_fn(shape, dtype, device):
+            inp, params = forward_args
+            output, indices = flag_gems.max_pool3d_with_indices(inp, **params)
+            grad_output = torch.randn_like(output)
+            yield grad_output, inp, indices, params
+
+    def torch_max_pool3d_backward_wrapper(grad_output, input, indices, **kwargs):
+        output, _ = torch.nn.functional.max_pool3d_with_indices(input, **kwargs)
+        return torch.ops.aten.max_pool3d_with_indices_backward(
+            grad_output, input, **kwargs, indices=indices
+        )
+
+    bench = GenericBenchmark(
+        input_fn=max_pool3d_backward_input_fn,
+        op_name="max_pool3d_backward",
+        torch_op=torch_max_pool3d_backward_wrapper,
+        dtypes=FLOAT_DTYPES,
+        is_backward=False,
+    )
+
+    bench.set_gems(flag_gems.max_pool3d_with_indices_backward)
+    bench.run()
+
+
 @pytest.mark.dot
 def test_perf_dot():
     def dot_input_fn(shape, dtype, device):
