@@ -2232,3 +2232,17 @@ def test_accuracy_special_i0e_out(shape, dtype):
         act_out = torch.ops.aten.special_i0e.out(x, out=out_act)
     gems_assert_close(act_out, ref_out, dtype)
     gems_assert_close(out_act, out_ref, dtype)
+
+
+@pytest.mark.expm1_
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_expm1_(shape, dtype):
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp.clone())
+
+    ref_out = torch.expm1_(ref_inp)
+    with flag_gems.use_gems():
+        res_out = torch.expm1_(inp)
+
+    gems_assert_close(res_out, ref_out, dtype)
