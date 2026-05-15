@@ -196,6 +196,13 @@ def mse_loss_input_fn(shape, cur_dtype, device):
             marks=pytest.mark.cumsum,
         ),
         pytest.param(
+            "cumsum_",
+            lambda x, dim=1: x.cumsum_(dim=dim),
+            cumsum_input_fn,
+            FLOAT_DTYPES + INT_DTYPES,
+            marks=pytest.mark.cumsum_,
+        ),
+        pytest.param(
             "cummin",
             torch.cummin,
             cumsum_input_fn,
