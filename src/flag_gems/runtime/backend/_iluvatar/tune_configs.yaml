@@ -2072,3 +2072,13 @@ kron:
   warps:
   - 4
   - 8
+grid_sampler_3d:
+- META:
+    BLOCK_SIZE: 128
+  num_warps: 4
+- META:
+    BLOCK_SIZE: 256
+  num_warps: 4
+- META:
+    BLOCK_SIZE: 512
+  num_warps: 8
