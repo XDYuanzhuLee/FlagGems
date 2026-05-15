@@ -2513,3 +2513,52 @@ def test_accuracy_bincount_minlength(shape, num_classes, minlength):
     ref_out_w = torch.bincount(ref_inp, weights=ref_weights, minlength=minlength)
     res_out_w = flag_gems.bincount(inp, weights=weights, minlength=minlength)
     _assert_bincount(res_out_w, ref_out_w, dtype, shape, num_classes)
+
+
+MAXPOOL3D_CONFIGS = [
+    # Classic case: 3x3x3 kernel, stride 2, padding 1
+    ((4, 3, 8, 8, 8), 3, 2, 1, 1, False),
+    # Non-square kernel and stride
+    ((2, 8, 8, 16, 16), (2, 3, 3), (1, 2, 1), 1, 1, False),
+    # Test ceil_mode
+    ((1, 4, 8, 8, 8), 3, 2, 1, 1, True),
+    # Test dilation
+    ((1, 1, 6, 6, 6), 2, 1, 0, 2, False),
+    # No padding
+    ((2, 8, 8, 8, 8), 2, 2, 0, 1, False),
+    # Non-square padding
+    ((1, 4, 8, 12, 12), 2, 2, (1, 0, 1), 1, False),
+]
+
+
+@pytest.mark.max_pool3d_with_indices
+@pytest.mark.parametrize(
+    "shape, kernel_size, stride, padding, dilation, ceil_mode", MAXPOOL3D_CONFIGS
+)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_max_pool3d_with_indices(
+    shape, kernel_size, stride, padding, dilation, ceil_mode, dtype
+):
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device, requires_grad=True)
+    ref_inp = to_reference(inp)
+
+    ref_out, ref_indices = torch.nn.functional.max_pool3d_with_indices(
+        ref_inp,
+        kernel_size=kernel_size,
+        stride=stride,
+        padding=padding,
+        dilation=dilation,
+        ceil_mode=ceil_mode,
+    )
+
+    res_out, res_indices = flag_gems.max_pool3d_with_indices(
+        inp,
+        kernel_size=kernel_size,
+        stride=stride,
+        padding=padding,
+        dilation=dilation,
+        ceil_mode=ceil_mode,
+    )
+
+    gems_assert_close(res_out, ref_out, dtype)
+    gems_assert_equal(res_indices, ref_indices)
