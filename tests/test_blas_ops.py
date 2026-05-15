@@ -562,3 +562,28 @@ def test_accuracy_addr(M, N, dtype):
         res_out = torch.addr(input_tensor, vec1, vec2, alpha=alpha, beta=beta)
 
     gems_assert_close(res_out, ref_out, dtype, equal_nan=True)
+
+
+@pytest.mark.weight_int8pack_mm
+@pytest.mark.parametrize("M, N, K", MNK_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_accuracy_weight_int8pack_mm(M, N, K, dtype):
+    if flag_gems.vendor_name == "tsingmicro":
+        pytest.skip("Skipping int8 test on tsingmicro platform")
+
+    torch.manual_seed(0)
+
+    A = torch.randint(-10, 10, (M, K), dtype=torch.int8, device=flag_gems.device)
+    B = torch.randint(-10, 10, (N, K), dtype=torch.int8, device=flag_gems.device)
+    scales = torch.randn(M, N, dtype=dtype, device=flag_gems.device).abs() * 0.1
+
+    # Compute reference on GPU
+    A_fp = A.to(torch.float32)
+    B_fp = B.to(torch.float32)
+    ref_out = torch.matmul(A_fp, B_fp.t()) * scales
+
+    with flag_gems.use_gems():
+        from flag_gems.runtime.backend._iluvatar.ops import _weight_int8pack_mm
+        res_out = _weight_int8pack_mm(A, B, scales, output_dtype=dtype)
+
+    gems_assert_close(res_out, ref_out, dtype)
