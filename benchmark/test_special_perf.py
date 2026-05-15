@@ -1467,3 +1467,29 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+@pytest.mark.special_bessel_j1
+def test_perf_special_bessel_j1():
+    class SpecialBesselJ1Benchmark(Benchmark):
+        def set_shapes(self, shape_file_path=None):
+            # Use smaller shapes due to metax private memory limit (4KB/thread)
+            self.shapes = [(32, 64), (64, 128)]
+
+        def set_more_shapes(self):
+            return None
+
+        def get_input_iter(self, cur_dtype):
+            for shape in self.shapes:
+                inp = torch.randn(shape, dtype=cur_dtype, device=self.device) * 10.0
+                yield (inp,)
+
+    # Use the same metax implementation for both torch_op and gems_op
+    # because torch.special.bessel_j1 fails on metax backend due to memory limit
+    bench = SpecialBesselJ1Benchmark(
+        op_name="special_bessel_j1",
+        torch_op=flag_gems.special_bessel_j1,
+        dtypes=[torch.float32],
+    )
+    bench.set_gems(flag_gems.special_bessel_j1)
+    bench.run()
