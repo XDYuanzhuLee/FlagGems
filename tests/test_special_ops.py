@@ -2777,3 +2777,95 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+# Reflection pad 3d tests for Iluvatar backend
+# Note: torch.ops.aten.reflection_pad3d returns zeros on Iluvatar, so we use CPU reference
+@pytest.mark.reflection_pad3d
+@pytest.mark.parametrize(
+    "shape", [(2, 4, 16, 16, 16), (1, 8, 32, 32, 32), (4, 16, 8, 8, 8)]
+)
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float16, torch.bfloat16])
+@pytest.mark.parametrize(
+    "padding",
+    [
+        (1, 1, 1, 1, 1, 1),
+        (2, 3, 2, 3, 2, 3),
+        (3, 5, 3, 5, 1, 1),
+        (0, 4, 0, 4, 0, 4),
+        (4, 0, 4, 0, 2, 2),
+    ],
+)
+def test_reflection_pad3d(shape, dtype, padding):
+    x = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+
+    # Use CPU reference (torch.nn.functional.pad with mode='reflect')
+    ref_out = torch.nn.functional.pad(x.cpu(), padding, mode='reflect')
+    ref_out = ref_out.to(flag_gems.device)
+
+    with flag_gems.use_gems():
+        act_out = flag_gems.reflection_pad3d(x, padding)
+
+    gems_assert_close(act_out, ref_out, dtype, equal_nan=True)
+
+
+@pytest.mark.reflection_pad3d
+@pytest.mark.parametrize("padding", [[1, 1, 1, 1, 1, 1], [2, 3, 4, 5, 2, 3]])
+def test_reflection_pad3d_list_padding(padding):
+    # Test with list format: [pad_left, pad_right, pad_top, pad_bottom, pad_front, pad_back]
+    shape = (2, 4, 16, 16, 16)
+    dtype = torch.float32
+    x = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+
+    # Use CPU reference
+    ref_out = torch.nn.functional.pad(x.cpu(), padding, mode='reflect')
+    ref_out = ref_out.to(flag_gems.device)
+
+    with flag_gems.use_gems():
+        act_out = flag_gems.reflection_pad3d(x, padding)
+
+    gems_assert_close(act_out, ref_out, dtype, equal_nan=True)
+
+
+@pytest.mark.reflection_pad3d
+def test_reflection_pad3d_empty_padding():
+    # Test with no padding
+    shape = (2, 4, 16, 16, 16)
+    dtype = torch.float32
+    padding = (0, 0, 0, 0, 0, 0)
+    x = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+
+    # Use CPU reference
+    ref_out = torch.nn.functional.pad(x.cpu(), padding, mode='reflect')
+    ref_out = ref_out.to(flag_gems.device)
+
+    with flag_gems.use_gems():
+        act_out = flag_gems.reflection_pad3d(x, padding)
+
+    gems_assert_close(act_out, ref_out, dtype, equal_nan=True)
+
+
+@pytest.mark.reflection_pad3d
+@pytest.mark.parametrize("padding", [(1, 1, 1, 1, 1, 1), (2, 3, 4, 5, 2, 3)])
+def test_reflection_pad3d_out(padding):
+    # Test with out parameter
+    shape = (2, 4, 16, 16, 16)
+    dtype = torch.float32
+    x = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+
+    # Compute reference output shape
+    pad_left, pad_right, pad_top, pad_bottom, pad_front, pad_back = padding
+    D_out = shape[1] + pad_front + pad_back
+    H_out = shape[2] + pad_top + pad_bottom
+    W_out = shape[3] + pad_left + pad_right
+    out_shape = (shape[0], D_out, H_out, W_out)
+
+    # Use CPU reference
+    ref_out_cpu = torch.nn.functional.pad(x.cpu(), padding, mode='reflect')
+    ref_out = ref_out_cpu.to(flag_gems.device)
+
+    act_out_buf = torch.empty(out_shape, dtype=dtype, device=flag_gems.device)
+    with flag_gems.use_gems():
+        act_out = torch.ops.aten.reflection_pad3d.out(x, padding, out=act_out_buf)
+
+    gems_assert_close(act_out, ref_out, dtype, equal_nan=True)
