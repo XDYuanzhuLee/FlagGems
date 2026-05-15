@@ -2540,3 +2540,23 @@ def test_accuracy_atan2_out(shape, dtype):
         res_out = torch.ops.aten.atan2.out(x, y, out=res_out_buf)
 
     gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.igamma
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy_igamma(shape, dtype):
+    # igamma(a, x) = lower incomplete gamma function
+    # Use positive values where x <= a (series converges faster)
+    # Generate a >= x for better convergence
+    x = torch.rand(shape, dtype=dtype, device=flag_gems.device) + 0.1  # x > 0
+    a = x + torch.rand(shape, dtype=dtype, device=flag_gems.device)  # a >= x
+
+    ref_a = to_reference(a)
+    ref_x = to_reference(x)
+
+    ref_out = torch.igamma(ref_a, ref_x)
+    with flag_gems.use_gems():
+        res_out = torch.igamma(a, x)
+
+    gems_assert_close(res_out, ref_out, dtype)
