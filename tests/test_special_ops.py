@@ -2777,3 +2777,71 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+# Adaptive max pool 2D tests
+ADAPTIVE_MAX_POOL_SHAPES = [(1, 3, 8, 8), (2, 16, 32, 32), (4, 8, 16, 16)]
+ADAPTIVE_MAX_POOL_OUTPUT_SIZES = [(1, 1), (2, 2), (4, 4), (8, 8)]
+
+# Import Iluvatar implementation directly
+from flag_gems.runtime.backend._iluvatar.ops import adaptive_max_pool2d as gems_adaptive_max_pool2d
+
+
+@pytest.mark.adaptive_max_pool2d
+@pytest.mark.parametrize("shape", ADAPTIVE_MAX_POOL_SHAPES)
+@pytest.mark.parametrize("output_size", ADAPTIVE_MAX_POOL_OUTPUT_SIZES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_adaptive_max_pool2d(shape, output_size, dtype):
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+    ref_out, ref_indices = torch.nn.functional.adaptive_max_pool2d(
+        ref_inp, output_size, return_indices=True
+    )
+    res_out, res_indices = gems_adaptive_max_pool2d(inp, output_size)
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.adaptive_max_pool2d
+@pytest.mark.parametrize("shape", ADAPTIVE_MAX_POOL_SHAPES)
+@pytest.mark.parametrize("output_size", ADAPTIVE_MAX_POOL_OUTPUT_SIZES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_adaptive_max_pool2d_indices(shape, output_size, dtype):
+    # Test indices return
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+    ref_out, ref_indices = torch.nn.functional.adaptive_max_pool2d(
+        ref_inp, output_size, return_indices=True
+    )
+    res_out, res_indices = gems_adaptive_max_pool2d(inp, output_size)
+    # Check that indices match (within the valid range)
+    gems_assert_equal(res_indices, ref_indices)
+
+
+@pytest.mark.adaptive_max_pool2d
+@pytest.mark.parametrize("shape", [(8, 16, 32, 32)])
+@pytest.mark.parametrize("output_size", [(1, 1)])
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_adaptive_max_pool2d_large(shape, output_size, dtype):
+    # Test larger input
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+    ref_out, ref_indices = torch.nn.functional.adaptive_max_pool2d(
+        ref_inp, output_size, return_indices=True
+    )
+    res_out, res_indices = gems_adaptive_max_pool2d(inp, output_size)
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.adaptive_max_pool2d
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_adaptive_max_pool2d_scalar(dtype):
+    # Test scalar output size (same as (1, 1))
+    shape = (1, 3, 8, 8)
+    output_size = 1
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+    ref_out, ref_indices = torch.nn.functional.adaptive_max_pool2d(
+        ref_inp, output_size, return_indices=True
+    )
+    res_out, res_indices = gems_adaptive_max_pool2d(inp, output_size)
+    gems_assert_close(res_out, ref_out, dtype)
