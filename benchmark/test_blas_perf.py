@@ -396,6 +396,12 @@ def addmv_input_fn(m, n, cur_dtype, device):
             addmv_input_fn,
             marks=pytest.mark.addmv,
         ),
+        pytest.param(
+            "addmv_",
+            torch.addmv_,
+            addmv_input_fn,
+            marks=pytest.mark.addmv_,
+        ),
     ],
 )
 def test_addmv_benchmark(op_name, torch_op, input_fn):
