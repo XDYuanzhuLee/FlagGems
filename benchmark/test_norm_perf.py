@@ -257,3 +257,25 @@ def test_perf_rms_norm():
         torch_op=torch.nn.functional.rms_norm,
     )
     bench.run()
+
+
+@pytest.mark.batch_norm_with_update
+def test_perf__batch_norm_with_update():
+    def batchnorm_with_update_input_fn(shape, dtype, device):
+        C = shape[1]
+        inp = torch.randn(shape, dtype=dtype, device=device)
+        weight = torch.randn((C,), dtype=dtype, device=device)
+        bias = torch.randn((C,), dtype=dtype, device=device)
+        running_mean = torch.zeros((C,), dtype=dtype, device=device)
+        running_var = torch.ones((C,), dtype=dtype, device=device)
+        momentum = 0.1
+        eps = 1e-5
+        yield inp, weight, bias, running_mean, running_var, momentum, eps
+
+    bench = NormBenchmark(
+        input_fn=batchnorm_with_update_input_fn,
+        op_name="_batch_norm_with_update",
+        torch_op=torch.ops.aten._batch_norm_with_update,
+        dtypes=FLOAT_DTYPES,
+    )
+    bench.run()

@@ -796,3 +796,66 @@ def test_accuracy_batch_norm_backward(shape, dtype, affine):
             res_weight_grad, ref_weight_grad, dtype, reduce_dim=reduce_dim
         )
         gems_assert_close(res_bias_grad, ref_bias_grad, dtype, reduce_dim=reduce_dim)
+
+
+@pytest.mark.batch_norm_with_update
+@pytest.mark.parametrize(
+    "shape",
+    [
+        (16, 3),
+        (32, 32, 32),
+        (8, 32, 224, 224),
+    ],
+)
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float16])
+@pytest.mark.parametrize("affine", [True, False])
+def test_accuracy__batch_norm_with_update(shape, dtype, affine):
+    """Test accuracy for _batch_norm_with_update operator."""
+    C = shape[1]
+    inp = torch.randn(size=shape, dtype=dtype, device=flag_gems.device)
+    weight = (
+        torch.randn(size=(C,), dtype=dtype, device=flag_gems.device) if affine else None
+    )
+    bias = (
+        torch.randn(size=(C,), dtype=dtype, device=flag_gems.device) if affine else None
+    )
+
+    running_mean = torch.zeros(size=(C,), dtype=dtype, device=flag_gems.device)
+    running_var = torch.ones(size=(C,), dtype=dtype, device=flag_gems.device)
+
+    momentum = 0.1
+    eps = 1e-5
+
+    # Use same device for reference to avoid float64 compatibility issue on Iluvatar
+    ref_inp = inp.clone()
+    ref_weight = weight.clone() if weight is not None else None
+    ref_bias = bias.clone() if bias is not None else None
+    ref_running_mean = running_mean.clone()
+    ref_running_var = running_var.clone()
+
+    ref_out, ref_mean, ref_inv_std, ref_save_mean = torch.ops.aten._batch_norm_with_update(
+        ref_inp,
+        ref_weight,
+        ref_bias,
+        ref_running_mean,
+        ref_running_var,
+        momentum,
+        eps,
+    )
+
+    with flag_gems.use_gems():
+        res_out, res_mean, res_inv_std, res_save_mean = torch.ops.aten._batch_norm_with_update(
+            inp,
+            weight,
+            bias,
+            running_mean,
+            running_var,
+            momentum,
+            eps,
+        )
+
+    gems_assert_close(res_out, ref_out, dtype)
+    gems_assert_close(res_mean, ref_mean, dtype)
+    gems_assert_close(res_inv_std, ref_inv_std, dtype)
+    gems_assert_close(running_mean, ref_running_mean, dtype)
+    gems_assert_close(running_var, ref_running_var, dtype)
