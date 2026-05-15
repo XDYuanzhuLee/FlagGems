@@ -796,3 +796,91 @@ def test_accuracy_batch_norm_backward(shape, dtype, affine):
             res_weight_grad, ref_weight_grad, dtype, reduce_dim=reduce_dim
         )
         gems_assert_close(res_bias_grad, ref_bias_grad, dtype, reduce_dim=reduce_dim)
+
+
+@pytest.mark.cudnn_batch_norm_backward
+@pytest.mark.parametrize(
+    "shape",
+    [
+        (16, 3),
+        (32, 32, 32),
+        (8, 32, 224, 224),
+        (2050, 16, 32, 32),
+        (8, 16, 3, 224, 224),
+    ],
+)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_cudnn_batch_norm_backward(shape, dtype):
+    C = shape[1]
+
+    # Create inputs - use same dtype for all
+    res_inp = torch.randn(size=shape, dtype=dtype, device=flag_gems.device)
+    res_weight = torch.randn(size=(C,), dtype=dtype, device=flag_gems.device)
+    res_bias = torch.randn(size=(C,), dtype=dtype, device=flag_gems.device)
+    res_running_mean = torch.zeros(size=(C,), dtype=dtype, device=flag_gems.device)
+    res_running_var = torch.ones(size=(C,), dtype=dtype, device=flag_gems.device)
+
+    # Forward pass to get save_mean and save_var
+    res_output, res_save_mean, res_save_var, res_reserve = torch.ops.aten.cudnn_batch_norm(
+        res_inp, res_weight, res_bias, res_running_mean, res_running_var, True, 0.1, 1e-5
+    )
+
+    # Compute save_invstd from save_var
+    res_save_invstd = 1.0 / torch.sqrt(res_save_var + 1e-5)
+
+    # Generate grad_output from the output
+    res_grad = torch.randn_like(res_output)
+
+    # Reference: run on reference device (same dtype, no upcast)
+    ref_inp = res_inp.clone()
+    ref_weight = res_weight.clone()
+    ref_bias = res_bias.clone()
+    ref_running_mean = res_running_mean.clone()
+    ref_running_var = res_running_var.clone()
+
+    # Forward on reference
+    ref_output, ref_save_mean, ref_save_var, ref_reserve = torch.ops.aten.cudnn_batch_norm(
+        ref_inp, ref_weight, ref_bias, ref_running_mean, ref_running_var, True, 0.1, 1e-5
+    )
+    ref_save_invstd = 1.0 / torch.sqrt(ref_save_var + 1e-5)
+    ref_grad = res_grad.clone()
+
+    # Backward on reference
+    (
+        ref_in_grad,
+        ref_weight_grad,
+        ref_bias_grad,
+    ) = torch.ops.aten.cudnn_batch_norm_backward(
+        ref_grad,
+        ref_inp,
+        ref_weight,
+        ref_running_mean,
+        ref_running_var,
+        ref_save_mean,
+        ref_save_invstd,
+        1e-5,
+        ref_reserve,
+    )
+
+    # Backward on GEMS
+    with flag_gems.use_gems():
+        (
+            res_in_grad,
+            res_weight_grad,
+            res_bias_grad,
+        ) = torch.ops.aten.cudnn_batch_norm_backward(
+            res_grad,
+            res_inp,
+            res_weight,
+            res_running_mean,
+            res_running_var,
+            res_save_mean,
+            res_save_invstd,
+            1e-5,
+            res_reserve,
+        )
+
+    reduce_dim = math.prod(shape) // C
+    gems_assert_close(res_in_grad, ref_in_grad, dtype, reduce_dim=reduce_dim)
+    gems_assert_close(res_weight_grad, ref_weight_grad, dtype, reduce_dim=reduce_dim)
+    gems_assert_close(res_bias_grad, ref_bias_grad, dtype, reduce_dim=reduce_dim)
