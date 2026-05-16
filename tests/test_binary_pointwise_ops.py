@@ -2540,3 +2540,24 @@ def test_accuracy_atan2_out(shape, dtype):
         res_out = torch.ops.aten.atan2.out(x, y, out=res_out_buf)
 
     gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.nextafter_
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_nextafter_(shape, dtype):
+    # Test nextafter_: returns the next representable value from x toward y
+    x = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    y = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+
+    ref_x = to_reference(x).clone()
+    ref_y = to_reference(y)
+    ref_x.nextafter_(ref_y)
+    ref_out = ref_x
+
+    with flag_gems.use_gems():
+        x_clone = x.clone()
+        x_clone.nextafter_(y)
+        res_out = x_clone
+
+    gems_assert_close(res_out, ref_out, dtype)
