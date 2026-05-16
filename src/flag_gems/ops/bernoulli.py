@@ -4,6 +4,7 @@ import torch
 import triton
 import triton.language as tl
 
+from flag_gems import runtime
 from flag_gems.runtime import torch_device_fn
 from flag_gems.utils.random_utils import (
     philox_backend_seed_offset,
@@ -15,17 +16,7 @@ logger = logging.getLogger(__name__)
 UNROLL = 4
 
 
-configs = [
-    triton.Config({"BLOCK": 256}, num_warps=8, num_stages=2),
-    triton.Config({"BLOCK": 512}, num_warps=4, num_stages=2),
-    triton.Config({"BLOCK": 512}, num_warps=8, num_stages=3),
-    triton.Config({"BLOCK": 1024}, num_warps=4, num_stages=2),
-    triton.Config({"BLOCK": 1024}, num_warps=8, num_stages=3),
-    triton.Config({"BLOCK": 1024}, num_warps=8, num_stages=4),
-]
-
-
-@triton.autotune(configs=configs, key=["N"])
+@triton.heuristics(runtime.get_heuristic_config("bernoulli"))
 @triton.jit(do_not_specialize=["philox_seed", "philox_offset"])
 def bernoulli_kernel(
     probs,
@@ -60,10 +51,10 @@ def bernoulli_kernel(
     p3 = tl.load(probs + off_3, mask=off_3 < N, other=0.0, eviction_policy="evict_first")
 
     # Generate bernoulli random numbers: 1 if random < probability, else 0
-    out0 = tl.where(r0 < p0, tl.constexpr(1.0), tl.constexpr(0.0))
-    out1 = tl.where(r1 < p1, tl.constexpr(1.0), tl.constexpr(0.0))
-    out2 = tl.where(r2 < p2, tl.constexpr(1.0), tl.constexpr(0.0))
-    out3 = tl.where(r3 < p3, tl.constexpr(1.0), tl.constexpr(0.0))
+    out0 = (r0 < p0).to(p0.dtype)
+    out1 = (r1 < p1).to(p1.dtype)
+    out2 = (r2 < p2).to(p2.dtype)
+    out3 = (r3 < p3).to(p3.dtype)
 
     tl.store(output + off_0, out0, mask=off_0 < N, eviction_policy="evict_first")
     tl.store(output + off_1, out1, mask=off_1 < N, eviction_policy="evict_first")
@@ -73,10 +64,6 @@ def bernoulli_kernel(
 
 def bernoulli(input, generator=None, *, out=None):
     logger.debug("GEMS BERNOULLI")
-    # Validate input probability range
-    if torch.any(input < 0) or torch.any(input > 1):
-        raise ValueError("概率值必须在 [0, 1] 范围内")
-
     # Use the same dtype as input for output if not specified
     if out is None:
         out = torch.empty_like(input, dtype=input.dtype)
