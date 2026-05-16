@@ -113,6 +113,8 @@ def test_general_binary_pointwise_perf(op_name, torch_op, dtypes):
             # Bitwise operations
             ("bitwise_and_", lambda a, b: a.bitwise_and_(b), INT_DTYPES + BOOL_DTYPES),
             ("bitwise_or_", lambda a, b: a.bitwise_or_(b), INT_DTYPES + BOOL_DTYPES),
+            # Numerical operations
+            ("nextafter_", lambda a, b: a.nextafter_(b), FLOAT_DTYPES),
         ]
     ],
 )
