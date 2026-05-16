@@ -2540,3 +2540,50 @@ def test_accuracy_atan2_out(shape, dtype):
         res_out = torch.ops.aten.atan2.out(x, y, out=res_out_buf)
 
     gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.Beam_Search_Score
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_Beam_Search_Score(shape, dtype):
+    """Test accuracy for Beam_Search_Score operator.
+
+    Beam_Search_Score computes beam search scores by adding accumulated
+    beam scores with next token log probabilities.
+    """
+    inp1 = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    inp2 = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp1 = to_reference(inp1)
+    ref_inp2 = to_reference(inp2)
+    ref_out = ref_inp1 + ref_inp2
+    with flag_gems.use_gems():
+        res_out = flag_gems.beam_search_score(inp1, inp2)
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.Beam_Search_Score
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_Beam_Search_Score_tensor_scalar(shape, dtype):
+    """Test accuracy for Beam_Search_Score with tensor + scalar."""
+    inp1 = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    scalar = 2.5
+    ref_inp1 = to_reference(inp1)
+    ref_out = ref_inp1 + scalar
+    with flag_gems.use_gems():
+        res_out = flag_gems.beam_search_score(inp1, scalar)
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.Beam_Search_Score
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_Beam_Search_Score_scalar_tensor(shape, dtype):
+    """Test accuracy for Beam_Search_Score with scalar + tensor."""
+    scalar = 1.5
+    inp2 = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp2 = to_reference(inp2)
+    ref_out = scalar + ref_inp2
+    with flag_gems.use_gems():
+        res_out = flag_gems.beam_search_score(scalar, inp2)
+    gems_assert_close(res_out, ref_out, dtype)
