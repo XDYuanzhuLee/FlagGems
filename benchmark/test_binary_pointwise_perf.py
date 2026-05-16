@@ -3,6 +3,8 @@ from typing import Generator
 import pytest
 import torch
 
+import flag_gems
+
 from benchmark.attri_util import (
     BOOL_DTYPES,
     COMPLEX_DTYPES,
@@ -82,6 +84,8 @@ class BinaryPointwiseBenchmark(Benchmark):
             ("allclose", torch.allclose, FLOAT_DTYPES + INT_DTYPES),
             # Log operations
             ("logaddexp", torch.logaddexp, FLOAT_DTYPES),
+            # Beam search operations
+            ("Beam_Search_Score", flag_gems.beam_search_score, FLOAT_DTYPES),
         ]
     ],
 )
