@@ -205,12 +205,19 @@ def resolve_conj_input_fn(shape, dtype, device):
     yield x.conj(),
 
 
+def dynamic_quantize_linear_input_fn(shape, dtype, device):
+    x = torch.randn(size=shape, dtype=dtype, device=device)
+    yield x,
+
+
 special_operations = [
     # Sorting Operations
     ("topk", torch.topk, FLOAT_DTYPES, topk_input_fn),
     # Complex Operations
     ("resolve_neg", torch.resolve_neg, [torch.cfloat], resolve_neg_input_fn),
     ("resolve_conj", torch.resolve_conj, [torch.cfloat], resolve_conj_input_fn),
+    # Quantization Operations
+    ("DynamicQuantizeLinear", torch.ops.aten.dynamic_quantize_linear, [torch.float32], dynamic_quantize_linear_input_fn),
 ]
 
 

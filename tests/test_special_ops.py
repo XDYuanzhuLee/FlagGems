@@ -2777,3 +2777,34 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+# DynamicQuantizeLinear test
+@pytest.mark.DynamicQuantizeLinear
+@pytest.mark.parametrize("shape", SPECIAL_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy_dynamic_quantize_linear(shape, dtype):
+    # DynamicQuantizeLinear: (input, ) -> (quantized_tensor, scale, zero_point)
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+
+    # Reference implementation using torch
+    ref_out = torch.ops.aten.dynamic_quantize_linear(ref_inp)
+    with flag_gems.use_gems():
+        res_out = torch.ops.aten.dynamic_quantize_linear(inp)
+
+    # res_out is a tuple of (quantized_tensor, scale, zero_point)
+    # Compare quantized tensors
+    gems_assert_equal(res_out[0], ref_out[0], dtype)
+
+    # Compare scales (using close because of floating point precision)
+    ref_scale = ref_out[1]
+    res_scale = res_out[1]
+    # Handle the case where max_abs is 0
+    if ref_scale.item() == 0:
+        assert res_scale.item() == 0
+    else:
+        assert torch.allclose(res_scale, ref_scale, rtol=1e-5, atol=1e-5)
+
+    # Zero point should always be 0
+    assert res_out[2].item() == ref_out[2].item()
