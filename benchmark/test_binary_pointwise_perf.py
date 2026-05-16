@@ -82,6 +82,7 @@ class BinaryPointwiseBenchmark(Benchmark):
             ("allclose", torch.allclose, FLOAT_DTYPES + INT_DTYPES),
             # Log operations
             ("logaddexp", torch.logaddexp, FLOAT_DTYPES),
+            ("special_xlogy", torch.special.xlogy, FLOAT_DTYPES),
         ]
     ],
 )
