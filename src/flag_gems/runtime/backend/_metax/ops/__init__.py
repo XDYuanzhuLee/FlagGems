@@ -1,3 +1,4 @@
+from ._batch_norm_no_update import _batch_norm_no_update
 from .addmm import addmm
 from .amax import amax
 from .arange import arange, arange_start
@@ -30,6 +31,7 @@ from .zeros import zeros
 from .zeros_like import zeros_like
 
 __all__ = [
+    "_batch_norm_no_update",
     "_unique2",
     "addmm",
     "amax",
