@@ -109,6 +109,47 @@ bmm:
       GROUP_M: 2
     num_warps: 16
     num_stages: 1
+addbmm:
+  - META:
+      TILE_M: 128
+      TILE_N: 128
+      TILE_K: 32
+      GROUP_M: 1
+      DIVISIBLE_M: true
+      DIVISIBLE_N: true
+      DIVISIBLE_K: true
+    num_warps: 8
+    num_stages: 2
+  - META:
+      TILE_M: 64
+      TILE_N: 64
+      TILE_K: 32
+      GROUP_M: 1
+      DIVISIBLE_M: true
+      DIVISIBLE_N: true
+      DIVISIBLE_K: true
+    num_warps: 4
+    num_stages: 2
+  - META:
+      TILE_M: 128
+      TILE_N: 128
+      TILE_K: 32
+      GROUP_M: 1
+      DIVISIBLE_M: false
+      DIVISIBLE_N: false
+      DIVISIBLE_K: false
+    num_warps: 8
+    num_stages: 2
+  - META:
+      TILE_M: 32
+      TILE_N: 32
+      TILE_K: 32
+      GROUP_M: 1
+      DIVISIBLE_M: false
+      DIVISIBLE_N: false
+      DIVISIBLE_K: false
+    num_warps: 4
+    num_stages: 2
 argmax:
 - META:
     BLOCK_M: 8

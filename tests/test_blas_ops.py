@@ -562,3 +562,38 @@ def test_accuracy_addr(M, N, dtype):
         res_out = torch.addr(input_tensor, vec1, vec2, alpha=alpha, beta=beta)
 
     gems_assert_close(res_out, ref_out, dtype, equal_nan=True)
+
+
+@pytest.mark.addbmm_
+@pytest.mark.linear
+@pytest.mark.matmul
+@pytest.mark.parametrize("M, N, K", MNK_SHAPES)
+@pytest.mark.parametrize("scalar", SCALARS)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_addbmm_(M, N, K, scalar, dtype):
+    if flag_gems.vendor_name == "mthreads" and dtype in [torch.float16, torch.bfloat16]:
+        os.environ["MUSA_ENABLE_SQMMA"] = "1"
+    batch = 4
+    # self is (M, N), batch1 is (batch, M, K), batch2 is (batch, K, N)
+    self_tensor = torch.randn((M, N), dtype=dtype, device=flag_gems.device)
+    mat1 = torch.randn((batch, M, K), dtype=dtype, device=flag_gems.device)
+    mat2 = torch.randn((batch, K, N), dtype=dtype, device=flag_gems.device)
+
+    # Use same tensor for reference without upcast (Iluvatar doesn't support double gemm)
+    ref_self = self_tensor.clone()
+    ref_mat1 = mat1.clone()
+    ref_mat2 = mat2.clone()
+
+    alpha = beta = scalar
+
+    # Use torch.addbmm to compute reference result (not in-place)
+    ref_out = torch.addbmm(ref_self, ref_mat1, ref_mat2, alpha=alpha, beta=beta)
+    with flag_gems.use_gems():
+        # addbmm_ is in-place
+        res_out = self_tensor.addbmm_(mat1, mat2, alpha=alpha, beta=beta)
+
+    # self_tensor is modified in-place
+    gems_assert_close(self_tensor, ref_out, dtype, reduce_dim=K)
+
+    if flag_gems.vendor_name == "mthreads" and dtype in [torch.float16, torch.bfloat16]:
+        del os.environ["MUSA_ENABLE_SQMMA"]
