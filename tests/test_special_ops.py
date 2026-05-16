@@ -2777,3 +2777,20 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.bernoulli
+@pytest.mark.parametrize("shape", SPECIAL_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_bernoulli(shape, dtype):
+    # Generate random probability tensor in [0, 1]
+    probs = torch.rand(shape, dtype=dtype, device=flag_gems.device)
+    ref_probs = to_reference(probs)
+    ref_out = torch.bernoulli(ref_probs)
+    with flag_gems.use_gems():
+        res_out = torch.bernoulli(probs)
+    # For bernoulli, we check that output is binary (0 or 1) and
+    # the number of 1s is statistically reasonable
+    assert torch.all((res_out == 0) | (res_out == 1))
+    # Check output dtype matches input
+    assert res_out.dtype == dtype

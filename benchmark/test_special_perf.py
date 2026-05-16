@@ -1467,3 +1467,28 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+BERNOULLI_SHAPES = [
+    (1024,),
+    (1024, 1024),
+    (1, 2048),
+]
+
+
+def _bernoulli_input_fn(shape, cur_dtype, device):
+    probs = torch.rand(shape, dtype=cur_dtype, device=device)
+    yield probs
+
+
+@pytest.mark.bernoulli
+@pytest.mark.performance
+def test_perf_bernoulli():
+    bench = GenericBenchmark(
+        op_name="bernoulli",
+        torch_op=torch.bernoulli,
+        dtypes=FLOAT_DTYPES,
+        input_fn=_bernoulli_input_fn,
+    )
+    bench.shapes = BERNOULLI_SHAPES
+    bench.run()

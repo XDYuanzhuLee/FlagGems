@@ -36,6 +36,7 @@ from flag_gems.ops.attention import (
     scaled_dot_product_attention_forward,
 )
 from flag_gems.ops.avg_pool2d import avg_pool2d, avg_pool2d_backward
+from flag_gems.ops.bernoulli import bernoulli
 from flag_gems.ops.baddbmm import baddbmm
 from flag_gems.ops.batch_norm import batch_norm, batch_norm_backward
 from flag_gems.ops.bitwise_and import (
