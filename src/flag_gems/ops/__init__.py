@@ -11,6 +11,7 @@ from flag_gems.ops.add import add, add_
 from flag_gems.ops.addcdiv import addcdiv
 from flag_gems.ops.addcmul import addcmul
 from flag_gems.ops.addmm import addmm, addmm_out
+from flag_gems.ops._addmm_activation import _addmm_activation
 from flag_gems.ops.addmv import addmv, addmv_out
 from flag_gems.ops.addr import addr
 from flag_gems.ops.alias_copy import alias_copy, alias_copy_out
@@ -323,6 +324,7 @@ __all__ = [
     "addcmul",
     "addmm",
     "addmm_out",
+    "_addmm_activation",
     "addmv",
     "addmv_out",
     "addr",

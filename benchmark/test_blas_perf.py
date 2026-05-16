@@ -68,6 +68,12 @@ class BlasBenchmark(Benchmark):
             total_flops = (
                 args[0].shape[0] * args[1].shape[1] * (args[1].shape[0] * 2 + 1)
             )
+        # _addmm_activation has same FLOPs as addmm
+        # bias shape: [n], mat1 shape: [m, k], mat2 shape: [k, n]
+        elif self.op_name == "_addmm_activation":
+            total_flops = (
+                args[1].shape[0] * args[2].shape[1] * (args[1].shape[1] * 2 + 1)
+            )
         # total_flops bxnxpx2m
         elif self.op_name == "bmm":
             total_flops = (
@@ -121,6 +127,21 @@ def addmm_input_fn(b, m, n, k, cur_dtype, device, b_column_major):
     else:
         inp2 = torch.randn([k, n], dtype=cur_dtype, device=device)
         yield bias, inp1, inp2,
+
+
+def _addmm_activation_input_fn(b, m, n, k, cur_dtype, device, b_column_major):
+    # _addmm_activation(bias, mat1, mat2, *, beta=1, alpha=1, use_gelu=False)
+    # bias shape: [n] (1D)
+    # mat1 shape: [m, k]
+    # mat2 shape: [k, n]
+    bias = torch.randn([n], dtype=cur_dtype, device=device)
+    mat1 = torch.randn([m, k], dtype=cur_dtype, device=device)
+    if b_column_major:
+        mat2 = torch.randn([n, k], dtype=cur_dtype, device=device)
+        yield bias, mat1, mat2.t(), {"beta": 1.0, "alpha": 1.0, "use_gelu": False}
+    else:
+        mat2 = torch.randn([k, n], dtype=cur_dtype, device=device)
+        yield bias, mat1, mat2, {"beta": 1.0, "alpha": 1.0, "use_gelu": False}
 
 
 def bmm_input_fn(b, m, n, k, cur_dtype, device, b_column_major):
@@ -259,6 +280,13 @@ class W8A8BlockFP8MatmulBenchmark(Benchmark):
             addmm_input_fn,
             BlasBenchmark,
             marks=pytest.mark.addmm,
+        ),
+        pytest.param(
+            "_addmm_activation",
+            torch._addmm_activation,
+            _addmm_activation_input_fn,
+            BlasBenchmark,
+            marks=pytest.mark.addmm_activation,
         ),
         pytest.param(
             "bmm",

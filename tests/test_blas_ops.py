@@ -562,3 +562,34 @@ def test_accuracy_addr(M, N, dtype):
         res_out = torch.addr(input_tensor, vec1, vec2, alpha=alpha, beta=beta)
 
     gems_assert_close(res_out, ref_out, dtype, equal_nan=True)
+
+
+@pytest.mark.addmm_activation
+@pytest.mark.parametrize("M, N, K", MNK_SHAPES)
+@pytest.mark.parametrize("scalar", SCALARS)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+@pytest.mark.parametrize("use_gelu", [True, False])
+def test_accuracy__addmm_activation(M, N, K, scalar, dtype, use_gelu):
+    if flag_gems.vendor_name == "tsingmicro" and dtype == torch.float32:
+        pytest.skip("Skipping fp32 _addmm_activation test on tsingmicro platform")
+
+    mat1 = torch.randn((M, K), dtype=dtype, device=flag_gems.device)
+    mat2 = torch.randn((K, N), dtype=dtype, device=flag_gems.device)
+    bias = torch.randn((N,), dtype=dtype, device=flag_gems.device)
+    ref_mat1 = to_reference(mat1, True)
+    ref_mat2 = to_reference(mat2, True)
+    ref_bias = to_reference(bias, True)
+
+    alpha = beta = scalar
+
+    # Use torch.addmm as reference since torch._addmm_activation has a bug on CPU
+    ref_out = torch.addmm(ref_bias, ref_mat1, ref_mat2, alpha=alpha, beta=beta)
+    if use_gelu:
+        ref_out = torch.nn.functional.gelu(ref_out)
+
+    with flag_gems.use_gems():
+        res_out = torch._addmm_activation(
+            bias, mat1, mat2, alpha=alpha, beta=beta, use_gelu=use_gelu
+        )
+
+    gems_assert_close(res_out, ref_out, dtype, reduce_dim=K)
