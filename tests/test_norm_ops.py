@@ -796,3 +796,110 @@ def test_accuracy_batch_norm_backward(shape, dtype, affine):
             res_weight_grad, ref_weight_grad, dtype, reduce_dim=reduce_dim
         )
         gems_assert_close(res_bias_grad, ref_bias_grad, dtype, reduce_dim=reduce_dim)
+
+
+@pytest.mark.miopen_batch_norm_backward
+@pytest.mark.parametrize(
+    "shape",
+    [
+        (16, 3),
+        (32, 32, 32),
+        (8, 32, 224, 224),
+    ],
+)
+@pytest.mark.parametrize("dtype", [torch.float32])
+@pytest.mark.parametrize("affine", [True, False])
+def test_accuracy_miopen_batch_norm_backward(shape, dtype, affine):
+    """
+    Test for iluvatar specialized miopen_batch_norm_backward operator.
+    """
+    C = shape[1]
+
+    # Create input tensor and run forward pass to get proper save_mean and save_var
+    res_inp = torch.randn(size=shape, dtype=dtype, device=flag_gems.device)
+    res_weight = (
+        torch.randn(size=(C,), dtype=dtype, device=flag_gems.device) if affine else None
+    )
+    res_bias = (
+        torch.randn(size=(C,), dtype=dtype, device=flag_gems.device) if affine else None
+    )
+    res_running_mean = torch.zeros(size=(C,), dtype=dtype, device=flag_gems.device)
+    res_running_var = torch.ones(size=(C,), dtype=dtype, device=flag_gems.device)
+
+    # Run forward pass to get proper save statistics
+    res_output, res_save_mean, res_save_invstd = flag_gems.batch_norm(
+        res_inp,
+        res_weight,
+        res_bias,
+        res_running_mean,
+        res_running_var,
+        training=True,
+        momentum=0.0,
+    )
+
+    # Convert save_invstd to save_var for miopen_batch_norm_backward
+    res_save_var = (1.0 / res_save_invstd) ** 2 - 1e-5
+
+    # Generate gradient for backward pass
+    res_grad = torch.randn_like(res_output)
+
+    # Reference implementation using native_batch_norm_backward
+    # Convert to float32 as required
+    ref_grad = res_grad.clone().to(torch.float32)
+    ref_inp = res_inp.clone().to(torch.float32)
+    ref_weight = res_weight.clone().to(torch.float32) if res_weight is not None else None
+    ref_running_mean = res_running_mean.clone().to(torch.float32)
+    ref_running_var = res_running_var.clone().to(torch.float32)
+    ref_save_mean = res_save_mean.clone().to(torch.float32)
+    ref_save_invstd = res_save_invstd.clone().to(torch.float32)
+
+    eps = 1e-05
+
+    train = True
+    if affine:
+        output_mask = [True, True, True]
+    else:
+        output_mask = [True, False, False]
+
+    # Reference using native_batch_norm_backward
+    (
+        ref_in_grad,
+        ref_weight_grad,
+        ref_bias_grad,
+    ) = torch.ops.aten.native_batch_norm_backward(
+        ref_grad,
+        ref_inp,
+        ref_weight,
+        ref_running_mean,
+        ref_running_var,
+        ref_save_mean,
+        ref_save_invstd,
+        train,
+        eps,
+        output_mask,
+    )
+
+    # Test the iluvatar specialized implementation (uses save_var)
+    with flag_gems.use_gems():
+        (
+            res_in_grad,
+            res_weight_grad,
+            res_bias_grad,
+        ) = flag_gems.miopen_batch_norm_backward(
+            res_inp,
+            res_grad,
+            res_weight,
+            res_running_mean,
+            res_running_var,
+            res_save_mean,
+            res_save_var,
+            eps,
+        )
+
+    reduce_dim = math.prod(shape) // C
+    gems_assert_close(res_in_grad, ref_in_grad, dtype, reduce_dim=reduce_dim)
+    if affine:
+        gems_assert_close(
+            res_weight_grad, ref_weight_grad, dtype, reduce_dim=reduce_dim
+        )
+        gems_assert_close(res_bias_grad, ref_bias_grad, dtype, reduce_dim=reduce_dim)

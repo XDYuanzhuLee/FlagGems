@@ -200,6 +200,61 @@ def test_perf_batch_norm_backward():
     bench.run()
 
 
+@pytest.mark.miopen_batch_norm_backward
+def test_perf_miopen_batch_norm_backward():
+    def miopen_batch_norm_backward_input_fn(shape, dtype, device):
+        for forward_args in batchnorm_input_fn(shape, dtype, device):
+            (
+                inp,
+                weight,
+                bias,
+                running_mean,
+                running_var,
+                training,
+                _,
+                eps,
+                _,
+            ) = forward_args
+
+            # Run forward pass to get proper save_mean and save_invstd
+            output, save_mean, save_invstd = flag_gems.batch_norm(
+                inp,
+                weight,
+                bias,
+                running_mean,
+                running_var,
+                training=training,
+                momentum=0.0,
+            )
+
+            # Convert save_invstd to save_var
+            save_var = (1.0 / save_invstd) ** 2 - eps
+
+            grad_output = torch.randn_like(output)
+            channels = weight.shape[0] if weight is not None else inp.shape[1]
+
+            yield (
+                inp,
+                grad_output,
+                weight,
+                running_mean,
+                running_var,
+                save_mean,
+                save_var,
+                eps,
+            )
+
+    bench = NormBenchmark(
+        input_fn=miopen_batch_norm_backward_input_fn,
+        op_name="miopen_batch_norm_backward",
+        torch_op=flag_gems.miopen_batch_norm_backward,
+        dtypes=[torch.float32],
+    )
+    # Use the same torch_op for both gems and torch since we're comparing against ourselves
+    bench.torch_op = flag_gems.miopen_batch_norm_backward
+    bench.run()
+
+
 def weight_norm_interface_input_fn(shape, dtype, device):
     dim = 0
     v = torch.randn(shape, dtype=dtype, device=device)
