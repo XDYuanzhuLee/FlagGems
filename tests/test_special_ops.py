@@ -2777,3 +2777,23 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark._functional_assert_async
+@pytest.mark.parametrize("shape", SPECIAL_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.bool])
+def test_accuracy__functional_assert_async(shape, dtype):
+    # _functional_assert_async is used in PyTorch's functionalization to assert
+    # conditions on tensors asynchronously. The operator returns the input tensor.
+    inp = torch.randint(0, 2, shape, device=flag_gems.device, dtype=dtype)
+    msg = "test assertion message"
+    dep_token = torch.tensor(0, device=flag_gems.device, dtype=torch.long)
+
+    ref_inp = to_reference(inp)
+    ref_out = torch._functional_assert_async(ref_inp, msg, dep_token)
+
+    with flag_gems.use_gems():
+        res_out = torch._functional_assert_async(inp, msg, dep_token)
+
+    # The function should return the input tensor unchanged
+    gems_assert_equal(res_out, ref_out)

@@ -1435,6 +1435,26 @@ def test_perf_functional_sym_constrain_range_for_size():
     bench.run()
 
 
+def _functional_assert_async_input_fn(shape, cur_dtype, device):
+    # _functional_assert_async takes: tensor, assert_msg, dep_token
+    inp = torch.randint(0, 2, shape, device=device, dtype=torch.bool)
+    msg = "test assertion message"
+    dep_token = torch.tensor(0, device=device, dtype=torch.long)
+    yield inp, msg, dep_token
+
+
+@pytest.mark._functional_assert_async
+@pytest.mark.performance
+def test_perf__functional_assert_async():
+    bench = GenericBenchmark(
+        op_name="_functional_assert_async",
+        torch_op=torch._functional_assert_async,
+        dtypes=[torch.bool],
+        input_fn=_functional_assert_async_input_fn,
+    )
+    bench.run()
+
+
 PDIST_BACKWARD_SHAPES = [
     (4, 8),
     (8, 16),
