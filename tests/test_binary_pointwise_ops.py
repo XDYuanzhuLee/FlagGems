@@ -2540,3 +2540,50 @@ def test_accuracy_atan2_out(shape, dtype):
         res_out = torch.ops.aten.atan2.out(x, y, out=res_out_buf)
 
     gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.special_xlogy
+@pytest.mark.parametrize("shape", [(1024, 1024), (20, 320, 15)])
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy_special_xlogy(shape, dtype):
+    # Use positive values to avoid edge cases with log of negative/zero
+    inp1 = torch.rand(shape, dtype=dtype, device=flag_gems.device) + 0.1
+    inp2 = torch.rand(shape, dtype=dtype, device=flag_gems.device) + 0.1
+    ref_inp1 = to_reference(inp1, True)
+    ref_inp2 = to_reference(inp2, True)
+
+    ref_out = torch.special.xlogy(ref_inp1, ref_inp2)
+    with flag_gems.use_gems():
+        res_out = torch.special.xlogy(inp1, inp2)
+
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.special_xlogy
+@pytest.mark.parametrize("shape", [(1024, 1024), (20, 320, 15)])
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy_special_xlogy_tensor_scalar(shape, dtype):
+    inp1 = torch.rand(shape, dtype=dtype, device=flag_gems.device) + 0.1
+    scalar = 0.5
+    ref_inp1 = to_reference(inp1, True)
+
+    ref_out = torch.special.xlogy(ref_inp1, scalar)
+    with flag_gems.use_gems():
+        res_out = torch.special.xlogy(inp1, scalar)
+
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.special_xlogy
+@pytest.mark.parametrize("shape", [(1024, 1024), (20, 320, 15)])
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy_special_xlogy_scalar_tensor(shape, dtype):
+    scalar = 0.5
+    inp2 = torch.rand(shape, dtype=dtype, device=flag_gems.device) + 0.1
+    ref_inp2 = to_reference(inp2, True)
+
+    ref_out = torch.special.xlogy(scalar, ref_inp2)
+    with flag_gems.use_gems():
+        res_out = torch.special.xlogy(scalar, inp2)
+
+    gems_assert_close(res_out, ref_out, dtype)
