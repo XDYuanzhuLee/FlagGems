@@ -257,3 +257,31 @@ def test_perf_rms_norm():
         torch_op=torch.nn.functional.rms_norm,
     )
     bench.run()
+
+
+def batchnorm_update_functional_input_fn(shape, dtype, device):
+    C = shape[1]
+    inp = torch.randn(shape, dtype=dtype, device=device)
+    weight = torch.randn((C,), dtype=dtype, device=device)
+    bias = torch.randn((C,), dtype=dtype, device=device)
+    running_mean = torch.zeros((C,), dtype=dtype, device=device)
+    running_var = torch.ones((C,), dtype=dtype, device=device)
+    momentum = 0.1
+    eps = 1e-5
+    yield inp, weight, bias, running_mean, running_var, momentum, eps
+
+
+@pytest.mark.batch_norm_with_update_functional
+def test_perf_batch_norm_with_update_functional():
+    from flag_gems.runtime.backend._iluvatar.ops import (
+        _batch_norm_with_update_functional as iluvatar_bn,
+    )
+
+    bench = NormBenchmark(
+        input_fn=batchnorm_update_functional_input_fn,
+        op_name="batch_norm_with_update_functional",
+        torch_op=torch.ops.aten._batch_norm_with_update_functional,
+        dtypes=FLOAT_DTYPES,
+    )
+    bench.set_gems(iluvatar_bn)
+    bench.run()

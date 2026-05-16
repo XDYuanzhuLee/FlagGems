@@ -796,3 +796,64 @@ def test_accuracy_batch_norm_backward(shape, dtype, affine):
             res_weight_grad, ref_weight_grad, dtype, reduce_dim=reduce_dim
         )
         gems_assert_close(res_bias_grad, ref_bias_grad, dtype, reduce_dim=reduce_dim)
+
+
+@pytest.mark.batch_norm_with_update_functional
+@pytest.mark.parametrize(
+    "shape",
+    [
+        (16, 3),
+        (32, 32, 32),
+        (8, 32, 224, 224),
+    ],
+)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+@pytest.mark.parametrize("affine", [True, False])
+def test_accuracy_batch_norm_with_update_functional(shape, dtype, affine):
+    from flag_gems.runtime.backend._iluvatar.ops import (
+        _batch_norm_with_update_functional as iluvatar_bn,
+    )
+
+    C = shape[1]
+    inp = torch.randn(size=shape, dtype=dtype, device=flag_gems.device)
+    weight = (
+        torch.randn(size=(C,), dtype=dtype, device=flag_gems.device) if affine else None
+    )
+    bias = (
+        torch.randn(size=(C,), dtype=dtype, device=flag_gems.device) if affine else None
+    )
+
+    running_mean = torch.zeros(size=(C,), dtype=dtype, device=flag_gems.device)
+    running_var = torch.ones(size=(C,), dtype=dtype, device=flag_gems.device)
+
+    eps = 1e-5
+    momentum = 0.1
+
+    ref_inp = inp.clone()
+    ref_weight = weight.clone() if weight is not None else None
+    ref_bias = bias.clone() if bias is not None else None
+    ref_running_mean = running_mean.clone()
+    ref_running_var = running_var.clone()
+
+    ref_out = torch.nn.functional.batch_norm(
+        ref_inp,
+        ref_running_mean,
+        ref_running_var,
+        weight=ref_weight,
+        bias=ref_bias,
+        eps=eps,
+    )
+
+    res_out = iluvatar_bn(
+        inp,
+        weight,
+        bias,
+        running_mean,
+        running_var,
+        momentum,
+        eps,
+    )
+
+    gems_assert_close(res_out[0], ref_out, dtype)
+    gems_assert_close(running_mean, ref_running_mean, dtype)
+    gems_assert_close(running_var, ref_running_var, dtype)
