@@ -384,6 +384,8 @@ _FULL_CONFIG = (
     ("sort", sort),
     ("sort.stable", sort_stable),
     ("special_i1", special_i1),
+    ("special_expit", special_expit),
+    ("special_expit_", special_expit_),
     ("special_i0e", special_i0e),
     ("special_i0e.out", special_i0e_out),
     ("sqrt", sqrt),

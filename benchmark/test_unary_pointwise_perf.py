@@ -71,6 +71,7 @@ forward_operations = [
     ("softplus", torch.nn.functional.softplus, FLOAT_DTYPES),
     ("softshrink", torch.nn.functional.softshrink, FLOAT_DTYPES),
     ("sigmoid", torch.sigmoid, FLOAT_DTYPES),
+    ("special_expit", torch.special.expit, FLOAT_DTYPES),
     ("log_sigmoid", torch.nn.functional.logsigmoid, FLOAT_DTYPES),
     ("silu", torch.nn.functional.silu, FLOAT_DTYPES),
     # Trigonometric operations

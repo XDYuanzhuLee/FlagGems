@@ -961,6 +961,20 @@ def test_accuracy_sigmoid_(shape, dtype):
     gems_assert_close(res_out, ref_out, dtype)
 
 
+@pytest.mark.special_expit
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_special_expit(shape, dtype):
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+
+    ref_out = torch.special.expit(ref_inp)
+    with flag_gems.use_gems():
+        res_out = torch.special.expit(inp)
+
+    gems_assert_close(res_out, ref_out, dtype)
+
+
 SPECIAL_VALUES = [float("-inf"), float("inf"), -300]
 
 
