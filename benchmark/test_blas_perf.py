@@ -80,6 +80,26 @@ class BlasBenchmark(Benchmark):
         return total_flops
 
 
+class AddbmmBenchmark(BlasBenchmark):
+    """
+    benchmark for addbmm (in-place)
+    """
+
+    def get_tflops(self, op, *args, **kwargs):
+        # addbmm_: self (M, N), batch1 (b, M, K), batch2 (b, K, N)
+        # total_flops = b * M * N * (2 * K + 1)
+        self_tensor = args[0]
+        batch1 = args[1]
+        batch2 = args[2]
+        total_flops = (
+            batch1.shape[0]
+            * self_tensor.shape[0]
+            * self_tensor.shape[1]
+            * (batch1.shape[2] * 2 + 1)
+        )
+        return total_flops
+
+
 class BaddbmmBenchmark(BlasBenchmark):
     """
     benchmark for Baddbmm
@@ -149,6 +169,15 @@ def baddbmm_input_fn(b, m, n, k, cur_dtype, device, b_column_major):
     bias = torch.randn([b, m, n], dtype=cur_dtype, device=device, requires_grad=True)
 
     yield bias, inp1, inp2
+
+
+def addbmm__input_fn(b, m, n, k, cur_dtype, device, b_column_major):
+    # addbmm_: self (M, N) = beta * self + alpha * sum(batch1 @ batch2 over batch)
+    # input: self (M, N), batch1 (b, M, K), batch2 (b, K, N)
+    self_tensor = torch.randn([m, n], dtype=cur_dtype, device=device)
+    batch1 = torch.randn([b, m, k], dtype=cur_dtype, device=device)
+    batch2 = torch.randn([b, k, n], dtype=cur_dtype, device=device)
+    yield self_tensor, batch1, batch2
 
 
 def mm_input_fn(b, m, n, k, cur_dtype, device, b_column_major):
@@ -280,6 +309,13 @@ class W8A8BlockFP8MatmulBenchmark(Benchmark):
             baddbmm_input_fn,
             BaddbmmBenchmark,
             marks=pytest.mark.baddbmm,
+        ),
+        pytest.param(
+            "addbmm_",
+            torch.Tensor.addbmm_,
+            addbmm__input_fn,
+            AddbmmBenchmark,
+            marks=pytest.mark.addbmm_,
         ),
     ],
 )
