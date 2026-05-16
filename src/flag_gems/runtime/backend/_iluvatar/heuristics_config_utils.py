@@ -82,6 +82,22 @@ def rand_heur_block(args):
         return 1024
 
 
+def bernoulli_heur_block(args):
+    if args["N"] <= 512:
+        return 512
+    else:
+        return 1024
+
+
+def bernoulli_heur_num_warps(args):
+    if args["N"] <= 512:
+        return 4
+    elif args["N"] <= 1024:
+        return 8
+    else:
+        return 16
+
+
 def rand_heur_num_warps(args):
     if args["N"] <= 512:
         return 4
@@ -226,6 +242,10 @@ HEURISTICS_CONFIGS = {
     "argmin": {
         "BLOCK_M": argmin_heur_block_m,
         "BLOCK_N": argmin_heur_block_n,
+    },
+    "bernoulli": {
+        "BLOCK": bernoulli_heur_block,
+        "num_warps": bernoulli_heur_num_warps,
     },
     "dropout": {
         "BLOCK": dropout_heur_block,
