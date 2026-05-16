@@ -2777,3 +2777,72 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.linalg_tensorinv
+@pytest.mark.parametrize("shape", SPECIAL_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_linalg_tensorinv(shape, dtype):
+    # linalg_tensorinv requires the product of first ind dimensions
+    # to equal the product of the rest. For ind=2 (default), we need
+    # shape[0] * shape[1] == shape[2] * shape[3] * ...
+    # We'll use shapes where this holds or use ind=1 for square matrices
+    if len(shape) >= 2:
+        # For general tensorinv, create a tensor with compatible dimensions
+        # Use ind=2 which requires first 2 dims product = rest dims product
+        a = shape[0]
+        b = shape[1]
+        rest = 1
+        for d in shape[2:]:
+            rest *= d
+        if a * b == rest:
+            ind = 2
+        elif len(shape) == 2:
+            # For 2D tensors, use ind=1
+            ind = 1
+        else:
+            # Skip shapes where dimensions don't match for tensorinv
+            pytest.skip("Incompatible shape for tensorinv")
+    else:
+        pytest.skip("Shape too small for tensorinv")
+
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+
+    ref_out = torch.linalg_tensorinv(ref_inp, ind=ind)
+    with flag_gems.use_gems():
+        res_out = torch.linalg_tensorinv(inp, ind=ind)
+
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.linalg_tensorinv
+@pytest.mark.parametrize("shape", [(64, 64), (128, 128), (256, 256)])
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_linalg_tensorinv_2d(shape, dtype):
+    # Test 2D tensor with ind=1 (equivalent to matrix inverse)
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+
+    ref_out = torch.linalg_tensorinv(ref_inp, ind=1)
+    with flag_gems.use_gems():
+        res_out = torch.linalg_tensorinv(inp, ind=1)
+
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.linalg_tensorinv
+@pytest.mark.parametrize("shape", [(4, 6, 8, 3), (2, 3, 6, 1)])
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_linalg_tensorinv_4d(shape, dtype):
+    # Test 4D tensor with ind=2 (general tensor inverse)
+    # For shape (4, 6, 8, 3): 4*6=24, 8*3=24 ✓
+    # For shape (2, 3, 6, 1): 2*3=6, 6*1=6 ✓
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+
+    ref_out = torch.linalg_tensorinv(ref_inp, ind=2)
+    with flag_gems.use_gems():
+        res_out = torch.linalg_tensorinv(inp, ind=2)
+
+    gems_assert_close(res_out, ref_out, dtype)

@@ -240,6 +240,7 @@ _FULL_CONFIG = (
     ("lift_fresh_copy", lift_fresh_copy),
     ("linalg_vector_norm", vector_norm),
     ("linspace", linspace),
+    ("linalg_tensorinv", tensorinv),
     ("log", log),
     ("log_sigmoid", log_sigmoid),
     ("log1p_", log1p_),

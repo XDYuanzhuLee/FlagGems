@@ -1467,3 +1467,31 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+LINALG_TENSORINV_SHAPES = [
+    (64, 64),
+    (128, 128),
+    (256, 256),
+    (512, 512),
+]
+
+
+class LinalgTensorInvBenchmark(Benchmark):
+    def set_shapes(self, shape_file_path=None):
+        self.shapes = LINALG_TENSORINV_SHAPES
+
+    def get_input_iter(self, cur_dtype):
+        for shape in self.shapes:
+            inp = torch.randn(shape, dtype=cur_dtype, device=self.device)
+            yield inp, {"ind": 1}
+
+
+@pytest.mark.linalg_tensorinv
+def test_perf_linalg_tensorinv():
+    bench = LinalgTensorInvBenchmark(
+        op_name="linalg_tensorinv",
+        torch_op=torch.linalg_tensorinv,
+        dtypes=FLOAT_DTYPES,
+    )
+    bench.run()

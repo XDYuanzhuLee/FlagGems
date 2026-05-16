@@ -149,6 +149,7 @@ from flag_gems.ops.le import le, le_scalar
 from flag_gems.ops.lerp import lerp_scalar, lerp_scalar_, lerp_tensor, lerp_tensor_
 from flag_gems.ops.lift_fresh_copy import lift_fresh_copy, lift_fresh_copy_out
 from flag_gems.ops.linspace import linspace
+from flag_gems.ops.linalg_tensorinv import tensorinv
 from flag_gems.ops.log import log
 from flag_gems.ops.log1p_ import log1p_
 from flag_gems.ops.log_sigmoid import log_sigmoid
