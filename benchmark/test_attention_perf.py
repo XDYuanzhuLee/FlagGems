@@ -3,6 +3,7 @@ import os
 import random
 from typing import Any, List, Optional
 
+import numpy as np
 import pytest
 import torch
 import triton
@@ -1118,4 +1119,93 @@ def test_perf_reshape_and_cache():
         dtypes=FLOAT_DTYPES,
     )
     bench.set_gems(flag_gems.reshape_and_cache)
+    bench.run()
+
+
+class FlashAttentionBackwardBenchmark(Benchmark):
+    """Benchmark for flash attention backward pass."""
+
+    def set_shapes(self, shape_file_path=None):
+        self.shapes = [
+            (4, 32, 1024, 64),
+            (4, 32, 2048, 128),
+            (4, 32, 4096, 128),
+        ]
+
+    def set_more_shapes(self):
+        return None
+
+    def get_input_iter(self, cur_dtype):
+        for shape in self.shapes:
+            batch, num_heads, seq_len, head_size = shape
+            q = torch.randn(shape, dtype=cur_dtype, device=self.device, requires_grad=True)
+            k = torch.randn(shape, dtype=cur_dtype, device=self.device, requires_grad=True)
+            v = torch.randn(shape, dtype=cur_dtype, device=self.device, requires_grad=True)
+            scale = float(1.0 / np.sqrt(head_size))
+
+            # Compute forward to get out
+            out = torch.nn.functional.scaled_dot_product_attention(
+                q, k, v, scale=scale
+            )
+
+            # Create random gradient
+            grad_out = torch.randn_like(out)
+
+            yield q, k, v, grad_out, scale
+
+    def get_tflops(self, op, *args, **kwargs):
+        q, k, v, grad_out, scale = args
+        batch, num_heads, seq_len, head_size = q.shape
+        # Backward pass: 3 * batch * num_heads * seq_len * seq_len * head_size
+        # (dQ, dK, dV matrices)
+        return (
+            3
+            * batch
+            * num_heads
+            * seq_len
+            * seq_len
+            * head_size
+            * 2
+        )
+
+
+def torch_flash_attention_backward_ref(q, k, v, grad_out, scale):
+    """Reference implementation using torch autograd."""
+    # Forward pass
+    attn_out = torch.nn.functional.scaled_dot_product_attention(
+        q, k, v, scale=scale
+    )
+
+    # Backward pass
+    attn_out.backward(grad_out)
+
+    return q.grad, k.grad, v.grad
+
+
+def gems_flash_attention_backward_ref(q, k, v, grad_out, scale):
+    """Gems implementation using torch autograd."""
+    # Forward pass via flag_gems
+    with flag_gems.use_gems():
+        attn_out = torch.nn.functional.scaled_dot_product_attention(
+            q, k, v, scale=scale
+        )
+
+    # Backward pass
+    attn_out.backward(grad_out)
+
+    return q.grad, k.grad, v.grad
+
+
+@pytest.mark.skipif(
+    flag_gems.vendor_name != "metax",
+    reason="This benchmark is for Metax backend only"
+)
+@pytest.mark.flash_attention_backward
+def test_perf_flash_attention_backward():
+    bench = FlashAttentionBackwardBenchmark(
+        op_name="_scaled_dot_product_flash_attention_backward",
+        torch_op=torch_flash_attention_backward_ref,
+        dtypes=FLOAT_DTYPES,
+    )
+    bench.set_gems(gems_flash_attention_backward_ref)
     bench.run()

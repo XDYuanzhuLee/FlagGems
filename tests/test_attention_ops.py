@@ -1771,3 +1771,81 @@ def test_scheduler_metadata_correctness(
         )
 
     gems_assert_close(gems_metadata, ref_metadata, dtype=torch.int32)
+
+
+@pytest.mark.skipif(flag_gems.vendor_name != "metax", reason="Metax only")
+@pytest.mark.parametrize(
+    "batch, num_q_head, num_kv_head, q_seq_len, kv_seq_len, head_size",
+    [
+        (4, 8, 8, 1024, 1024, 64),
+        (4, 8, 8, 2048, 2048, 128),
+        (2, 4, 4, 512, 512, 64),
+        (2, 4, 4, 1024, 1024, 32),
+    ],
+)
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_accuracy_flash_attention_backward_metax(
+    batch,
+    num_q_head,
+    num_kv_head,
+    q_seq_len,
+    kv_seq_len,
+    head_size,
+    dtype,
+):
+    """Test accuracy of _scaled_dot_product_flash_attention_backward on Metax."""
+    if flag_gems.vendor_name != "metax":
+        pytest.skip("This test is for Metax backend only")
+
+    device = torch_device_fn.current_device()
+    q, k, v = make_input(
+        batch,
+        num_q_head,
+        num_kv_head,
+        q_seq_len,
+        kv_seq_len,
+        head_size,
+        dtype,
+        device,
+        requires_grad=True,
+    )
+
+    ref_q = to_reference(q, False)
+    ref_k = to_reference(k, False)
+    ref_v = to_reference(v, False)
+    scale = float(1.0 / np.sqrt(head_size))
+
+    # Forward pass using torch.nn.functional.scaled_dot_product_attention
+    ref_out = torch.nn.functional.scaled_dot_product_attention(
+        ref_q, ref_k, ref_v, scale=scale
+    )
+
+    # Get logsumexp from forward pass (needed for backward)
+    # For flash attention, we need to compute this differently
+    # Here we just use the output as is and compute backward
+
+    # Compute backward manually
+    ref_out.sum().backward()
+    ref_dq = ref_q.grad
+    ref_dk = ref_k.grad
+    ref_dv = ref_v.grad
+
+    # Reset gradients
+    q.requires_grad_(True)
+    k.requires_grad_(True)
+    v.requires_grad_(True)
+
+    # Forward pass via torch.ops.aten (which uses our implementation)
+    with flag_gems.use_gems():
+        out = torch.nn.functional.scaled_dot_product_attention(
+            q, k, v, scale=scale
+        )
+        out.sum().backward()
+        dq = q.grad
+        dk = k.grad
+        dv = v.grad
+
+    # Compare gradients
+    gems_assert_close(dq, ref_dq, dtype)
+    gems_assert_close(dk, ref_dk, dtype)
+    gems_assert_close(dv, ref_dv, dtype)
