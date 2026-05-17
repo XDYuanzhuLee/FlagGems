@@ -1,3 +1,4 @@
+from .Add_LayerNorm import add_layernorm
 from .addmm import addmm
 from .amax import amax
 from .arange import arange, arange_start
@@ -31,6 +32,7 @@ from .zeros_like import zeros_like
 
 __all__ = [
     "_unique2",
+    "add_layernorm",
     "addmm",
     "amax",
     "arange",

@@ -74,6 +74,31 @@ def test_perf_skip_layernorm():
     bench.run()
 
 
+@pytest.mark.add_layernorm
+def test_perf_add_layernorm():
+    def add_layernorm_input_fn(shape, dtype, device):
+        inp = torch.randn(shape, dtype=dtype, device=device)
+        residual = torch.randn(shape, dtype=dtype, device=device)
+        layer_shape = (shape[-1],)
+        weight = torch.randn(layer_shape, dtype=dtype, device=device)
+        bias = torch.randn(layer_shape, dtype=dtype, device=device)
+        yield inp, residual, layer_shape, weight, bias
+
+    def torch_op(inp, residual, layer_shape, weight, bias):
+        return torch.layer_norm(inp + residual, layer_shape, weight, bias)
+
+    gems_op = flag_gems.add_layernorm
+
+    bench = GenericBenchmarkExcluse1D(
+        input_fn=add_layernorm_input_fn,
+        op_name="add_layernorm",
+        torch_op=torch_op,
+        dtypes=FLOAT_DTYPES,
+    )
+    bench.set_gems(gems_op)
+    bench.run()
+
+
 @pytest.mark.fused_add_rms_norm
 def test_perf_fused_add_rms_norm():
     def fused_add_rms_norm_input_fn(shape, dtype, device):

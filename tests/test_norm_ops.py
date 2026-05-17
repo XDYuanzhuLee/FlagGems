@@ -594,6 +594,39 @@ def test_accuracy_skip_layernorm(shape, dtype):
     gems_assert_close(res_out, ref_out, dtype)
 
 
+@pytest.mark.add_layernorm
+@pytest.mark.parametrize("shape", REDUCTION_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_add_layernorm(shape, dtype):
+    N = shape[1]
+    layer_shape = [
+        N,
+    ]
+    inp = torch.randn(shape[:2], dtype=dtype, device=flag_gems.device)
+    residual = torch.randn(shape[:2], dtype=dtype, device=flag_gems.device)
+    weight = torch.randn(layer_shape, dtype=dtype, device=flag_gems.device)
+    bias = torch.randn(layer_shape, dtype=dtype, device=flag_gems.device)
+    eps = 1e-5
+
+    ref_inp = to_reference(inp, True)
+    ref_residual = to_reference(residual, True)
+    ref_weight = to_reference(weight, True)
+    ref_bias = to_reference(bias, True)
+
+    ref_out = torch.layer_norm(
+        ref_inp + ref_residual,
+        list(layer_shape),
+        weight=ref_weight,
+        bias=ref_bias,
+        eps=eps,
+    )
+    res_out = flag_gems.add_layernorm(
+        inp, residual, list(layer_shape), weight=weight, bias=bias, eps=eps
+    )
+
+    gems_assert_close(res_out, ref_out, dtype)
+
+
 @pytest.mark.fused_add_rms_norm
 @pytest.mark.parametrize("shape", REDUCTION_SHAPES)
 @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
