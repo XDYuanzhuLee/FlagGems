@@ -200,6 +200,38 @@ def test_perf_batch_norm_backward():
     bench.run()
 
 
+def miopen_batch_norm_input_fn(shape, dtype, device):
+    C = shape[1]
+    inp = torch.randn(shape, dtype=dtype, device=device)
+    weight = torch.randn((C,), dtype=dtype, device=device)
+    bias = torch.randn((C,), dtype=dtype, device=device)
+    running_mean = torch.zeros((C,), dtype=dtype, device=device)
+    running_var = torch.ones((C,), dtype=dtype, device=device)
+    training = True
+    momentum = 0.1
+    eps = 1e-5
+    yield inp, weight, bias, running_mean, running_var, training, momentum, eps
+
+    if Config.bench_level == BenchLevel.COMPREHENSIVE:
+        running_mean = torch.randn((C,), dtype=dtype, device=device)
+        running_var = torch.randn((C,), dtype=dtype, device=device)
+        yield inp, weight, bias, running_mean, running_var, training, momentum, eps
+
+
+@pytest.mark.miopen_batch_norm
+def test_perf_miopen_batch_norm():
+    # Note: torch.miopen_batch_norm is not available (requires MIOpen), so we use
+    # torch.native_batch_norm as the reference implementation
+    bench = NormBenchmark(
+        input_fn=miopen_batch_norm_input_fn,
+        op_name="miopen_batch_norm",
+        torch_op=torch.native_batch_norm,
+        dtypes=FLOAT_DTYPES,
+    )
+    bench.set_gems(flag_gems.miopen_batch_norm)
+    bench.run()
+
+
 def weight_norm_interface_input_fn(shape, dtype, device):
     dim = 0
     v = torch.randn(shape, dtype=dtype, device=device)
