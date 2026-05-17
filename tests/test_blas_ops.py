@@ -562,3 +562,36 @@ def test_accuracy_addr(M, N, dtype):
         res_out = torch.addr(input_tensor, vec1, vec2, alpha=alpha, beta=beta)
 
     gems_assert_close(res_out, ref_out, dtype, equal_nan=True)
+
+
+# Test shapes for Matmul_Layernorm
+if QUICK_MODE:
+    MLN_SHAPES = [(32, 64)]
+else:
+    MLN_SHAPES = [(16, 32), (32, 64), (160, 1024)]
+
+
+@pytest.mark.Matmul_Layer_Norm
+@pytest.mark.parametrize("M, K", MLN_SHAPES)
+@pytest.mark.parametrize("N", [32, 64])
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy_matmul_layernorm(M, K, N, dtype):
+    # Create inputs
+    input_tensor = torch.randn((M, K), dtype=dtype, device=flag_gems.device)
+    weight = torch.randn((K, N), dtype=dtype, device=flag_gems.device)
+    bias = torch.randn((N,), dtype=dtype, device=flag_gems.device)
+
+    # Reference: compute using torch separately
+    ref_input = to_reference(input_tensor, True)
+    ref_weight = to_reference(weight, True)
+    ref_bias = to_reference(bias, True)
+
+    # Reference computation: matmul then layernorm
+    ref_matmul = torch.matmul(ref_input, ref_weight)
+    ref_out = torch.nn.functional.layer_norm(ref_matmul, (N,), weight=ref_bias, eps=1e-5)
+
+    # GEMS computation
+    with flag_gems.use_gems():
+        res_out = flag_gems.matmul_layernorm(input_tensor, weight, (N,), bias=bias, eps=1e-5)
+
+    gems_assert_close(res_out, ref_out, dtype)
