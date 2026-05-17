@@ -24,6 +24,7 @@ from .repeat_interleave import repeat_interleave_self_tensor
 from .resolve_conj import resolve_conj
 from .sigmoid import sigmoid
 from .tanh import tanh
+from .topk import topk
 from .unique import _unique2
 from .upsample_nearest2d import upsample_nearest2d
 from .zeros import zeros
@@ -64,6 +65,7 @@ __all__ = [
     "resolve_conj",
     "sigmoid",
     "tanh",
+    "topk",
     "upsample_nearest2d",
     "zeros",
     "zeros_like",
