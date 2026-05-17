@@ -1771,3 +1771,57 @@ def test_scheduler_metadata_correctness(
         )
 
     gems_assert_close(gems_metadata, ref_metadata, dtype=torch.int32)
+
+
+@pytest.mark.scaled_dot_product_flash_attention_for_cpu_backward
+@pytest.mark.parametrize(
+    "batch, num_heads, seq_len, head_size",
+    [
+        (2, 4, 16, 64),
+        (2, 4, 32, 64),
+        (2, 4, 64, 64),
+    ],
+)
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_accuracy_scaled_dot_product_flash_attention_for_cpu_backward(
+    batch, num_heads, seq_len, head_size, dtype
+):
+    # This is a CPU-only operator, so we test on CPU
+    device = "cpu"
+
+    query = torch.randn(
+        batch, num_heads, seq_len, head_size, dtype=dtype, device=device
+    )
+    key = torch.randn(
+        batch, num_heads, seq_len, head_size, dtype=dtype, device=device
+    )
+    value = torch.randn(
+        batch, num_heads, seq_len, head_size, dtype=dtype, device=device
+    )
+
+    # Forward pass
+    out, logsumexp = torch.ops.aten._scaled_dot_product_flash_attention_for_cpu(
+        query, key, value, 0.0, False
+    )
+
+    # Create grad_out
+    grad_out = torch.randn_like(out)
+
+    # Backward pass using reference (PyTorch)
+    ref_grad_query, ref_grad_key, ref_grad_value = (
+        torch.ops.aten._scaled_dot_product_flash_attention_for_cpu_backward(
+            grad_out, query, key, value, out, logsumexp, 0.0, False
+        )
+    )
+
+    # Backward pass using flag_gems
+    with flag_gems.use_gems():
+        gems_grad_query, gems_grad_key, gems_grad_value = (
+            flag_gems.scaled_dot_product_flash_attention_for_cpu_backward(
+                grad_out, query, key, value, out, logsumexp, 0.0, False
+            )
+        )
+
+    gems_assert_close(gems_grad_query, ref_grad_query, dtype)
+    gems_assert_close(gems_grad_key, ref_grad_key, dtype)
+    gems_assert_close(gems_grad_value, ref_grad_value, dtype)
