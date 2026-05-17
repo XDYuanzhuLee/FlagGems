@@ -67,6 +67,7 @@ _FULL_CONFIG = (
     ("all.dim", all_dim),
     ("all.dims", all_dims),
     ("allclose", allclose),
+    ("affine_grid_generator", affine_grid_generator),
     ("amax", amax),
     ("angle", angle),
     ("any", any),

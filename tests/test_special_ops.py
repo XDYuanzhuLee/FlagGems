@@ -2777,3 +2777,30 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+# Test for affine_grid_generator
+@pytest.mark.affine_grid_generator
+@pytest.mark.parametrize("N", [1, 2])
+@pytest.mark.parametrize("H", [2, 4])
+@pytest.mark.parametrize("W", [2, 4])
+@pytest.mark.parametrize("dtype", [torch.float32])
+@pytest.mark.parametrize("align_corners", [False])
+def test_accuracy_affine_grid_generator(N, H, W, dtype, align_corners):
+    if flag_gems.vendor_name == "kunlunxin":
+        torch.manual_seed(0)
+        torch.cuda.manual_seed_all(0)
+
+    # theta shape: (N, 2, 3)
+    theta = torch.randn(N, 2, 3, dtype=dtype, device=flag_gems.device)
+    # size: [N, C, H, W] where C is the number of input channels (doesn't matter for grid generation)
+    C = 3
+    size = [N, C, H, W]
+
+    ref_theta = to_reference(theta)
+    with flag_gems.use_gems():
+        res_out = torch.affine_grid_generator(theta, size, align_corners)
+    ref_out = torch.affine_grid_generator(ref_theta, size, align_corners)
+
+    # Use more relaxed tolerance due to floating point precision differences
+    gems_assert_close(res_out, ref_out, dtype, atol=1e-3)
