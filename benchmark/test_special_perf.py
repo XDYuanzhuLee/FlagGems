@@ -1467,3 +1467,45 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+RESIZE_OUTPUT_SHAPES = [
+    (1024,),
+    (4096,),
+    (16384,),
+    (1024, 1024),
+    (2048, 2048),
+]
+
+
+def _resize_output_input_fn(shape, cur_dtype, device):
+    inp = torch.randn(shape, dtype=cur_dtype, device=device)
+    # Resize to a smaller size
+    new_size = [s // 2 for s in shape]
+    yield inp, new_size
+
+
+def _resize_output_torch_op(inp, new_size):
+    # Reference torch implementation for baseline comparison
+    out = torch.zeros(new_size, dtype=inp.dtype, device=inp.device)
+    numel_to_copy = min(inp.numel(), out.numel())
+    out.view(-1)[:numel_to_copy].copy_(inp.view(-1)[:numel_to_copy])
+    return out
+
+
+@pytest.mark.resize_output
+def test_perf_resize_output():
+    from flag_gems.runtime.backend._metax.ops import _resize_output as metax_resize_output
+
+    def metax_op(inp, new_size):
+        return metax_resize_output(inp, new_size, inp.device)
+
+    bench = GenericBenchmark(
+        op_name="_resize_output",
+        torch_op=_resize_output_torch_op,
+        gems_op=metax_op,
+        dtypes=FLOAT_DTYPES,
+        input_fn=_resize_output_input_fn,
+        shapes=RESIZE_OUTPUT_SHAPES,
+    )
+    bench.run()
