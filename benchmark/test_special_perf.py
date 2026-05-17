@@ -1467,3 +1467,36 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+# GRU_Attention benchmark
+GRU_ATTENTION_SHAPES = [
+    (1, 2, 8, 16),
+    (2, 4, 16, 32),
+    (4, 8, 32, 64),
+    (8, 16, 64, 128),
+]
+
+
+class GruAttentionBenchmark(Benchmark):
+    def set_shapes(self, shape_file_path=None):
+        self.shapes = GRU_ATTENTION_SHAPES
+
+    def get_input_iter(self, cur_dtype):
+        for shape in self.shapes:
+            BATCH, NUM_HEADS, SEQ_LEN, HEAD_DIM = shape
+            query = torch.randn(BATCH, NUM_HEADS, SEQ_LEN, HEAD_DIM, dtype=cur_dtype, device=self.device)
+            key = torch.randn(BATCH, NUM_HEADS, SEQ_LEN, HEAD_DIM, dtype=cur_dtype, device=self.device)
+            value = torch.randn(BATCH, NUM_HEADS, SEQ_LEN, HEAD_DIM, dtype=cur_dtype, device=self.device)
+            yield query, key, value
+
+
+@pytest.mark.GRU_Attention
+def test_perf_gru_attention():
+    from flag_gems.runtime.backend._metax.ops.GRU_Attention import gru_attention
+    bench = GruAttentionBenchmark(
+        op_name="gru_attention",
+        torch_op=gru_attention,
+        dtypes=[torch.float16, torch.float32],
+    )
+    bench.run()
