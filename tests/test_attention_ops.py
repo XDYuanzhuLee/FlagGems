@@ -1771,3 +1771,78 @@ def test_scheduler_metadata_correctness(
         )
 
     gems_assert_close(gems_metadata, ref_metadata, dtype=torch.int32)
+
+
+@pytest.mark.scaled_dot_product_cudnn_attention_backward
+@pytest.mark.parametrize("batch", [1, 2])
+@pytest.mark.parametrize("num_heads", [4, 8])
+@pytest.mark.parametrize("seq_len", [64, 128])
+@pytest.mark.parametrize("head_dim", [64, 128])
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_scaled_dot_product_cudnn_attention_backward(
+    batch, num_heads, seq_len, head_dim, dtype
+):
+    if flag_gems.vendor_name == "metax":
+        device = torch_device_fn.current_device()
+    else:
+        device = "cuda"
+
+    # Create input tensors
+    query = torch.randn(
+        batch, num_heads, seq_len, head_dim, device=device, dtype=dtype, requires_grad=True
+    )
+    key = torch.randn(
+        batch, num_heads, seq_len, head_dim, device=device, dtype=dtype, requires_grad=True
+    )
+    value = torch.randn(
+        batch, num_heads, seq_len, head_dim, device=device, dtype=dtype, requires_grad=True
+    )
+
+    # Forward pass using torch's SDPA
+    output = torch.nn.functional.scaled_dot_product_attention(query, key, value)
+
+    # Create grad_output
+    grad_out = torch.randn_like(output)
+
+    # Reference: compute gradients using torch's autograd
+    ref_query = to_reference(query)
+    ref_key = to_reference(key)
+    ref_value = to_reference(value)
+    ref_output = torch.nn.functional.scaled_dot_product_attention(ref_query, ref_key, ref_value)
+    ref_grad_out = to_reference(grad_out)
+    ref_output.backward(ref_grad_out)
+    ref_dq = ref_query.grad
+    ref_dk = ref_key.grad
+    ref_dv = ref_value.grad
+
+    # Metax: compute gradients using metax specialized operator
+    if flag_gems.vendor_name == "metax":
+        from flag_gems.runtime.backend._metax.ops import (
+            scaled_dot_product_cudnn_attention_backward,
+        )
+
+        dq, dk, dv = scaled_dot_product_cudnn_attention_backward(
+            grad_out,
+            query,
+            key,
+            value,
+            output,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            seq_len,
+            seq_len,
+            0.0,
+            False,
+        )
+    else:
+        # For non-metax vendors, skip
+        pytest.skip("Test only for metax backend")
+
+    # Compare results
+    gems_assert_close(dq, ref_dq, dtype)
+    gems_assert_close(dk, ref_dk, dtype)
+    gems_assert_close(dv, ref_dv, dtype)

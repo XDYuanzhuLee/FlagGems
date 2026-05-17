@@ -29,6 +29,33 @@ from .upsample_nearest2d import upsample_nearest2d
 from .zeros import zeros
 from .zeros_like import zeros_like
 
+# Import scaled_dot_product_cudnn_attention_backward with error handling
+try:
+    from .scaled_dot_product_cudnn_attention_backward import (
+        scaled_dot_product_cudnn_attention_backward,
+    )
+except ImportError:
+    # Fallback: try to import from absolute path
+    import importlib.util
+    import os
+    import sys
+
+    ops_dir = os.path.dirname(os.path.abspath(__file__))
+    module_path = os.path.join(ops_dir, '_scaled_dot_product_cudnn_attention_backward.py')
+
+    if os.path.exists(module_path):
+        spec = importlib.util.spec_from_file_location(
+            'scaled_dot_product_cudnn_attention_backward',
+            module_path
+        )
+        if spec and spec.loader:
+            module = importlib.util.module_from_spec(spec)
+            sys.modules['scaled_dot_product_cudnn_attention_backward'] = module
+            spec.loader.exec_module(module)
+            scaled_dot_product_cudnn_attention_backward = module.scaled_dot_product_cudnn_attention_backward
+    else:
+        scaled_dot_product_cudnn_attention_backward = None
+
 __all__ = [
     "_unique2",
     "addmm",
@@ -62,6 +89,7 @@ __all__ = [
     "prod_dim",
     "repeat_interleave_self_tensor",
     "resolve_conj",
+    "scaled_dot_product_cudnn_attention_backward",
     "sigmoid",
     "tanh",
     "upsample_nearest2d",
