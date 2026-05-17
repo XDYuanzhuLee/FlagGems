@@ -2232,3 +2232,22 @@ def test_accuracy_special_i0e_out(shape, dtype):
         act_out = torch.ops.aten.special_i0e.out(x, out=out_act)
     gems_assert_close(act_out, ref_out, dtype)
     gems_assert_close(out_act, out_ref, dtype)
+
+
+# cudnnActivateion operator tests
+@pytest.mark.cudnnActivateion
+@pytest.mark.parametrize("shape", POINTWISE_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_cudnnActivateion(shape, dtype):
+    """Test cudnnActivateion (ReLU forward) operator accuracy."""
+    x = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+
+    # Reference implementation using torch.relu
+    ref_x = to_reference(x)
+    ref_out = torch.relu(ref_x)
+
+    # Test implementation via flag_gems
+    with flag_gems.use_gems():
+        res_out = flag_gems.cudnnActivateion(x)
+
+    gems_assert_close(res_out, ref_out, dtype)
