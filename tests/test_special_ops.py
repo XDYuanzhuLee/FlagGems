@@ -2777,3 +2777,25 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.multigammaln
+@pytest.mark.parametrize("shape", [(1024,)])
+@pytest.mark.parametrize("dtype", [torch.float32])
+@pytest.mark.parametrize("p", [1, 2, 3, 4])
+def test_accuracy_multigammaln(shape, dtype, p):
+    # Input must be > (p-1)/2 for multigammaln to be defined
+    # Generate input in valid range
+    min_val = (p - 1) / 2 + 0.5
+    inp = torch.empty(shape, dtype=dtype, device=flag_gems.device)
+    inp.uniform_(min_val, min_val + 10.0)
+
+    ref_inp = to_reference(inp)
+    ref_out = torch.special.multigammaln(ref_inp, p)
+
+    # Use metax specialized implementation directly
+    from flag_gems.runtime.backend._metax.ops import multigammaln as metax_multigammaln
+
+    res_out = metax_multigammaln(inp, p)
+
+    gems_assert_close(res_out, ref_out, dtype)
