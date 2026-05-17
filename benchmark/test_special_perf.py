@@ -1467,3 +1467,105 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+# Fused Adam Benchmark
+FUSED_ADAM_SHAPES = [
+    (1024,),
+    (2048,),
+    (4096,),
+    (8192,),
+    (1024, 1024),
+]
+
+
+def torch_fused_adam_baseline(
+    params,
+    grads,
+    exp_avgs,
+    exp_avg_sqs,
+    max_exp_avg_sqs,
+    state_steps,
+    lr=0.01,
+    beta1=0.9,
+    beta2=0.999,
+    weight_decay=0.01,
+    eps=1e-8,
+    amsgrad=False,
+    maximize=False,
+):
+    """Hand-written PyTorch baseline for fused_adam using basic torch operations"""
+    if maximize:
+        grads = [-g for g in grads]
+
+    for i, (p, g, m, v) in enumerate(zip(params, grads, exp_avgs, exp_avg_sqs)):
+        step = state_steps[i].item() if isinstance(state_steps[i], torch.Tensor) else state_steps[i]
+
+        if weight_decay != 0:
+            g = g + weight_decay * p
+
+        m.mul_(beta1).add_(g, alpha=1 - beta1)
+        v.mul_(beta2).addcmul_(g, g, value=1 - beta2)
+
+        bias_correction1 = 1 - beta1 ** (step + 1)
+        bias_correction2 = 1 - beta2 ** (step + 1)
+        step_size = lr / bias_correction1
+        denom = (v.sqrt() / (bias_correction2 ** 0.5)).add_(eps)
+        p.addcdiv_(m, denom, value=-step_size)
+
+
+class FusedAdamBenchmark(Benchmark):
+    def __init__(self, op_name, torch_op, dtypes=None, **kwargs):
+        super().__init__(op_name, torch_op, dtypes, **kwargs)
+        # Set gems_op after initialization
+        from flag_gems.runtime.backend._iluvatar.ops._fused_adam_ import _fused_adam_ as gems_fused_adam
+
+        lr = 0.01
+        beta1 = 0.9
+        beta2 = 0.999
+        weight_decay = 0.01
+        eps = 1e-8
+        amsgrad = False
+        maximize = False
+
+        def gems_fn(params, grads, exp_avgs, exp_avg_sqs, max_exp_avg_sqs, state_steps):
+            gems_fused_adam(
+                params,
+                grads,
+                exp_avgs,
+                exp_avg_sqs,
+                max_exp_avg_sqs,
+                state_steps,
+                lr=lr,
+                beta1=beta1,
+                beta2=beta2,
+                weight_decay=weight_decay,
+                eps=eps,
+                amsgrad=amsgrad,
+                maximize=maximize,
+            )
+
+        self.gems_op = gems_fn
+
+    def set_shapes(self, shape_file_path=None):
+        self.shapes = FUSED_ADAM_SHAPES
+
+    def get_input_iter(self, cur_dtype):
+        for shape in self.shapes:
+            params = [torch.randn(shape, dtype=cur_dtype, device=self.device, requires_grad=False)]
+            grads = [torch.randn(shape, dtype=cur_dtype, device=self.device, requires_grad=False)]
+            exp_avgs = [torch.zeros_like(params[0])]
+            exp_avg_sqs = [torch.zeros_like(params[0])]
+            max_exp_avg_sqs = [torch.zeros_like(params[0])]
+            state_steps = [torch.tensor([1], dtype=torch.long, device=self.device)]
+            yield params, grads, exp_avgs, exp_avg_sqs, max_exp_avg_sqs, state_steps
+
+
+@pytest.mark.fused_adam_
+def test_perf_fused_adam():
+    bench = FusedAdamBenchmark(
+        op_name="_fused_adam_",
+        torch_op=torch_fused_adam_baseline,  # Use hand-written baseline
+        dtypes=[torch.float32],
+    )
+    bench.run()
