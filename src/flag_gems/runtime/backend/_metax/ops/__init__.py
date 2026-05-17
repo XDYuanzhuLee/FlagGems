@@ -1,3 +1,4 @@
+from ._weight_int4pack_mm_with_scales_and_zeros import _weight_int4pack_mm_with_scales_and_zeros
 from .addmm import addmm
 from .amax import amax
 from .arange import arange, arange_start
@@ -30,6 +31,7 @@ from .zeros import zeros
 from .zeros_like import zeros_like
 
 __all__ = [
+    "_weight_int4pack_mm_with_scales_and_zeros",
     "_unique2",
     "addmm",
     "amax",

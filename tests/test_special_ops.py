@@ -2777,3 +2777,83 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+def _reference_int4pack_mm(weight, mat2, qGroupSize, qScale, qZeros):
+    """CPU reference implementation for weight-only INT4 matrix multiplication."""
+    # Unpack int4 weights from int32
+    N, K_div_8 = weight.shape
+    K = K_div_8 * 8
+    num_groups = N // qGroupSize
+
+    # Convert to numpy for faster CPU computation
+    weight_np = weight.cpu().numpy().astype(np.int32)
+    # Convert bfloat16 to float32 first, then to numpy
+    mat2_np = mat2.float().cpu().numpy()
+    qScale_np = qScale.float().cpu().numpy()
+    qZeros_np = qZeros.float().cpu().numpy()
+
+    # Unpack int4 to int8
+    weight_unpacked = np.zeros((N, K), dtype=np.int8)
+
+    for i in range(K):
+        byte_idx = i // 8
+        if i % 8 < 4:
+            # Lower 4 bits
+            half_byte_idx = i % 4
+            val = (weight_np[:, byte_idx] >> (half_byte_idx * 4)) & 0x0F
+        else:
+            # Upper 4 bits
+            half_byte_idx = i % 4
+            val = (weight_np[:, byte_idx] >> (half_byte_idx * 4 + 4)) & 0x0F
+
+        # Sign extend: if >= 8, it's negative
+        val = np.where(val >= 8, val - 16, val)
+        weight_unpacked[:, i] = val
+
+    # Apply scale and zero per group
+    weight_dequant = np.zeros((N, K), dtype=np.float32)
+    for g in range(num_groups):
+        start = g * qGroupSize
+        end = (g + 1) * qGroupSize
+        scale = qScale_np[g, :]
+        zero = qZeros_np[g, :]
+        weight_dequant[start:end, :] = (weight_unpacked[start:end, :].astype(np.float32) - zero) * scale
+
+    # Matrix multiplication: mat2 @ weight_dequant^T
+    result = mat2_np @ weight_dequant.T
+
+    return torch.from_numpy(result).to(mat2.device)
+
+
+@pytest.mark.weight_int4pack_mm_with_scales_and_zeros
+@pytest.mark.parametrize("M", [1, 2, 4])
+@pytest.mark.parametrize("N", [32, 64, 128])
+@pytest.mark.parametrize("K", [64, 128])
+@pytest.mark.parametrize("qGroupSize", [32])
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_accuracy_weight_int4pack_mm(M, N, K, qGroupSize, dtype):
+    """Test weight-only INT4 matrix multiplication accuracy."""
+    torch.manual_seed(42)
+    torch.cuda.manual_seed(42)
+
+    # Create input tensors
+    # weight: packed int4 in int32, shape (N, K//8)
+    weight = torch.randint(0, 255, (N, K // 8), dtype=torch.int32, device=flag_gems.device)
+    # mat2: activation, shape (M, K)
+    mat2 = torch.randn(M, K, dtype=dtype, device=flag_gems.device)
+    # qScale: per-group scales, shape (N//qGroupSize, K)
+    qScale = torch.randn(N // qGroupSize, K, dtype=dtype, device=flag_gems.device)
+    # qZeros: per-group zero points, shape (N//qGroupSize, K)
+    qZeros = torch.randn(N // qGroupSize, K, dtype=dtype, device=flag_gems.device)
+
+    # Compute reference on CPU
+    ref_out = _reference_int4pack_mm(weight, mat2, qGroupSize, qScale, qZeros)
+
+    # Compute with flag_gems
+    res_out = flag_gems._weight_int4pack_mm_with_scales_and_zeros(
+        weight, mat2, qGroupSize, qScale, qZeros
+    )
+
+    # Compare results
+    gems_assert_close(res_out, ref_out, dtype)
