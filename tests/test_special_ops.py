@@ -2777,3 +2777,117 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+# Define test shapes for fused_adam
+FUSED_ADAM_SHAPES = [(1024,), (2048,), (4096,), (8192,), (1024, 1024)]
+
+
+def torch_fused_adam_baseline(
+    params,
+    grads,
+    exp_avgs,
+    exp_avg_sqs,
+    state_steps,
+    lr,
+    beta1,
+    beta2,
+    weight_decay,
+    eps,
+    amsgrad=False,
+    maximize=False,
+):
+    """Hand-written PyTorch baseline for fused_adam using basic torch operations"""
+    if maximize:
+        grads = [-g for g in grads]
+
+    for i, (p, g, m, v) in enumerate(zip(params, grads, exp_avgs, exp_avg_sqs)):
+        step = state_steps[i].item() if isinstance(state_steps[i], torch.Tensor) else state_steps[i]
+
+        if weight_decay != 0:
+            g = g + weight_decay * p
+
+        m.mul_(beta1).add_(g, alpha=1 - beta1)
+        v.mul_(beta2).addcmul_(g, g, value=1 - beta2)
+
+        bias_correction1 = 1 - beta1 ** (step + 1)
+        bias_correction2 = 1 - beta2 ** (step + 1)
+        step_size = lr / bias_correction1
+        denom = (v.sqrt() / (bias_correction2 ** 0.5)).add_(eps)
+        p.addcdiv_(m, denom, value=-step_size)
+
+
+@pytest.mark.fused_adam_
+@pytest.mark.parametrize("shape", FUSED_ADAM_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_accuracy__fused_adam_(shape, dtype):
+    torch.manual_seed(0)
+
+    # Import the iluvatar specialized implementation
+    from flag_gems.runtime.backend._iluvatar.ops._fused_adam_ import _fused_adam_ as gems_fused_adam_
+
+    # Create input tensors
+    params = [torch.randn(shape, dtype=dtype, device=flag_gems.device, requires_grad=False)]
+    grads = [torch.randn(shape, dtype=dtype, device=flag_gems.device, requires_grad=False)]
+    exp_avgs = [torch.zeros_like(params[0])]
+    exp_avg_sqs = [torch.zeros_like(params[0])]
+    max_exp_avg_sqs = [torch.zeros_like(params[0])]
+    state_steps = [torch.tensor([1], dtype=torch.long, device=flag_gems.device)]
+
+    # Store copies for baseline
+    params_ref = [p.clone() for p in params]
+    grads_ref = [g.clone() for g in grads]
+    exp_avgs_ref = [m.clone() for m in exp_avgs]
+    exp_avg_sqs_ref = [v.clone() for v in exp_avg_sqs]
+    max_exp_avg_sqs_ref = [mv.clone() for mv in max_exp_avg_sqs]
+    state_steps_ref = [s.clone() for s in state_steps]
+
+    # Run baseline (using hand-written baseline since torch._fused_adam_ returns NaN on iluvatar)
+    lr = 0.01
+    beta1 = 0.9
+    beta2 = 0.999
+    weight_decay = 0.01
+    eps = 1e-8
+    amsgrad = False
+    maximize = False
+
+    torch_fused_adam_baseline(
+        params_ref,
+        grads_ref,
+        exp_avgs_ref,
+        exp_avg_sqs_ref,
+        state_steps_ref,
+        lr=lr,
+        beta1=beta1,
+        beta2=beta2,
+        weight_decay=weight_decay,
+        eps=eps,
+        amsgrad=amsgrad,
+        maximize=maximize,
+    )
+
+    # Run FlagGems implementation (directly call iluvatar specialized implementation)
+    gems_fused_adam_(
+        params,
+        grads,
+        exp_avgs,
+        exp_avg_sqs,
+        max_exp_avg_sqs,
+        state_steps,
+        lr=lr,
+        beta1=beta1,
+        beta2=beta2,
+        weight_decay=weight_decay,
+        eps=eps,
+        amsgrad=amsgrad,
+        maximize=maximize,
+    )
+
+    # Compare results with looser tolerance for float16
+    # gems_assert_close uses atol parameter, default is 1e-4
+    # For float16 we need larger tolerance: atol=1e-2
+    atol = 1e-2 if dtype == torch.float16 else 1e-4
+
+    gems_assert_close(params[0], params_ref[0], dtype, atol=atol)
+    gems_assert_close(exp_avgs[0], exp_avgs_ref[0], dtype, atol=atol)
+    gems_assert_close(exp_avg_sqs[0], exp_avg_sqs_ref[0], dtype, atol=atol)
