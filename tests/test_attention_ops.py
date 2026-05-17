@@ -1771,3 +1771,58 @@ def test_scheduler_metadata_correctness(
         )
 
     gems_assert_close(gems_metadata, ref_metadata, dtype=torch.int32)
+
+
+@pytest.mark.skipif(TO_CPU, reason="Unsupported in CPU mode")
+@pytest.mark.skipif(flag_gems.vendor_name == "hygon", reason="RuntimeError")
+@pytest.mark.skipif(flag_gems.vendor_name == "kunlunxin", reason="RESULT TODOFIX")
+@pytest.mark.Multi_Query_Attention_MQA
+@pytest.mark.parametrize("batch_size", [1, 2])
+@pytest.mark.parametrize("q_seq_len", [128, 512])
+@pytest.mark.parametrize("kv_seq_len", [128, 512])
+@pytest.mark.parametrize("num_heads", [4, 8])
+@pytest.mark.parametrize("head_size", [64, 128])
+@pytest.mark.parametrize("is_causal", [False, True])
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_multi_query_attention_mqa(
+    batch_size,
+    q_seq_len,
+    kv_seq_len,
+    num_heads,
+    head_size,
+    is_causal,
+    dtype,
+):
+    """Test Multi-Query Attention (MQA) where key/value have 1 head."""
+    device = torch_device_fn.current_device()
+    init_seed(1234)
+
+    # MQA: num_heads_k = 1 (single key/value head)
+    num_heads_k = 1
+
+    q, k, v = make_input(
+        batch_size,
+        num_heads,
+        num_heads_k,
+        q_seq_len,
+        kv_seq_len,
+        head_size,
+        dtype,
+        device,
+        requires_grad=False,
+    )
+
+    scale = 1.0 / math.sqrt(head_size)
+
+    # Reference: PyTorch SDPA with MATH backend
+    ref_out = torch.nn.functional.scaled_dot_product_attention(
+        q, k, v, is_causal=is_causal, scale=scale
+    )
+
+    # Test scaled_dot_product_attention
+    with flag_gems.use_gems():
+        gems_out = torch.nn.functional.scaled_dot_product_attention(
+            q, k, v, is_causal=is_causal, scale=scale
+        )
+
+    gems_assert_close(gems_out, ref_out, dtype)

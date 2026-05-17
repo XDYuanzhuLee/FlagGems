@@ -10,7 +10,13 @@ import triton
 import flag_gems
 from benchmark.attri_util import FLOAT_DTYPES
 
-from .performance_utils import Benchmark, GenericBenchmark, SkipVersion, vendor_name
+from .performance_utils import (
+    Benchmark,
+    GenericBenchmark,
+    GenericBenchmark4DOnly,
+    SkipVersion,
+    vendor_name,
+)
 
 
 class AttentionBenchmark(GenericBenchmark):
@@ -1118,4 +1124,64 @@ def test_perf_reshape_and_cache():
         dtypes=FLOAT_DTYPES,
     )
     bench.set_gems(flag_gems.reshape_and_cache)
+    bench.run()
+
+
+# Multi-Query Attention Benchmark
+def torch_scaled_dot_product_attention_mqa_ref(
+    q, k, v, scale, is_causal, dropout_p=0.0, **extra_kwargs
+):
+    return torch.nn.functional.scaled_dot_product_attention(
+        q, k, v, is_causal=is_causal, scale=scale, dropout_p=dropout_p
+    )
+
+
+def gems_scaled_dot_product_attention_mqa_ref(
+    q, k, v, scale, is_causal, dropout_p=0.0, **extra_kwargs
+):
+    return torch.nn.functional.scaled_dot_product_attention(
+        q, k, v, is_causal=is_causal, scale=scale, dropout_p=dropout_p
+    )
+
+
+class ScaledDotProductAttentionMQABenchmark(GenericBenchmark4DOnly):
+    def set_more_shapes(self):
+        shapes = []
+        for head_size in (64, 128):
+            for seq_len in (128, 512):
+                shapes.append((1, 8, seq_len, head_size))
+                shapes.append((2, 4, seq_len, head_size))
+        return shapes
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA is not available")
+@pytest.mark.skipif(flag_gems.device == "cpu", reason="Unsupported in CPU mode")
+@pytest.mark.Multi_Query_Attention_MQA
+def test_scaled_dot_product_attention_mqa_perf():
+    def input_fn(shape, dtype, device):
+        # shape is (batch, num_heads, seq_len, head_size) for Q
+        # For MQA, K and V have only 1 head
+        batch, num_heads, seq_len, head_size = shape
+        num_heads_k = 1  # MQA: single KV head
+
+        q_shape = (batch, num_heads, seq_len, head_size)
+        kv_shape = (batch, num_heads_k, seq_len, head_size)
+
+        q = torch.randn(q_shape, dtype=dtype, device=device)
+        k = torch.randn(kv_shape, dtype=dtype, device=device)
+        v = torch.randn(kv_shape, dtype=dtype, device=device)
+
+        scale = 1.0 / math.sqrt(head_size)
+        is_causal = True
+        dropout_p = 0.0
+
+        yield q, k, v, scale, is_causal, dropout_p
+
+    bench = ScaledDotProductAttentionMQABenchmark(
+        op_name="scaled_dot_product_attention_mqa",
+        input_fn=input_fn,
+        torch_op=torch_scaled_dot_product_attention_mqa_ref,
+        dtypes=FLOAT_DTYPES,
+    )
+    bench.set_gems(gems_scaled_dot_product_attention_mqa_ref)
     bench.run()

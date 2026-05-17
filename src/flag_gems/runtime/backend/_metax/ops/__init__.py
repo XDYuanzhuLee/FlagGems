@@ -14,6 +14,16 @@ from .log_softmax import log_softmax, log_softmax_backward
 from .masked_fill import masked_fill, masked_fill_
 from .min import min, min_dim
 from .mm import mm, mm_out
+from .Multi_Query_Attention_MQA import (
+    ScaleDotProductAttention,
+    flash_attention_forward,
+    flash_attention_forward_mqa,
+    flash_attn_varlen_func,
+    scaled_dot_product_attention,
+    scaled_dot_product_attention_backward,
+    scaled_dot_product_attention_forward,
+    scaled_dot_product_attention_mqa,
+)
 from .nonzero import nonzero
 from .ones import ones
 from .ones_like import ones_like
@@ -37,6 +47,9 @@ __all__ = [
     "arange_start",
     "bmm",
     "exponential_",
+    "flash_attention_forward",
+    "flash_attention_forward_mqa",
+    "flash_attn_varlen_func",
     "full",
     "full_like",
     "group_norm",
@@ -62,7 +75,12 @@ __all__ = [
     "prod_dim",
     "repeat_interleave_self_tensor",
     "resolve_conj",
+    "scaled_dot_product_attention",
+    "scaled_dot_product_attention_backward",
+    "scaled_dot_product_attention_forward",
+    "scaled_dot_product_attention_mqa",
     "sigmoid",
+    "ScaleDotProductAttention",
     "tanh",
     "upsample_nearest2d",
     "zeros",
