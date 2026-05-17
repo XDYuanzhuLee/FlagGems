@@ -1,3 +1,4 @@
+from ._resize_output import _resize_output, _resize_output_
 from .addmm import addmm
 from .amax import amax
 from .arange import arange, arange_start
@@ -30,6 +31,8 @@ from .zeros import zeros
 from .zeros_like import zeros_like
 
 __all__ = [
+    "_resize_output",
+    "_resize_output_",
     "_unique2",
     "addmm",
     "amax",

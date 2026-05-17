@@ -2777,3 +2777,62 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+# _resize_output tests
+@pytest.mark.resize_output
+@pytest.mark.parametrize("shape", [(10,), (5, 10), (2, 5, 10)])
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_resize_output(shape, dtype):
+    """Test _resize_output accuracy against reference implementation"""
+    from flag_gems.runtime.backend._metax.ops import _resize_output as metax_resize_output
+
+    # Test resizing to a smaller size
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+    new_size = [s // 2 for s in shape]
+    # Reference implementation using torch (with zero init)
+    ref_out = torch.zeros(new_size, dtype=dtype, device='cuda')
+    ref_out.copy_(ref_inp.view(-1)[:ref_out.numel()].reshape(new_size))
+
+    # Metax implementation
+    res_out = metax_resize_output(inp, new_size, torch.device('cuda'))
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.resize_output
+@pytest.mark.parametrize("shape", [(10,), (5, 10), (2, 5, 10)])
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_resize_output_larger(shape, dtype):
+    """Test _resize_output accuracy when resizing to a larger size"""
+    from flag_gems.runtime.backend._metax.ops import _resize_output as metax_resize_output
+
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+    new_size = [s * 2 for s in shape]
+    # Reference implementation: copy input to the beginning of the output (with zero init)
+    ref_out = torch.zeros(new_size, dtype=dtype, device='cuda')
+    ref_out.view(-1)[:inp.numel()].copy_(ref_inp.view(-1))
+
+    # Metax implementation
+    res_out = metax_resize_output(inp, new_size, torch.device('cuda'))
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.resize_output
+@pytest.mark.parametrize("shape", [(10,), (5, 10), (2, 5, 10)])
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_resize_output_inplace(shape, dtype):
+    """Test _resize_output_ (inplace) accuracy against reference implementation"""
+    from flag_gems.runtime.backend._metax.ops import _resize_output_ as metax_resize_output_
+
+    # Test resizing to a smaller size (inplace)
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp.clone())
+    new_size = [s // 2 for s in shape]
+    # Reference implementation using torch
+    ref_inp.resize_(new_size)
+
+    # Metax implementation
+    metax_resize_output_(inp, new_size, torch.device('cuda'))
+    gems_assert_close(inp, ref_inp, dtype)
