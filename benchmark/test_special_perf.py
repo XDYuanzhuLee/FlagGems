@@ -1467,3 +1467,44 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+EMBEDDING_BAG_SHAPES = [
+    (100, 32, 50, 10),   # (num_embeddings, embedding_dim, num_indices, num_bags)
+    (1000, 64, 100, 20),
+    (10000, 128, 500, 50),
+    (10000, 256, 1000, 100),
+    (50000, 512, 2000, 200),
+]
+
+
+class EmbeddingBagBenchmark(Benchmark):
+    def set_shapes(self, shape_file_path=None):
+        self.shapes = EMBEDDING_BAG_SHAPES
+
+    def get_input_iter(self, cur_dtype):
+        for num_embeddings, embedding_dim, num_indices, num_bags in self.shapes:
+            # Generate random indices
+            indices = torch.randint(
+                0, num_embeddings, (num_indices,), device=self.device
+            )
+            # Generate offsets
+            offsets = torch.sort(torch.randint(0, num_indices - num_bags + 1, (num_bags,), device=self.device))[0]
+            offsets[0] = 0
+            for i in range(1, num_bags):
+                if offsets[i] <= offsets[i - 1]:
+                    offsets[i] = offsets[i - 1] + 1
+            if offsets[-1] >= num_indices:
+                offsets[-1] = num_indices - 1
+            weight = torch.randn((num_embeddings, embedding_dim), dtype=cur_dtype, device=self.device)
+            yield weight, indices, offsets
+
+
+@pytest.mark.embedingBagCollection
+def test_perf_embedding_bag():
+    bench = EmbeddingBagBenchmark(
+        op_name="embedding_bag",
+        torch_op=torch.nn.functional.embedding_bag,
+        dtypes=FLOAT_DTYPES,
+    )
+    bench.run()

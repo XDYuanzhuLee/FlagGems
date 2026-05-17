@@ -2777,3 +2777,56 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+EMBEDDING_BAG_SHAPES = [
+    (10, 4),   # (num_embeddings, embedding_dim)
+    (100, 32),
+    (1000, 64),
+    (10000, 128),
+]
+
+EMBEDDING_BAG_INDICES_SIZES = [10, 50, 100, 500]
+EMBEDDING_BAG_NUM_BAGS = [2, 5, 10]
+
+
+@pytest.mark.embedingBagCollection
+@pytest.mark.parametrize("weight_shape", EMBEDDING_BAG_SHAPES)
+@pytest.mark.parametrize("num_indices", EMBEDDING_BAG_INDICES_SIZES)
+@pytest.mark.parametrize("num_bags", EMBEDDING_BAG_NUM_BAGS)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_embedding_bag(weight_shape, num_indices, num_bags, dtype):
+    if num_indices < num_bags:
+        pytest.skip("num_indices must be >= num_bags")
+
+    num_embeddings, embedding_dim = weight_shape
+
+    # Generate random indices
+    indices = torch.randint(
+        0, num_embeddings, (num_indices,), device=flag_gems.device
+    )
+
+    # Generate offsets - each bag has at least 1 element
+    offsets = torch.sort(torch.randint(0, num_indices - num_bags + 1, (num_bags,), device=flag_gems.device))[0]
+    # Ensure the first offset is 0 and offsets are increasing
+    offsets[0] = 0
+    for i in range(1, num_bags):
+        if offsets[i] <= offsets[i - 1]:
+            offsets[i] = offsets[i - 1] + 1
+
+    # Limit the last offset to num_indices
+    if offsets[-1] >= num_indices:
+        offsets[-1] = num_indices - 1
+
+    weight = torch.randn(weight_shape, dtype=dtype, device=flag_gems.device)
+
+    # Use PyTorch's embedding_bag as reference (on same device)
+    ref_out = torch.nn.functional.embedding_bag(
+        weight, indices, offsets, mode='sum'
+    )
+    with flag_gems.use_gems():
+        res_out = flag_gems.embedding_bag(
+            weight, indices, offsets, mode='sum'
+        )
+
+    gems_assert_close(res_out, ref_out, dtype)
