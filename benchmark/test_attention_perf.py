@@ -1119,3 +1119,92 @@ def test_perf_reshape_and_cache():
     )
     bench.set_gems(flag_gems.reshape_and_cache)
     bench.run()
+
+
+class ScaledDotProductCudnnAttentionBackwardBenchmark(GenericBenchmark):
+    """
+    benchmark for scaled_dot_product_cudnn_attention_backward
+    """
+
+    def set_shapes(self, shape_file_path=None):
+        # (batch, num_heads, seq_len, head_dim)
+        self.shapes = [
+            (2, 4, 128, 64),
+            (2, 8, 256, 128),
+            (4, 8, 512, 64),
+        ]
+
+    def set_more_shapes(self):
+        return None
+
+
+@pytest.mark.scaled_dot_product_cudnn_attention_backward
+def test_perf_scaled_dot_product_cudnn_attention_backward():
+    def input_kwargs(shape, dtype, device):
+        batch, num_heads, seq_len, head_dim = shape
+
+        query = torch.randn(
+            batch, num_heads, seq_len, head_dim, device=device, dtype=dtype, requires_grad=True
+        )
+        key = torch.randn(
+            batch, num_heads, seq_len, head_dim, device=device, dtype=dtype, requires_grad=True
+        )
+        value = torch.randn(
+            batch, num_heads, seq_len, head_dim, device=device, dtype=dtype, requires_grad=True
+        )
+
+        # Forward pass to get output
+        output = torch.nn.functional.scaled_dot_product_attention(query, key, value)
+
+        # Create grad_output
+        grad_out = torch.randn_like(output)
+
+        yield grad_out, query, key, value, output
+
+    def gem_op(grad_out, query, key, value, output):
+        from flag_gems.runtime.backend._metax.ops import (
+            scaled_dot_product_cudnn_attention_backward,
+        )
+
+        return scaled_dot_product_cudnn_attention_backward(
+            grad_out,
+            query,
+            key,
+            value,
+            output,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            query.shape[2],
+            key.shape[2],
+            0.0,
+            False,
+        )
+
+    def torch_ref_op(grad_out, query, key, value, output):
+        # Reference: compute gradients using torch's autograd
+        query = query.requires_grad_(True)
+        key = key.requires_grad_(True)
+        value = value.requires_grad_(True)
+
+        output = torch.nn.functional.scaled_dot_product_attention(query, key, value)
+        grad_tuple = torch.autograd.grad(
+            outputs=output,
+            inputs=(query, key, value),
+            grad_outputs=(grad_out,),
+            retain_graph=True,
+            allow_unused=True,
+        )
+        return grad_tuple
+
+    bench = ScaledDotProductCudnnAttentionBackwardBenchmark(
+        op_name="scaled_dot_product_cudnn_attention_backward",
+        input_fn=input_kwargs,
+        torch_op=torch_ref_op,
+        dtypes=FLOAT_DTYPES,
+    )
+    bench.set_gems(gem_op)
+    bench.run()
