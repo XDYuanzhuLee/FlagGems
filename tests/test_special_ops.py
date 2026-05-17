@@ -2777,3 +2777,39 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+# Determinant requires square matrices
+LINALG_DET_SHAPES = [(2, 2), (3, 3), (4, 4), (5, 5), (8, 8), (16, 16)]
+
+
+@pytest.mark.linalg_det
+@pytest.mark.parametrize("shape", LINALG_DET_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_linalg_det(shape, dtype):
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+
+    ref_out = torch._linalg_det(ref_inp)
+    with flag_gems.use_gems():
+        res_out = torch._linalg_det(inp)
+
+    # Compare the determinant result
+    # Note: _linalg_det returns a named tuple with .result, .LU, .pivots
+    gems_assert_close(res_out.result, ref_out.result, dtype)
+
+
+@pytest.mark.linalg_det
+@pytest.mark.parametrize("shape", [(2, 2), (3, 3), (4, 4)])
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_linalg_det_batch(shape, dtype):
+    # Test batched determinant
+    batch_shape = (4,)
+    inp = torch.randn(*batch_shape, *shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+
+    ref_out = torch._linalg_det(ref_inp)
+    with flag_gems.use_gems():
+        res_out = torch._linalg_det(inp)
+
+    gems_assert_close(res_out.result, ref_out.result, dtype)
