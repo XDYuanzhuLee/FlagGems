@@ -1119,3 +1119,41 @@ def test_perf_reshape_and_cache():
     )
     bench.set_gems(flag_gems.reshape_and_cache)
     bench.run()
+
+
+# Benchmark for _scaled_dot_product_fused_attention_overrideable
+@pytest.mark.scaled_dot_product_fused_attention_overrideable
+@pytest.mark.parametrize("is_causal", [False, True])
+def test_perf_scaled_dot_product_fused_attention_overrideable(is_causal):
+    """Benchmark for _scaled_dot_product_fused_attention_overrideable."""
+
+    def attention_kwargs(shape, dtype, device):
+        # shape: (batch, num_heads, seq_len, head_size)
+        query = torch.randn(shape, device=device, dtype=dtype)
+        key = torch.randn(shape, device=device, dtype=dtype)
+        value = torch.randn(shape, device=device, dtype=dtype)
+        # Return args and kwargs as tuple (args, kwargs)
+        yield (query, key, value, None, 0.0, is_causal, False, None)
+
+    def torch_ref(query, key, value, attn_bias=None, dropout_p=0.0, is_causal=False, return_debug_mask=False, scale=None):
+        # Use general scaled_dot_product_attention as reference
+        return flag_gems.ops.scaled_dot_product_attention_forward(
+            query, key, value, is_causal=is_causal
+        )
+
+    def gems_op(query, key, value, attn_bias=None, dropout_p=0.0, is_causal=False, return_debug_mask=False, scale=None):
+        return flag_gems._scaled_dot_product_fused_attention_overrideable(
+            query, key, value, attn_bias, dropout_p, is_causal, return_debug_mask, scale
+        )
+
+    bench = AttentionBenchmark(
+        op_name="scaled_dot_product_fused_attention_overrideable",
+        input_fn=attention_kwargs,
+        torch_op=torch_ref,
+        dtypes=[
+            torch.float16,
+            torch.bfloat16,
+        ],
+    )
+    bench.set_gems(gems_op)
+    bench.run()
