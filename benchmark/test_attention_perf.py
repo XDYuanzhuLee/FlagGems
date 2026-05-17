@@ -1119,3 +1119,57 @@ def test_perf_reshape_and_cache():
     )
     bench.set_gems(flag_gems.reshape_and_cache)
     bench.run()
+
+
+@pytest.mark.GroupQueryAttention
+@pytest.mark.parametrize("is_causal", [False, True])
+def test_perf_group_query_attention(is_causal):
+    """Benchmark for GroupQueryAttention with GQA enabled."""
+
+    class GroupQueryAttentionBenchmark(GenericBenchmark):
+        def set_shapes(self, shape_file_path=None):
+            self.shapes = [
+                (4, 8, 512, 64),
+                (4, 8, 512, 128),
+                (2, 16, 1024, 64),
+                (2, 16, 1024, 128),
+                (1, 32, 2048, 64),
+            ]
+
+    def gqa_kwargs(shape, dtype, device):
+        # shape is (batch, num_q_heads, seq_len, head_dim)
+        batch, num_q_heads, seq_len, head_dim = shape
+        # For GQA, num_kv_heads < num_q_heads
+        num_kv_heads = max(1, num_q_heads // 4)
+        query = torch.randn(
+            batch, num_q_heads, seq_len, head_dim, device=device, dtype=dtype
+        )
+        key = torch.randn(
+            batch, num_kv_heads, seq_len, head_dim, device=device, dtype=dtype
+        )
+        value = torch.randn(
+            batch, num_kv_heads, seq_len, head_dim, device=device, dtype=dtype
+        )
+        yield query, key, value, None, 0.0, is_causal
+
+    def torch_gqa_ref(
+        query, key, value, attn_mask=None, dropout_p=0.0, is_causal=False
+    ):
+        return torch.nn.functional.scaled_dot_product_attention(
+            query,
+            key,
+            value,
+            attn_mask=attn_mask,
+            dropout_p=dropout_p,
+            is_causal=is_causal,
+            enable_gqa=True,
+        )
+
+    bench = GroupQueryAttentionBenchmark(
+        op_name="group_query_attention",
+        input_fn=gqa_kwargs,
+        torch_op=torch_gqa_ref,
+        dtypes=[torch.float16, torch.bfloat16],
+    )
+    bench.set_gems(flag_gems.group_query_attention)
+    bench.run()
