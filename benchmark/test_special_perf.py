@@ -1467,3 +1467,36 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+# Benchmark for affine_grid_generator
+AFFINE_GRID_GENERATOR_SHAPES = [
+    (1, 2, 224, 224),
+    (1, 2, 112, 112),
+    (4, 2, 224, 224),
+    (8, 2, 112, 112),
+    (16, 2, 56, 56),
+]
+
+
+class AffineGridGeneratorBenchmark(Benchmark):
+    def set_shapes(self, shape_file_path=None):
+        self.shapes = AFFINE_GRID_GENERATOR_SHAPES
+
+    def get_input_iter(self, cur_dtype):
+        for shape in self.shapes:
+            N, _, H, W = shape
+            # theta shape: (N, 2, 3)
+            theta = torch.randn(N, 2, 3, dtype=cur_dtype, device=self.device)
+            size = [N, 3, H, W]
+            yield theta, size, False  # align_corners=False
+
+
+@pytest.mark.affine_grid_generator
+def test_perf_affine_grid_generator():
+    bench = AffineGridGeneratorBenchmark(
+        op_name="affine_grid_generator",
+        torch_op=torch.affine_grid_generator,
+        dtypes=[torch.float32, torch.float16],
+    )
+    bench.run()
