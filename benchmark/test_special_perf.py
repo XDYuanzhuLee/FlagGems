@@ -1467,3 +1467,32 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+LINALG_DET_SHAPES = [
+    (2, 2),
+    (3, 3),
+    (4, 4),
+    (5, 5),
+    (8, 8),
+    (16, 16),
+]
+
+
+class LinalgDetBenchmark(Benchmark):
+    def set_shapes(self, shape_file_path=None):
+        self.shapes = LINALG_DET_SHAPES
+
+    def get_input_iter(self, cur_dtype):
+        for shape in self.shapes:
+            yield torch.randn(shape, dtype=cur_dtype, device=self.device),
+
+
+@pytest.mark.linalg_det
+def test_perf_linalg_det():
+    bench = LinalgDetBenchmark(
+        op_name="_linalg_det",
+        torch_op=torch._linalg_det,
+        dtypes=[torch.float32],  # Only float32 is supported
+    )
+    bench.run()
