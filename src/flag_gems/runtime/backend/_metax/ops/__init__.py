@@ -1,3 +1,6 @@
+from ._scaled_dot_product_flash_attention_backward import (
+    scaled_dot_product_attention_backward,
+)
 from .addmm import addmm
 from .amax import amax
 from .arange import arange, arange_start
@@ -62,6 +65,7 @@ __all__ = [
     "prod_dim",
     "repeat_interleave_self_tensor",
     "resolve_conj",
+    "scaled_dot_product_attention_backward",
     "sigmoid",
     "tanh",
     "upsample_nearest2d",
