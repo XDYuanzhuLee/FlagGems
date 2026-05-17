@@ -1366,3 +1366,12 @@ polar:
   - 1
   - 2
   - 4
+
+grid_sampler_2d:
+- gen: true
+  param_map:
+    META:
+      BLOCK_SIZE: block_n
+    num_warps: warps
+  block_n: [512, 1024, 2048]
+  warps: [4, 8]

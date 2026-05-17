@@ -2777,3 +2777,78 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+# Test shapes for grid_sampler_2d: (N, C, H, W)
+GRID_SAMPLER_SHAPES = [
+    (1, 1, 4, 4),
+    (2, 3, 16, 16),
+    (4, 8, 32, 32),
+    (1, 16, 64, 64),
+    (2, 8, 128, 128),
+]
+
+
+@pytest.mark.grid_sampler_2d
+@pytest.mark.parametrize("shape", GRID_SAMPLER_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_grid_sampler_2d(shape, dtype):
+    N, C, H, W = shape
+    # Output size is typically smaller or equal to input for testing
+    OH, OW = H // 2, W // 2
+
+    input_tensor = torch.randn(N, C, H, W, dtype=dtype, device=flag_gems.device)
+    # Grid is (N, OH, OW, 2) with values in [-1, 1]
+    grid = torch.rand(N, OH, OW, 2, dtype=dtype, device=flag_gems.device) * 2 - 1
+
+    ref_input = to_reference(input_tensor)
+    ref_grid = to_reference(grid)
+
+    ref_out = torch.grid_sampler_2d(ref_input, ref_grid, interpolation_mode=0, padding_mode=0, align_corners=False)
+    with flag_gems.use_gems():
+        res_out = torch.grid_sampler_2d(input_tensor, grid, interpolation_mode=0, padding_mode=0, align_corners=False)
+
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.grid_sampler_2d
+@pytest.mark.parametrize("shape", GRID_SAMPLER_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_grid_sampler_2d_nearest(shape, dtype):
+    N, C, H, W = shape
+    OH, OW = H // 2, W // 2
+
+    input_tensor = torch.randn(N, C, H, W, dtype=dtype, device=flag_gems.device)
+    grid = torch.rand(N, OH, OW, 2, dtype=dtype, device=flag_gems.device) * 2 - 1
+
+    ref_input = to_reference(input_tensor)
+    ref_grid = to_reference(grid)
+
+    # Test nearest neighbor interpolation
+    ref_out = torch.grid_sampler_2d(ref_input, ref_grid, interpolation_mode=1, padding_mode=0, align_corners=False)
+    with flag_gems.use_gems():
+        res_out = torch.grid_sampler_2d(input_tensor, grid, interpolation_mode=1, padding_mode=0, align_corners=False)
+
+    gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.grid_sampler_2d
+@pytest.mark.parametrize("shape", GRID_SAMPLER_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_grid_sampler_2d_border(shape, dtype):
+    N, C, H, W = shape
+    OH, OW = H // 2, W // 2
+
+    input_tensor = torch.randn(N, C, H, W, dtype=dtype, device=flag_gems.device)
+    # Use grid values outside [0, 1] to test padding modes
+    grid = torch.rand(N, OH, OW, 2, dtype=dtype, device=flag_gems.device) * 3 - 1.5  # range [-1.5, 1.5]
+
+    ref_input = to_reference(input_tensor)
+    ref_grid = to_reference(grid)
+
+    # Test border padding mode
+    ref_out = torch.grid_sampler_2d(ref_input, ref_grid, interpolation_mode=0, padding_mode=1, align_corners=False)
+    with flag_gems.use_gems():
+        res_out = torch.grid_sampler_2d(input_tensor, grid, interpolation_mode=0, padding_mode=1, align_corners=False)
+
+    gems_assert_close(res_out, ref_out, dtype)

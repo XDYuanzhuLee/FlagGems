@@ -1467,3 +1467,41 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+# Grid Sampler 2D Benchmark
+GRID_SAMPLER_SHAPES = [
+    (1, 1, 64, 64),
+    (2, 3, 128, 128),
+    (4, 8, 256, 256),
+    (8, 16, 512, 512),
+]
+
+
+class GridSampler2DBenchmark(Benchmark):
+    def set_shapes(self, shape_file_path=None):
+        self.shapes = GRID_SAMPLER_SHAPES
+
+    def get_input_iter(self, cur_dtype):
+        for shape in self.shapes:
+            N, C, H, W = shape
+            # Output grid size is typically half the input size
+            OH, OW = H // 2, W // 2
+            input_tensor = torch.randn(N, C, H, W, dtype=cur_dtype, device=self.device)
+            grid = torch.rand(N, OH, OW, 2, dtype=cur_dtype, device=self.device) * 2 - 1
+            # Return as tuple with kwargs in dict
+            yield (input_tensor, grid, {
+                "interpolation_mode": 0,
+                "padding_mode": 0,
+                "align_corners": False,
+            })
+
+
+@pytest.mark.grid_sampler_2d
+def test_perf_grid_sampler_2d():
+    bench = GridSampler2DBenchmark(
+        op_name="grid_sampler_2d",
+        torch_op=torch.grid_sampler_2d,
+        dtypes=FLOAT_DTYPES,
+    )
+    bench.run()
