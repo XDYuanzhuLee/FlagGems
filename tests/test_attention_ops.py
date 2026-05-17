@@ -1771,3 +1771,47 @@ def test_scheduler_metadata_correctness(
         )
 
     gems_assert_close(gems_metadata, ref_metadata, dtype=torch.int32)
+
+
+@pytest.mark.GroupQueryAttention
+@pytest.mark.parametrize(
+    "batch, num_q_head, num_kv_head, q_seq_len, kv_seq_len, head_size",
+    [
+        (2, 8, 2, 512, 512, 64),
+        (2, 8, 2, 512, 512, 128),
+        (2, 8, 2, 256, 256, 64),
+        (2, 8, 2, 256, 256, 128),
+        (1, 4, 1, 128, 128, 64),
+        (1, 4, 1, 128, 128, 128),
+    ],
+)
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_group_query_attention(
+    batch,
+    num_q_head,
+    num_kv_head,
+    q_seq_len,
+    kv_seq_len,
+    head_size,
+    dtype,
+):
+    if TO_CPU:
+        pytest.skip("Skipping correctness test in CPU mode.")
+    device = torch_device_fn.current_device()
+
+    q, k, v = make_input(
+        batch, num_q_head, num_kv_head, q_seq_len, kv_seq_len, head_size, dtype, device
+    )
+
+    ref_q = to_reference(q, False)
+    ref_k = to_reference(k, False)
+    ref_v = to_reference(v, False)
+
+    scale = float(1.0 / np.sqrt(head_size))
+    # Use torch_sdpa which supports GQA as reference
+    torch_out = torch_sdpa(ref_q, ref_k, ref_v, scale, is_causal=False, enable_gqa=True)
+
+    with flag_gems.use_gems():
+        gems_out = flag_gems.group_query_attention(q, k, v)
+
+    gems_assert_close(gems_out, torch_out, dtype)
