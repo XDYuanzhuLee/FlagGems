@@ -1119,3 +1119,81 @@ def test_perf_reshape_and_cache():
     )
     bench.set_gems(flag_gems.reshape_and_cache)
     bench.run()
+
+
+# CPU-only backward attention benchmark
+def scaled_dot_product_flash_attention_for_cpu_backward_input_fn(config, dtype, device):
+    # config is (batch, num_heads, seq_len, head_size)
+    batch, num_heads, seq_len, head_size = config
+
+    query = torch.randn(
+        batch, num_heads, seq_len, head_size, dtype=dtype, device=device
+    )
+    key = torch.randn(
+        batch, num_heads, seq_len, head_size, dtype=dtype, device=device
+    )
+    value = torch.randn(
+        batch, num_heads, seq_len, head_size, dtype=dtype, device=device
+    )
+
+    # Forward pass
+    out, logsumexp = torch.ops.aten._scaled_dot_product_flash_attention_for_cpu(
+        query, key, value, 0.0, False
+    )
+
+    # Create grad_out
+    grad_out = torch.randn_like(out)
+
+    yield (
+        grad_out,
+        query,
+        key,
+        value,
+        out,
+        logsumexp,
+        0.0,
+        False,
+    )
+
+
+def torch_scaled_dot_product_flash_attention_for_cpu_backward(
+    grad_out, query, key, value, out, logsumexp, dropout_p, is_causal
+):
+    return torch.ops.aten._scaled_dot_product_flash_attention_for_cpu_backward(
+        grad_out, query, key, value, out, logsumexp, dropout_p, is_causal
+    )
+
+
+def gems_scaled_dot_product_flash_attention_for_cpu_backward(
+    grad_out, query, key, value, out, logsumexp, dropout_p, is_causal
+):
+    return flag_gems.scaled_dot_product_flash_attention_for_cpu_backward(
+        grad_out, query, key, value, out, logsumexp, dropout_p, is_causal
+    )
+
+
+class ScaledDotProductFlashAttentionForCPUBackwardBenchmark(GenericBenchmark):
+    def set_shapes(self, shape_file_path=None):
+        self.shapes = [
+            (2, 4, 16, 64),
+            (2, 4, 32, 64),
+            (2, 4, 64, 64),
+            (2, 4, 128, 64),
+        ]
+
+    def set_more_shapes(self):
+        return None
+
+
+@pytest.mark.scaled_dot_product_flash_attention_for_cpu_backward
+def test_perf_scaled_dot_product_flash_attention_for_cpu_backward():
+    bench = ScaledDotProductFlashAttentionForCPUBackwardBenchmark(
+        op_name="scaled_dot_product_flash_attention_for_cpu_backward",
+        input_fn=scaled_dot_product_flash_attention_for_cpu_backward_input_fn,
+        torch_op=torch_scaled_dot_product_flash_attention_for_cpu_backward,
+        dtypes=[torch.float16, torch.bfloat16],
+    )
+    # Override device to CPU for this benchmark
+    bench.device = "cpu"
+    bench.set_gems(gems_scaled_dot_product_flash_attention_for_cpu_backward)
+    bench.run()
