@@ -1771,3 +1771,50 @@ def test_scheduler_metadata_correctness(
         )
 
     gems_assert_close(gems_metadata, ref_metadata, dtype=torch.int32)
+
+
+# Test for _scaled_dot_product_fused_attention_overrideable
+@pytest.mark.scaled_dot_product_fused_attention_overrideable
+@pytest.mark.parametrize("batch", [1, 2])
+@pytest.mark.parametrize("num_head", [4, 8])
+@pytest.mark.parametrize("seq_len", [16, 32, 128])
+@pytest.mark.parametrize("head_dim", [64, 128])
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+@pytest.mark.parametrize("is_causal", [False, True])
+def test_accuracy_scaled_dot_product_fused_attention_overrideable(
+    batch, num_head, seq_len, head_dim, dtype, is_causal
+):
+    """Test accuracy of _scaled_dot_product_fused_attention_overrideable."""
+    device = torch_device_fn.current_device()
+    q = torch.randn(
+        batch, num_head, seq_len, head_dim, dtype=dtype, device=device
+    ).uniform_(-0.1, 0.1)
+    k = torch.randn(
+        batch, num_head, seq_len, head_dim, dtype=dtype, device=device
+    ).uniform_(-0.1, 0.1)
+    v = torch.randn(
+        batch, num_head, seq_len, head_dim, dtype=dtype, device=device
+    ).uniform_(-0.1, 0.1)
+
+    # Get reference from general scaled_dot_product_attention_forward
+    ref_output, ref_logsumexp = flag_gems.ops.scaled_dot_product_attention_forward(
+        q, k, v, is_causal=is_causal
+    )
+
+    # Get result from our implementation
+    (output, logsumexp, cum_seq_q, cum_seq_k, max_q, max_k, philox_seed, philox_offset, debug_attn_mask) = flag_gems._scaled_dot_product_fused_attention_overrideable(
+        q, k, v, is_causal=is_causal
+    )
+
+    # Compare outputs
+    gems_assert_close(output, ref_output, dtype)
+    # logsumexp is typically float32, compare values directly
+    assert torch.allclose(logsumexp.float(), ref_logsumexp.float(), rtol=1e-3, atol=1e-3)
+
+    # Verify return values
+    assert cum_seq_q.shape == (batch, 2)
+    assert cum_seq_k.shape == (batch, 2)
+    assert max_q == seq_len
+    assert max_k == seq_len
+    assert philox_seed.shape == (1,)
+    assert philox_offset.shape == (1,)
