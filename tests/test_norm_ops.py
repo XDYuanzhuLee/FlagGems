@@ -796,3 +796,112 @@ def test_accuracy_batch_norm_backward(shape, dtype, affine):
             res_weight_grad, ref_weight_grad, dtype, reduce_dim=reduce_dim
         )
         gems_assert_close(res_bias_grad, ref_bias_grad, dtype, reduce_dim=reduce_dim)
+
+
+@pytest.mark.miopen_batch_norm
+@pytest.mark.parametrize(
+    "shape",
+    [
+        (16, 3),
+        (32, 32, 32),
+        (8, 32, 224, 224),
+        (2050, 16, 32, 32),
+        (8, 16, 3, 224, 224),
+    ],
+)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_miopen_batch_norm(shape, dtype):
+    # Note: miopen_batch_norm requires weight as per aten schema (Tensor weight, not Tensor? weight)
+    # So we always provide weight and bias here
+    C = shape[1]
+    inp = torch.randn(size=shape, dtype=dtype, device=flag_gems.device)
+    weight = torch.randn(size=(C,), dtype=dtype, device=flag_gems.device)
+    bias = torch.randn(size=(C,), dtype=dtype, device=flag_gems.device)
+
+    running_mean = torch.zeros(size=(C,), dtype=dtype, device=flag_gems.device)
+    running_var = torch.ones(size=(C,), dtype=dtype, device=flag_gems.device)
+
+    eps = 1e-5
+    momentum = 0.1
+    training = True
+
+    # Reference uses native_batch_norm since miopen_batch_norm is not available
+    ref_inp = to_reference(inp, True)
+    ref_weight = to_reference(weight, True)
+    ref_bias = to_reference(bias, True)
+    ref_running_mean = to_reference(running_mean, True)
+    ref_running_var = to_reference(running_var, True)
+
+    ref_out, ref_mean, ref_var = torch.ops.aten.native_batch_norm.default(
+        ref_inp,
+        ref_weight,
+        ref_bias,
+        ref_running_mean,
+        ref_running_var,
+        training,
+        momentum,
+        eps,
+    )
+
+    # Call with positional arguments matching aten schema
+    with flag_gems.use_gems():
+        res_out, res_mean, res_var = torch.miopen_batch_norm(
+            inp, weight, bias, running_mean, running_var, training, momentum, eps
+        )
+
+    gems_assert_close(res_out, ref_out, dtype)
+    gems_assert_close(running_mean, ref_running_mean, dtype)
+    gems_assert_close(running_var, ref_running_var, dtype)
+    gems_assert_close(res_mean, ref_mean, dtype)
+    gems_assert_close(res_var, ref_var, dtype)
+
+
+@pytest.mark.miopen_batch_norm
+@pytest.mark.parametrize(
+    "shape",
+    [
+        (16, 3),
+        (32, 32, 32),
+        (8, 32, 224, 224),
+        (2050, 16, 32, 32),
+    ],
+)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_miopen_batch_norm_inference(shape, dtype):
+    # Note: miopen_batch_norm requires weight as per aten schema
+    C = shape[1]
+    inp = torch.randn(size=shape, dtype=dtype, device=flag_gems.device)
+    weight = torch.randn(size=(C,), dtype=dtype, device=flag_gems.device)
+    bias = torch.randn(size=(C,), dtype=dtype, device=flag_gems.device)
+
+    running_mean = torch.randn(size=(C,), dtype=dtype, device=flag_gems.device)
+    running_var = torch.rand(size=(C,), dtype=dtype, device=flag_gems.device)
+
+    eps = 1e-5
+    momentum = 0.1
+    training = False
+
+    ref_inp = to_reference(inp, True)
+    ref_weight = to_reference(weight, True)
+    ref_bias = to_reference(bias, True)
+    ref_running_mean = to_reference(running_mean, True)
+    ref_running_var = to_reference(running_var, True)
+
+    ref_out, ref_mean, ref_var = torch.ops.aten.native_batch_norm.default(
+        ref_inp,
+        ref_weight,
+        ref_bias,
+        ref_running_mean,
+        ref_running_var,
+        training,
+        momentum,
+        eps,
+    )
+
+    # Call with positional arguments matching aten schema
+    with flag_gems.use_gems():
+        res_out, res_mean, res_var = torch.miopen_batch_norm(
+            inp, weight, bias, running_mean, running_var, training, momentum, eps
+        )
+
+    gems_assert_close(res_out, ref_out, dtype)
