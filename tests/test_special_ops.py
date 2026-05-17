@@ -2777,3 +2777,36 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+# GRU_Attention test - verify it runs correctly
+ATTENTION_SHAPES = [
+    (1, 2, 8, 16),
+    (2, 4, 16, 32),
+    (4, 8, 32, 64),
+]
+
+
+@pytest.mark.GRU_Attention
+@pytest.mark.parametrize("shape", ATTENTION_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float16, torch.float32])
+def test_accuracy_gru_attention(shape, dtype):
+    BATCH, NUM_HEADS, SEQ_LEN, HEAD_DIM = shape
+
+    # Create query, key, value tensors
+    query = torch.randn(BATCH, NUM_HEADS, SEQ_LEN, HEAD_DIM, dtype=dtype, device=flag_gems.device)
+    key = torch.randn(BATCH, NUM_HEADS, SEQ_LEN, HEAD_DIM, dtype=dtype, device=flag_gems.device)
+    value = torch.randn(BATCH, NUM_HEADS, SEQ_LEN, HEAD_DIM, dtype=dtype, device=flag_gems.device)
+
+    # Test: use gru_attention from metax
+    from flag_gems.runtime.backend._metax.ops.GRU_Attention import gru_attention as gems_gru_attention
+
+    with flag_gems.use_gems():
+        res_out = gems_gru_attention(query, key, value)
+
+    # Verify output shape matches input
+    assert res_out.shape == query.shape, f"Output shape {res_out.shape} doesn't match query shape {query.shape}"
+
+    # Verify output is not all zeros or NaN
+    assert not torch.isnan(res_out).any(), "Output contains NaN values"
+    assert not torch.isinf(res_out).any(), "Output contains Inf values"

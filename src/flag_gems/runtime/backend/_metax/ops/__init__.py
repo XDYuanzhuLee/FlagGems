@@ -6,6 +6,7 @@ from .exponential_ import exponential_
 from .full import full
 from .full_like import full_like
 from .groupnorm import group_norm
+from .GRU_Attention import gru_attention
 from .index import index
 from .index_put import index_put, index_put_
 from .index_select import index_select
@@ -39,6 +40,7 @@ __all__ = [
     "exponential_",
     "full",
     "full_like",
+    "gru_attention",
     "group_norm",
     "index",
     "index_put",
