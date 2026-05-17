@@ -1467,3 +1467,41 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+# Benchmark for weight-only INT4 matrix multiplication
+WEIGHT_INT4PACK_MM_SHAPES = [
+    (1, 32, 64, 32),
+    (1, 64, 64, 32),
+    (1, 128, 64, 32),
+    (1, 64, 128, 32),
+    (1, 128, 128, 32),
+    (2, 32, 64, 32),
+    (2, 64, 64, 32),
+    (2, 128, 64, 32),
+    (4, 32, 64, 32),
+    (4, 64, 128, 32),
+]
+
+
+class WeightInt4PackMMBenchmark(Benchmark):
+    def set_shapes(self, shape_file_path=None):
+        self.shapes = WEIGHT_INT4PACK_MM_SHAPES
+
+    def get_input_iter(self, cur_dtype):
+        for M, N, K, qGroupSize in self.shapes:
+            weight = torch.randint(0, 255, (N, K // 8), dtype=torch.int32, device=self.device)
+            mat2 = torch.randn(M, K, dtype=cur_dtype, device=self.device)
+            qScale = torch.randn(N // qGroupSize, K, dtype=cur_dtype, device=self.device)
+            qZeros = torch.randn(N // qGroupSize, K, dtype=cur_dtype, device=self.device)
+            yield weight, mat2, qGroupSize, qScale, qZeros
+
+
+@pytest.mark.weight_int4pack_mm_with_scales_and_zeros
+def test_perf_weight_int4pack_mm():
+    bench = WeightInt4PackMMBenchmark(
+        op_name="_weight_int4pack_mm_with_scales_and_zeros",
+        torch_op=flag_gems._weight_int4pack_mm_with_scales_and_zeros,
+        dtypes=[torch.float16, torch.bfloat16],
+    )
+    bench.run()
