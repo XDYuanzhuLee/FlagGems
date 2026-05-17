@@ -1467,3 +1467,43 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+# MoE Load Balance Loss benchmark
+MOE_LOAD_BALANCE_SHAPES = [
+    (8, 4),
+    (64, 8),
+    (256, 16),
+    (1024, 32),
+    (4096, 64),
+]
+
+
+class MoELoadBalanceLossBenchmark(Benchmark):
+    def set_shapes(self, shape_file_path=None):
+        self.shapes = MOE_LOAD_BALANCE_SHAPES
+
+    def get_input_iter(self, cur_dtype):
+        for shape in self.shapes:
+            num_tokens, num_experts = shape
+            logits = torch.randn(num_tokens, num_experts, dtype=cur_dtype, device=self.device)
+            gates = torch.nn.functional.softmax(logits, dim=-1)
+            yield gates
+
+
+def moe_load_balance_loss_torch(gates):
+    num_tokens, num_experts = gates.shape
+    return (gates.float() ** 2).sum() * num_experts / num_tokens
+
+
+@pytest.mark.MoE_Load_Balance_Loss
+def test_perf_moe_load_balance_loss():
+    from flag_gems.runtime.backend._metax.ops import moe_load_balance_loss
+
+    bench = MoELoadBalanceLossBenchmark(
+        op_name="MoE_Load_Balance_Loss",
+        torch_op=moe_load_balance_loss_torch,
+        gems_op=moe_load_balance_loss,
+        dtypes=FLOAT_DTYPES,
+    )
+    bench.run()

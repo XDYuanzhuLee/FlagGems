@@ -2777,3 +2777,49 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+# MoE Load Balance Loss tests
+MOE_LOAD_BALANCE_SHAPES = [
+    (8, 4),     # small
+    (64, 8),    # medium
+    (256, 16),  # large
+    (1024, 32), # very large
+]
+
+
+@pytest.mark.MoE_Load_Balance_Loss
+@pytest.mark.parametrize("shape", MOE_LOAD_BALANCE_SHAPES)
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float16, torch.bfloat16])
+def test_accuracy_MoE_Load_Balance_Loss(shape, dtype):
+    """Test MoE load balance loss accuracy.
+
+    The load balancing loss formula is:
+        loss = sum(probs^2) * num_experts / num_tokens
+
+    This is minimized when all experts have equal probability mass.
+    """
+    num_tokens, num_experts = shape
+
+    # Create random routing probabilities (softmax outputs) on GPU
+    logits = torch.randn(num_tokens, num_experts, dtype=dtype, device=device)
+    gates = torch.nn.functional.softmax(logits, dim=-1)
+
+    # Reference implementation using PyTorch (on CPU for comparison)
+    ref_loss = (gates.float() ** 2).sum().cpu() * num_experts / num_tokens
+
+    # Our implementation from metax ops
+    from flag_gems.runtime.backend._metax.ops import moe_load_balance_loss
+    res_loss = moe_load_balance_loss(gates)
+
+    # Compare results with appropriate tolerance based on dtype
+    if dtype == torch.float32:
+        rtol, atol = 1e-5, 1e-5
+    elif dtype == torch.float16:
+        rtol, atol = 1e-3, 1e-3
+    else:  # bfloat16
+        rtol, atol = 2e-2, 1e-2
+
+    assert torch.allclose(res_loss.float(), ref_loss.float(), rtol=rtol, atol=atol), \
+        f"MoE_Load_Balance_Loss failed for shape={shape}, dtype={dtype}, " \
+        f"ref={ref_loss.item()}, res={res_loss.item()}"
