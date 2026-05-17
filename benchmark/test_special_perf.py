@@ -1467,3 +1467,38 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+MULTIGAMMALN_SHAPES = [
+    (1024,),
+    (2048,),
+    (4096,),
+    (8192,),
+]
+
+
+class MultigammalnBenchmark(Benchmark):
+    def set_shapes(self, shape_file_path=None):
+        self.shapes = MULTIGAMMALN_SHAPES
+
+    def get_input_iter(self, cur_dtype):
+        for shape in self.shapes:
+            # Generate input in valid range for p=4 (most restrictive case)
+            min_val = 4 / 2 + 0.5  # (p-1)/2 + 0.5 = 2.5
+            x = torch.empty(shape, dtype=cur_dtype, device=self.device)
+            x.uniform_(min_val, min_val + 10.0)
+            p = 4
+            yield x, p
+
+
+@pytest.mark.multigammaln
+def test_perf_multigammaln():
+    from flag_gems.runtime.backend._metax.ops import multigammaln as metax_multigammaln
+
+    bench = MultigammalnBenchmark(
+        op_name="multigammaln",
+        torch_op=torch.special.multigammaln,
+        dtypes=[torch.float32],
+    )
+    bench.set_gems(metax_multigammaln)
+    bench.run()
