@@ -1,3 +1,4 @@
+from ._convert_weight_to_int4pack_for_cpu import _convert_weight_to_int4pack_for_cpu
 from .addmm import addmm
 from .amax import amax
 from .arange import arange, arange_start
@@ -30,6 +31,7 @@ from .zeros import zeros
 from .zeros_like import zeros_like
 
 __all__ = [
+    "_convert_weight_to_int4pack_for_cpu",
     "_unique2",
     "addmm",
     "amax",

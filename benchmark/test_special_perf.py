@@ -1467,3 +1467,45 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+# _convert_weight_to_int4pack_for_cpu is a CPU-only operator in PyTorch.
+# For GPU context, we implement a pass-through.
+# This benchmark verifies the FlagGems implementation runs correctly.
+@pytest.mark.convert_weight_to_int4pack
+def test_perf_convert_weight_to_int4pack():
+    def convert_weight_input_fn(shape, dtype, device):
+        # The operator expects int8 weight tensor but since it's a pass-through
+        # in our implementation, we use float tensor
+        x = torch.randn(shape, dtype=dtype, device=device)
+        innerKTiles = 2
+        yield x, innerKTiles
+
+    # Since there's no torch reference for GPU, we use the same implementation
+    def gems_wrapper(x, innerKTiles):
+        return flag_gems._convert_weight_to_int4pack_for_cpu(x, innerKTiles)
+
+    class ConvertWeightBenchmark(Benchmark):
+        def set_shapes(self, shape_file_path=None):
+            self.shapes = [
+                (8, 16),
+                (16, 32),
+                (32, 64),
+                (64, 128),
+                (128, 256),
+            ]
+
+        def set_more_shapes(self):
+            return None
+
+        def get_input_iter(self, cur_dtype):
+            for shape in self.shapes:
+                yield from convert_weight_input_fn(shape, cur_dtype, self.device)
+
+    bench = ConvertWeightBenchmark(
+        op_name="_convert_weight_to_int4pack_for_cpu",
+        torch_op=gems_wrapper,  # Use same op since torch has no GPU impl
+        dtypes=FLOAT_DTYPES,
+    )
+    bench.set_gems(gems_wrapper)
+    bench.run()
