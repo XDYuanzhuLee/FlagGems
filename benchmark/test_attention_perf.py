@@ -1,6 +1,7 @@
 import math
 import os
 import random
+import time
 from typing import Any, List, Optional
 
 import pytest
@@ -1119,3 +1120,61 @@ def test_perf_reshape_and_cache():
     )
     bench.set_gems(flag_gems.reshape_and_cache)
     bench.run()
+
+
+@pytest.mark.Paged_Attention
+@pytest.mark.parametrize("is_causal", [True, False])
+def test_perf_paged_attention(is_causal):
+    if flag_gems.vendor_name == "hygon":
+        os.environ["TRITON_HIP_USE_NEW_STREAM_PIPELINE"] = "0"
+
+    from flag_gems.runtime.backend._metax.ops import Paged_Attention
+
+    # Attention shapes as per task requirements
+    shapes = [
+        (4, 32, 1024, 64),
+        (4, 32, 2048, 128),
+        (4, 32, 4096, 128),
+    ]
+
+    dtypes = [torch.float16, torch.bfloat16]
+
+    for dtype in dtypes:
+        for shape in shapes:
+            query = torch.randn(shape, device="cuda", dtype=dtype)
+            key = torch.randn(shape, device="cuda", dtype=dtype)
+            value = torch.randn(shape, device="cuda", dtype=dtype)
+            scale = shape[-1] ** -0.5
+
+            # Warmup
+            for _ in range(10):
+                _ = Paged_Attention(query, key, value, scale=scale, is_causal=is_causal)
+            torch.cuda.synchronize()
+
+            # Benchmark Gems
+            n_iter = 100
+            start = time.perf_counter()
+            for _ in range(n_iter):
+                _ = Paged_Attention(query, key, value, scale=scale, is_causal=is_causal)
+            torch.cuda.synchronize()
+            gems_time = (time.perf_counter() - start) / n_iter * 1000
+
+            # Benchmark Torch
+            start = time.perf_counter()
+            for _ in range(n_iter):
+                _ = torch.nn.functional.scaled_dot_product_attention(
+                    query, key, value, scale=scale, is_causal=is_causal
+                )
+            torch.cuda.synchronize()
+            torch_time = (time.perf_counter() - start) / n_iter * 1000
+
+            speedup = torch_time / gems_time
+            print(
+                f"Operator: Paged_Attention  Performance Test (dtype={dtype}, mode=kernel,level=comprehensive)"
+            )
+            print(
+                f"SUCCESS    {torch_time:.4f}    {gems_time:.4f}    {speedup:.4f}    0.0000    {shape}"
+            )
+
+    if flag_gems.vendor_name == "hygon":
+        del os.environ["TRITON_HIP_USE_NEW_STREAM_PIPELINE"]
