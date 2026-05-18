@@ -2513,3 +2513,36 @@ def test_accuracy_bincount_minlength(shape, num_classes, minlength):
     ref_out_w = torch.bincount(ref_inp, weights=ref_weights, minlength=minlength)
     res_out_w = flag_gems.bincount(inp, weights=weights, minlength=minlength)
     _assert_bincount(res_out_w, ref_out_w, dtype, shape, num_classes)
+
+
+# Adaptive max pool test
+ADAPTIVE_MAXPOOL_CONFIGS = [
+    # shape, output_size
+    ((1, 3, 8, 8), (4, 4)),
+    ((2, 3, 16, 16), (8, 8)),
+    ((4, 3, 32, 32), (16, 16)),
+    ((1, 3, 7, 7), (3, 3)),
+    ((1, 3, 5, 5), (2, 2)),
+    ((2, 3, 8, 8), (4, 4)),
+    ((2, 3, 8, 8), (1, 1)),
+    ((1, 3, 8, 8), (8, 8)),
+    # ResNet-like shapes
+    ((16, 64, 56, 56), (1, 1)),
+    ((4, 128, 28, 28), (1, 1)),
+    ((1, 256, 14, 14), (1, 1)),
+]
+
+
+@pytest.mark.adaptive_max_pool2d
+@pytest.mark.parametrize("shape,output_size", ADAPTIVE_MAXPOOL_CONFIGS)
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float16])
+def test_accuracy_adaptive_max_pool2d(shape, output_size, dtype):
+    inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_inp = to_reference(inp)
+
+    ref_out, ref_idx = torch.ops.aten.adaptive_max_pool2d.default(ref_inp, output_size)
+
+    with flag_gems.use_gems():
+        res_out, res_idx = torch.ops.aten.adaptive_max_pool2d.default(inp, output_size)
+
+    gems_assert_close(res_out, ref_out, dtype)

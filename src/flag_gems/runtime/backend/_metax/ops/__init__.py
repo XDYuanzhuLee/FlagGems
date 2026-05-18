@@ -1,4 +1,5 @@
 from .addmm import addmm
+from .adaptive_max_pool2d import adaptive_max_pool2d
 from .amax import amax
 from .arange import arange, arange_start
 from .bmm import bmm
@@ -32,6 +33,7 @@ from .zeros_like import zeros_like
 __all__ = [
     "_unique2",
     "addmm",
+    "adaptive_max_pool2d",
     "amax",
     "arange",
     "arange_start",
