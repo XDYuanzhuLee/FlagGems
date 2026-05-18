@@ -1467,3 +1467,19 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+def special_erfc_input_fn(shape, dtype, device):
+    x = torch.randn(shape, dtype=dtype, device=device)
+    yield x,
+
+
+@pytest.mark.special_erfc
+def test_perf_special_erfc():
+    bench = GenericBenchmark(
+        input_fn=special_erfc_input_fn,
+        op_name="special_erfc",
+        torch_op=torch.special.erfc,
+        dtypes=FLOAT_DTYPES,
+    )
+    bench.run()
