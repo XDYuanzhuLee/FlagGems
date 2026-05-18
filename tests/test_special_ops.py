@@ -2777,3 +2777,81 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+def cross_attention_reference(query, key, value, scale=None):
+    """Reference implementation of cross attention using PyTorch ops.
+
+    Cross attention: Query comes from one sequence, Key and Value from another.
+    q: (batch, q_head_num, q_seq_len, head_dim)
+    k: (batch, kv_head_num, kv_seq_len, head_dim)
+    v: (batch, kv_head_num, kv_seq_len, head_dim)
+    """
+    batch, q_heads, q_len, head_dim = query.shape
+    _, kv_heads, kv_len, _ = key.shape
+
+    # For GQA: replicate KV heads to match Q heads
+    group_size = q_heads // kv_heads
+    if group_size > 1:
+        key = key.repeat_interleave(group_size, dim=1)
+        value = value.repeat_interleave(group_size, dim=1)
+
+    if scale is None:
+        scale = 1.0 / (head_dim**0.5)
+
+    # Reshape to (batch * heads, seq, head_dim)
+    q_flat = query.reshape(batch * q_heads, q_len, head_dim)
+    k_flat = key.reshape(batch * kv_heads * group_size, kv_len, head_dim)
+    v_flat = value.reshape(batch * kv_heads * group_size, kv_len, head_dim)
+
+    # Q @ K^T: (batch*heads, q_seq, head_dim) @ (batch*heads, head_dim, kv_seq)
+    # = (batch*heads, q_seq, kv_seq)
+    attn_scores = torch.bmm(q_flat, k_flat.transpose(1, 2)) * scale
+
+    # Softmax over kv_seq
+    attn_weights = torch.softmax(attn_scores, dim=-1)
+
+    # attn_weights @ V: (batch*heads, q_seq, kv_seq) @ (batch*heads, kv_seq, head_dim)
+    # = (batch*heads, q_seq, head_dim)
+    output = torch.bmm(attn_weights, v_flat)
+
+    # Reshape back: (batch, heads, q_seq, head_dim)
+    return output.reshape(batch, q_heads, q_len, head_dim)
+
+
+@pytest.mark.Cross_Attention
+@pytest.mark.parametrize("batch", [2])
+@pytest.mark.parametrize("q_heads,kv_heads", [(8, 2), (4, 4), (8, 8)])
+@pytest.mark.parametrize("q_seq_len,kv_seq_len", [(128, 128), (64, 128)])
+@pytest.mark.parametrize("head_dim", [64])
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_accuracy_Cross_Attention(batch, q_heads, kv_heads, q_seq_len, kv_seq_len, head_dim, dtype):
+    """Test Cross_Attention accuracy."""
+    torch.manual_seed(42)
+
+    # Create Q, K, V tensors
+    query = torch.randn(
+        (batch, q_heads, q_seq_len, head_dim), dtype=dtype, device=flag_gems.device
+    )
+    key = torch.randn(
+        (batch, kv_heads, kv_seq_len, head_dim), dtype=dtype, device=flag_gems.device
+    )
+    value = torch.randn(
+        (batch, kv_heads, kv_seq_len, head_dim), dtype=dtype, device=flag_gems.device
+    )
+
+    # Reference implementation
+    ref_out = cross_attention_reference(query, key, value)
+
+    # Test using flag_gems
+    from flag_gems.runtime.backend._metax.ops import Cross_Attention as metax_Cross_Attention
+    res_out = metax_Cross_Attention(query, key, value)
+
+    # Use more lenient tolerance for half precision arithmetic
+    if dtype == torch.float16:
+        atol = 1e-3
+    elif dtype == torch.bfloat16:
+        atol = 1e-2
+    else:
+        atol = 1e-3  # More lenient for float32 due to numerical differences
+    gems_assert_close(res_out, ref_out, dtype, atol=atol)

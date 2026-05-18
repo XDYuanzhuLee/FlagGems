@@ -1467,3 +1467,72 @@ def test_perf_pdist_backward():
         dtypes=[torch.float32],
     )
     bench.run()
+
+
+# Cross_Attention benchmark
+from flag_gems.runtime.backend._metax.ops import Cross_Attention as metax_Cross_Attention
+
+
+class CrossAttentionBenchmark(Benchmark):
+    def set_shapes(self, shape_file_path=None):
+        # Shapes: (batch, q_heads, q_seq, kv_seq, head_dim, kv_heads)
+        self.shapes = [
+            (2, 8, 64, 64, 64, 2),   # GQA
+            (2, 8, 64, 64, 64, 8),   # MHA
+            (2, 4, 128, 128, 32, 4), # Different seq and head_dim
+            (2, 4, 128, 64, 64, 4),  # Different q_seq and kv_seq
+        ]
+
+    def set_more_shapes(self):
+        return None
+
+    def get_input_iter(self, cur_dtype):
+        for shape in self.shapes:
+            batch, q_heads, q_seq, kv_seq, head_dim, kv_heads = shape
+            query = torch.randn(
+                (batch, q_heads, q_seq, head_dim), dtype=cur_dtype, device=self.device
+            )
+            key = torch.randn(
+                (batch, kv_heads, kv_seq, head_dim), dtype=cur_dtype, device=self.device
+            )
+            value = torch.randn(
+                (batch, kv_heads, kv_seq, head_dim), dtype=cur_dtype, device=self.device
+            )
+            yield query, key, value
+
+    def get_tflops(self, op, *args, **kwargs):
+        q, k, v = args
+        batch, q_heads, q_seq, head_dim = q.shape
+        _, kv_heads, kv_seq, _ = k.shape
+        # Attention: Q @ K^T + softmax + V
+        # FLOPs: 2 * batch * q_heads * q_seq * kv_seq * head_dim
+        return 2 * batch * q_heads * q_seq * kv_seq * head_dim
+
+
+@pytest.mark.Cross_Attention
+def test_perf_Cross_Attention():
+    def Cross_Attention_input_fn(shape, dtype, device):
+        batch, q_heads, q_seq, kv_seq, head_dim, kv_heads = shape
+        query = torch.randn(
+            (batch, q_heads, q_seq, head_dim), dtype=dtype, device=device
+        )
+        key = torch.randn(
+            (batch, kv_heads, kv_seq, head_dim), dtype=dtype, device=device
+        )
+        value = torch.randn(
+            (batch, kv_heads, kv_seq, head_dim), dtype=dtype, device=device
+        )
+        yield query, key, value
+
+    def torch_Cross_Attention_ref(q, k, v):
+        # Reference using torch sdpa
+        return torch.nn.functional.scaled_dot_product_attention(q, k, v)
+
+    bench = CrossAttentionBenchmark(
+        input_fn=Cross_Attention_input_fn,
+        op_name="Cross_Attention",
+        torch_op=torch_Cross_Attention_ref,
+        dtypes=FLOAT_DTYPES,
+    )
+    bench.set_gems(metax_Cross_Attention)
+    bench.run()
