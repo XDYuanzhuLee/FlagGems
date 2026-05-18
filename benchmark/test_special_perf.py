@@ -1525,8 +1525,26 @@ def test_perf_Cross_Attention():
         yield query, key, value
 
     def torch_Cross_Attention_ref(q, k, v):
-        # Reference using torch sdpa
-        return torch.nn.functional.scaled_dot_product_attention(q, k, v)
+        # Reference implementation that supports GQA
+        batch, q_heads, q_len, head_dim = q.shape
+        _, kv_heads, kv_len, _ = k.shape
+        # For GQA: replicate KV heads to match Q heads
+        group_size = q_heads // kv_heads
+        if group_size > 1:
+            k = k.repeat_interleave(group_size, dim=1)
+            v = v.repeat_interleave(group_size, dim=1)
+        scale = 1.0 / (head_dim**0.5)
+        # Reshape to (batch * heads, seq, head_dim)
+        q_flat = q.reshape(batch * q_heads, q_len, head_dim)
+        k_flat = k.reshape(batch * kv_heads * group_size, kv_len, head_dim)
+        v_flat = v.reshape(batch * kv_heads * group_size, kv_len, head_dim)
+        # Q @ K^T
+        attn_scores = torch.bmm(q_flat, k_flat.transpose(1, 2)) * scale
+        # Softmax
+        attn_weights = torch.softmax(attn_scores, dim=-1)
+        # attn_weights @ V
+        output = torch.bmm(attn_weights, v_flat)
+        return output.reshape(batch, q_heads, q_len, head_dim)
 
     bench = CrossAttentionBenchmark(
         input_fn=Cross_Attention_input_fn,
