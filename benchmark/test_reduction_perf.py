@@ -662,3 +662,36 @@ def test_perf_bincount_weighted(dtype):
     )
     bench.set_gems(flag_gems.bincount)
     bench.run()
+
+
+# Adaptive max pool benchmark
+def adaptive_max_pool2d_input_fn(shape, dtype, device):
+    # ResNet-like shapes as specified in the guidance
+    shapes = [
+        (1, 3, 8, 8),
+        (2, 3, 16, 16),
+        (4, 3, 32, 32),
+        (16, 64, 56, 56),  # ResNet typical
+        (4, 128, 28, 28),  # ResNet typical
+        (1, 256, 14, 14),  # ResNet typical
+    ]
+    output_sizes = [(1, 1), (4, 4), (8, 8)]
+
+    for shp in shapes:
+        if len(shp) == 4:
+            for out_size in output_sizes:
+                inp = generate_tensor_input(shp, dtype, device)
+                yield inp, {"output_size": out_size}
+
+
+@pytest.mark.adaptive_max_pool2d
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float16])
+def test_perf_adaptive_max_pool2d(dtype):
+    bench = GenericBenchmark(
+        input_fn=adaptive_max_pool2d_input_fn,
+        op_name="adaptive_max_pool2d",
+        torch_op=torch.ops.aten.adaptive_max_pool2d.default,
+        dtypes=[dtype],
+    )
+    bench.set_gems(torch.ops.aten.adaptive_max_pool2d.default)
+    bench.run()
