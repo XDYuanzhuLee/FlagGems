@@ -315,6 +315,46 @@ def test_perf_scaled_dot_product_attention(dropout_p, is_causal):
         del os.environ["TRITON_HIP_USE_NEW_STREAM_PIPELINE"]
 
 
+@pytest.mark.scaled_dot_product_flash_attention_for_cpu
+@pytest.mark.parametrize("is_causal", [False, True])
+def test_perf_scaled_dot_product_flash_attention_for_cpu(is_causal):
+    if flag_gems.vendor_name == "hygon":
+        os.environ["TRITON_HIP_USE_NEW_STREAM_PIPELINE"] = "0"
+
+    def scaled_dot_product_flash_attention_kwargs(shape, dtype, device):
+        query = torch.randn(shape, device=device, dtype=dtype)
+        key = torch.randn(shape, device=device, dtype=dtype)
+        value = torch.randn(shape, device=device, dtype=dtype)
+        # Use dict to pass dropout_p and is_causal as kwargs
+        yield query, key, value, {"dropout_p": 0.0, "is_causal": is_causal}
+
+    def ref_flash_attention(
+        query, key, value, attn_mask=None, dropout_p=0.0, is_causal=is_causal
+    ):
+        return torch.nn.functional.scaled_dot_product_attention(
+            query,
+            key,
+            value,
+            attn_mask=attn_mask,
+            dropout_p=dropout_p,
+            is_causal=is_causal,
+        )
+
+    bench = AttentionBenchmark(
+        op_name="scaled_dot_product_flash_attention_for_cpu",
+        input_fn=scaled_dot_product_flash_attention_kwargs,
+        torch_op=ref_flash_attention,
+        dtypes=[
+            torch.float16,
+            torch.bfloat16,
+        ],
+    )
+    bench.set_gems(torch._scaled_dot_product_flash_attention_for_cpu)
+    bench.run()
+    if flag_gems.vendor_name == "hygon":
+        del os.environ["TRITON_HIP_USE_NEW_STREAM_PIPELINE"]
+
+
 class FlashMLABenchmark(GenericBenchmark):
     """
     benchmark for flash_mla
