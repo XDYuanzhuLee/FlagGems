@@ -22,6 +22,20 @@ registrar = Register
 current_work_registrar = None
 runtime.replace_customized_ops(globals())
 
+# For non-NVIDIA vendors, also update flag_gems.ops with specialized implementations
+# This ensures that both flag_gems.scaled_dot_product_attention and
+# flag_gems.ops.scaled_dot_product_attention point to the specialized version
+if vendor_name != "nvidia":
+    import flag_gems.ops
+    ops_to_sync = [
+        "scaled_dot_product_attention",
+        "scaled_dot_product_attention_forward",
+        "scaled_dot_product_attention_backward",
+    ]
+    for op_name in ops_to_sync:
+        if op_name in globals() and hasattr(flag_gems.ops, op_name):
+            setattr(flag_gems.ops, op_name, globals()[op_name])
+
 
 def torch_ge(v):
     return version.parse(torch.__version__) >= version.parse(v)
