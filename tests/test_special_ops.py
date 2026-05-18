@@ -2777,3 +2777,44 @@ def test_accuracy_multilabel_margin_loss_forward(shape, dtype, reduction):
 
     # Compare output tensors
     gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.nested_view_from_buffer_copy
+@pytest.mark.parametrize("dtype", [torch.float16, torch.float32])
+def test_accuracy__nested_view_from_buffer_copy(dtype):
+    # Create buffer tensor
+    buffer_size = 100000
+    buffer = torch.randn(buffer_size, dtype=dtype, device=flag_gems.device)
+
+    # Define nested tensor parameters
+    sizes = torch.tensor([[1000], [2000], [3000]], dtype=torch.int64, device=flag_gems.device)
+    strides = torch.tensor([[1], [1], [1]], dtype=torch.int64, device=flag_gems.device)
+    offsets = torch.tensor([0, 1000, 3000], dtype=torch.int64, device=flag_gems.device)
+
+    ref_buffer = to_reference(buffer)
+    ref_sizes = to_reference(sizes)
+    ref_strides = to_reference(strides)
+    ref_offsets = to_reference(offsets)
+
+    # Reference implementation on CPU to avoid segfault on Metax CUDA
+    ref_out_cpu = torch.ops.aten._nested_view_from_buffer_copy.default(
+        ref_buffer.cpu(), ref_sizes.cpu(), ref_strides.cpu(), ref_offsets.cpu()
+    )
+
+    # Use flag_gems custom implementation
+    res_out = flag_gems._nested_view_from_buffer_copy(buffer, sizes, strides, offsets)
+
+    # Verify the nested tensor structure matches
+    assert res_out.is_nested
+    assert ref_out_cpu.is_nested
+
+    # Verify each component tensor has correct properties
+    res_unbind = torch.unbind(res_out)
+    ref_unbind = torch.unbind(ref_out_cpu)
+
+    assert len(res_unbind) == len(ref_unbind)
+    for i, (res_t, ref_t) in enumerate(zip(res_unbind, ref_unbind)):
+        assert res_t.shape == ref_t.shape
+        # Move ref to CUDA for comparison
+        ref_t_cuda = ref_t.to(res_t.device)
+        gems_assert_close(res_t, ref_t_cuda, dtype)
