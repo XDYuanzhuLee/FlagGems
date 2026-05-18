@@ -1771,3 +1771,62 @@ def test_scheduler_metadata_correctness(
         )
 
     gems_assert_close(gems_metadata, ref_metadata, dtype=torch.int32)
+
+
+@pytest.mark.Paged_Attention
+@pytest.mark.parametrize(
+    "batch, num_q_head, num_kv_head, q_seq_len, kv_seq_len, head_size",
+    [
+        (4, 32, 32, 1024, 1024, 64),
+        (4, 32, 32, 2048, 2048, 128),
+        (4, 32, 32, 4096, 4096, 128),
+        (2, 16, 16, 512, 512, 64),
+        (2, 16, 16, 1024, 1024, 128),
+    ],
+)
+@pytest.mark.parametrize("is_causal", [False, True])
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_paged_attention(
+    batch,
+    num_q_head,
+    num_kv_head,
+    q_seq_len,
+    kv_seq_len,
+    head_size,
+    is_causal,
+    dtype,
+):
+    if flag_gems.vendor_name == "hygon":
+        os.environ["TRITON_HIP_USE_NEW_STREAM_PIPELINE"] = "0"
+    device = torch_device_fn.current_device()
+    q, k, v = make_input(
+        batch,
+        num_q_head,
+        num_kv_head,
+        q_seq_len,
+        kv_seq_len,
+        head_size,
+        dtype,
+        device,
+        requires_grad=False,
+    )
+    ref_q = to_reference(q, False)
+    ref_k = to_reference(k, False)
+    ref_v = to_reference(v, False)
+    scale = float(1.0 / np.sqrt(head_size))
+
+    # Reference using torch.nn.functional.scaled_dot_product_attention
+    torch_result = torch.nn.functional.scaled_dot_product_attention(
+        ref_q, ref_k, ref_v, attn_mask=None, scale=scale, is_causal=is_causal
+    )
+
+    # Test the Metax implementation
+    from flag_gems.runtime.backend._metax.ops import Paged_Attention
+
+    gems_result = Paged_Attention(
+        q, k, v, attn_mask=None, scale=scale, is_causal=is_causal
+    )
+
+    gems_assert_close(gems_result, torch_result, dtype)
+    if flag_gems.vendor_name == "hygon":
+        del os.environ["TRITON_HIP_USE_NEW_STREAM_PIPELINE"]
