@@ -1771,3 +1771,47 @@ def test_scheduler_metadata_correctness(
         )
 
     gems_assert_close(gems_metadata, ref_metadata, dtype=torch.int32)
+
+
+@pytest.mark.scaled_dot_product_flash_attention_for_cpu
+@pytest.mark.parametrize(
+    ["batch", "num_head", "q_seq_len", "kv_seq_len"],
+    [
+        (4, 8, 1024, 1024),
+        (4, 8, 2048, 2048),
+        (4, 32, 1024, 64),
+        (4, 32, 2048, 128),
+        (4, 32, 4096, 128),
+    ],
+)
+@pytest.mark.parametrize("head_size", [64, 128])
+@pytest.mark.parametrize("is_causal", [False, True])
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
+def test_scaled_dot_product_flash_attention_for_cpu(
+    batch, num_head, q_seq_len, kv_seq_len, head_size, is_causal, dtype
+):
+    if flag_gems.vendor_name == "mthreads":
+        os.environ["MUSA_ENABLE_SQMMA"] = "1"
+
+    device = torch_device_fn.current_device()
+    q, k, v = make_input(
+        batch, num_head, num_head, q_seq_len, kv_seq_len, head_size, dtype, device
+    )
+    ref_q = to_reference(q, False)
+    ref_k = to_reference(k, False)
+    ref_v = to_reference(v, False)
+
+    scale = float(1.0 / np.sqrt(head_size))
+    ref_out = torch.nn.functional.scaled_dot_product_attention(
+        ref_q, ref_k, ref_v, scale=scale, is_causal=is_causal
+    )
+
+    with flag_gems.use_gems():
+        res_out, res_lse = torch._scaled_dot_product_flash_attention_for_cpu(
+            q, k, v, dropout_p=0.0, is_causal=is_causal, scale=scale
+        )
+
+    gems_assert_close(res_out, ref_out, dtype)
+
+    if flag_gems.vendor_name == "mthreads":
+        del os.environ["MUSA_ENABLE_SQMMA"]
