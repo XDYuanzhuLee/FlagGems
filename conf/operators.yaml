@@ -5821,6 +5821,17 @@ ops:
       - Math
     stages:
       - beta: '5.0'
+  - id: special_psi
+    description: Computes the logarithmic derivative of the gamma function on input.
+    for:
+      - special_psi
+    labels:
+      - aten
+      - KernelGen
+    kind:
+      - Math
+    stages:
+      - alpha: '5.1'
   - id: sqrt
     description: Returns a new tensor with the square-root of the elements of `input`.
     for:
