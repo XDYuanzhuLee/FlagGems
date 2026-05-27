@@ -200,7 +200,6 @@ from flag_gems.ops.linspace import linspace
 from flag_gems.ops.log import log
 from flag_gems.ops.log1p import log1p
 from flag_gems.ops.log1p_ import log1p_
-from flag_gems.ops.log10 import log10, log10_, log10_out
 from flag_gems.ops.log_sigmoid import log_sigmoid
 from flag_gems.ops.log_softmax import (
     log_softmax,
@@ -346,6 +345,7 @@ from flag_gems.ops.softmax import (
 from flag_gems.ops.softplus import softplus
 from flag_gems.ops.softshrink import softshrink, softshrink_out
 from flag_gems.ops.sort import sort, sort_stable
+from flag_gems.ops.special_bessel_y0 import special_bessel_y0, special_bessel_y0_out
 from flag_gems.ops.special_i0e import special_i0e, special_i0e_out
 from flag_gems.ops.special_i1 import special_i1, special_i1_out
 from flag_gems.ops.sqrt import sqrt, sqrt_
@@ -395,6 +395,8 @@ from flag_gems.ops.where import (
 from flag_gems.ops.zero import zero, zero_out
 from flag_gems.ops.zeros import zero_, zeros
 from flag_gems.ops.zeros_like import zeros_like
+
+from flag_gems.ops.log10 import log10, log10_, log10_out  # isort:skip
 
 __all__ = [
     "_assert_async",
@@ -833,6 +835,8 @@ __all__ = [
     "softshrink_out",
     "sort",
     "sort_stable",
+    "special_bessel_y0",
+    "special_bessel_y0_out",
     "special_i0e",
     "special_i0e_out",
     "special_i1",

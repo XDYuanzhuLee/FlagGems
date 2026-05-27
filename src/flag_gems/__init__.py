@@ -488,6 +488,8 @@ _FULL_CONFIG = (
     ("softshrink.out", softshrink_out),
     ("sort", sort),
     ("sort.stable", sort_stable),
+    ("special_bessel_y0", special_bessel_y0),
+    ("special_bessel_y0.out", special_bessel_y0_out),
     ("special_i0e", special_i0e),
     ("special_i0e.out", special_i0e_out),
     ("special_i1", special_i1),
