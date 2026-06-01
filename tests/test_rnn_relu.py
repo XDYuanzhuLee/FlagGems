@@ -41,7 +41,7 @@ def test_rnn_relu(seq_len, batch_size, input_size, hidden_size, dtype, batch_fir
         ref_input, ref_hx, ref_params, True, 1, 0.0, False, False, batch_first
     )
 
-    # Run FlagGems implementation
+    # Run FlagGems implementation (via torch dispatch)
     with flag_gems.use_gems():
         res_out = torch.rnn_relu(
             input_tensor, hx, params, True, 1, 0.0, False, False, batch_first
@@ -50,3 +50,54 @@ def test_rnn_relu(seq_len, batch_size, input_size, hidden_size, dtype, batch_fir
     # Compare outputs
     utils.gems_assert_close(res_out[0], ref_out[0], dtype)
     utils.gems_assert_close(res_out[1], ref_out[1], dtype)
+
+
+@pytest.mark.rnn_relu_direct_wrapper
+@pytest.mark.parametrize("batch_first", [False, True])
+@pytest.mark.parametrize("input_size", [8, 16])
+@pytest.mark.parametrize("hidden_size", RNN_HIDDEN_SIZES)
+@pytest.mark.parametrize("batch_size", [2, 4])
+@pytest.mark.parametrize("seq_len", [4, 8])
+@pytest.mark.parametrize("dtype", utils.FLOAT_DTYPES)
+def test_rnn_relu_direct_wrapper(
+    seq_len, batch_size, input_size, hidden_size, dtype, batch_first
+):
+    """Direct wrapper smoke test: call flag_gems.ops.rnn_relu.rnn_relu directly
+    and compare against PyTorch's native rnn_relu (float64 reference)."""
+    from flag_gems.ops.rnn_relu import rnn_relu as gems_rnn_relu
+
+    if batch_first:
+        input_tensor = torch.randn(
+            batch_size, seq_len, input_size, dtype=dtype, device=flag_gems.device
+        )
+    else:
+        input_tensor = torch.randn(
+            seq_len, batch_size, input_size, dtype=dtype, device=flag_gems.device
+        )
+
+    rnn = torch.nn.RNN(input_size, hidden_size, 1, nonlinearity="relu")
+    rnn = rnn.to(dtype=dtype, device=flag_gems.device)
+    params = tuple(rnn._flat_weights)
+    hx = torch.randn(1, batch_size, hidden_size, dtype=dtype, device=flag_gems.device)
+
+    # Run direct wrapper call
+    out, hidden = gems_rnn_relu(
+        input_tensor, hx, params, True, 1, 0.0, False, False, batch_first
+    )
+
+    # Run PyTorch reference in float64
+    ref_input = utils.to_reference(input_tensor)
+    ref_hx = utils.to_reference(hx)
+    ref_params = tuple(utils.to_reference(p) for p in params)
+    ref_out = torch.rnn_relu(
+        ref_input, ref_hx, ref_params, True, 1, 0.0, False, False, batch_first
+    )
+
+    # The Triton kernel uses tiled mat-vec with float32 accumulation while
+    # PyTorch's native rnn_relu uses cuDNN fused kernels.  The algorithmic
+    # difference causes small numerical discrepancies (worst-case over all
+    # configs: float32≈1e-3, float16≈2e-3, bfloat16≈1.6e-2).  We use a
+    # 2× safety margin for atol.
+    atol = {torch.float32: 2e-3, torch.float16: 5e-3, torch.bfloat16: 3e-2}[dtype]
+    utils.gems_assert_close(out, ref_out[0], dtype, atol=atol)
+    utils.gems_assert_close(hidden, ref_out[1], dtype, atol=atol)

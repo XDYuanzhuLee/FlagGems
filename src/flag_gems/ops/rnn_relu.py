@@ -10,11 +10,14 @@ from flag_gems.utils import libentry
 
 logger = logging.getLogger(__name__)
 
+# Fixed inner block size for mat-vec product loops (compile-time literal).
+_CHUNK = 64
+
 
 @libentry()
 @triton.autotune(
     configs=runtime.get_tuned_config("rnn_relu"),
-    key=["seq_len", "batch_size", "input_size"],
+    key=["seq_len", "input_size", "hidden_size"],
 )
 @triton.jit
 def rnn_relu_forward_kernel(
@@ -30,133 +33,174 @@ def rnn_relu_forward_kernel(
     batch_size,
     input_size,
     hidden_size,
-    num_layers,
-    bidirectional,
-    batch_first,
+    batch_first: tl.constexpr,
     BLOCK_SIZE: tl.constexpr,
 ):
     """
-    Triton kernel for rnn_relu forward pass.
+    Triton kernel for single-layer unidirectional RNN with ReLU activation.
 
-    Supports:
-    - Single layer (num_layers=1)
-    - Unidirectional (bidirectional=False)
-    - batch_first=False
+    Grid: (batch_size,) — one program per batch element.
+    Each program computes all time steps sequentially.
 
-    For more complex configurations, falls back to PyTorch implementation.
+    Hidden state is kept in global-memory scratch space (hidden_output_ptr)
+    so the kernel works correctly even when hidden_size > BLOCK_SIZE.
+    All intermediate hidden states are written to output_ptr.
     """
-    # Get program ID
-    pid = tl.program_id(0)
-
-    # Calculate output dimensions
-    # output: (seq_len, batch, hidden_size) or (batch, seq_len, hidden_size)
-    # hidden: (num_layers, batch, hidden_size)
-    total_seq = seq_len * batch_size
-
-    # Each program processes one element
-    if pid * BLOCK_SIZE >= total_seq:
+    batch_idx = tl.program_id(0)
+    if batch_idx >= batch_size:
         return
 
-    # Calculate indices
+    CHUNK: tl.constexpr = 64  # inner block for mat-vec loops
+    num_hid_blocks = tl.cdiv(hidden_size, BLOCK_SIZE)
+    chunk_offs = tl.arange(0, CHUNK)
+    bid_offs = tl.arange(0, BLOCK_SIZE)
+
+    # --- initialize hidden state in global scratch ---
+    _init_hidden(
+        hidden_output_ptr,
+        hx_ptr,
+        batch_idx,
+        hidden_size,
+        num_hid_blocks,
+        BLOCK_SIZE,
+    )
+
+    # Stride helpers.
     if batch_first:
-        # input: (batch, seq_len, input_size)
-        batch_idx = pid * BLOCK_SIZE // seq_len
-        seq_idx = pid * BLOCK_SIZE % seq_len
+        batch_inp_stride = seq_len * input_size
+        batch_out_stride = seq_len * hidden_size
     else:
-        # input: (seq_len, batch, input_size)
-        seq_idx = pid * BLOCK_SIZE // batch_size
-        batch_idx = pid * BLOCK_SIZE % batch_size
+        batch_inp_stride = input_size
+        batch_out_stride = hidden_size
 
-    # Get output offset
-    if batch_first:
-        output_offset = batch_idx * seq_len * hidden_size + seq_idx * hidden_size
-    else:
-        output_offset = seq_idx * batch_size * hidden_size + batch_idx * hidden_size
+    h_scratch_base = hidden_output_ptr + batch_idx * hidden_size
 
-    # Initialize hidden state
-    if hx_ptr is not None:
-        hx_offset = batch_idx * hidden_size
-        h = tl.load(
-            hx_ptr + hx_offset + tl.arange(0, BLOCK_SIZE),
-            mask=tl.arange(0, BLOCK_SIZE) < hidden_size,
-            other=0.0,
-        ).to(tl.float32)
-    else:
-        h = tl.zeros(hidden_size, tl.float32)
-
-    # Process each time step
     for t in range(seq_len):
-        # Compute input offset for time step t
         if batch_first:
-            t_input_offset = batch_idx * seq_len * input_size + t * input_size
+            t_inp_off = batch_idx * batch_inp_stride + t * input_size
+            t_out_off = batch_idx * batch_out_stride + t * hidden_size
         else:
-            t_input_offset = t * batch_size * input_size + batch_idx * input_size
+            t_inp_off = t * (batch_size * input_size) + batch_idx * input_size
+            t_out_off = t * (batch_size * hidden_size) + batch_idx * hidden_size
 
-        # Compute input-to-hidden: W_ih @ x_t + b_ih
-        ih = tl.zeros(hidden_size, tl.float32)
-        for i in range(0, input_size, 64):
-            w_ih_chunk = tl.load(
-                weight_ih_ptr + i * hidden_size + tl.arange(0, 64),
-                mask=tl.arange(0, 64) < (input_size - i),
+        # Process hidden_size in BLOCK_SIZE-sized output chunks.
+        for hid_block in range(num_hid_blocks):
+            h_start = hid_block * BLOCK_SIZE
+            h_offs = h_start + bid_offs
+            h_mask = h_offs < hidden_size
+
+            # --- ih = W_ih[h_offs, :] @ x_t + b_ih ---
+            ih_acc = tl.zeros([BLOCK_SIZE], dtype=tl.float32)
+
+            for inp_start in range(0, input_size, CHUNK):
+                i_offs = inp_start + chunk_offs
+                i_mask = i_offs < input_size
+
+                # W_ih tile: (BLOCK_SIZE, CHUNK) — row-major.
+                w_offs = h_offs[:, None] * input_size + i_offs[None, :]
+                w_mask = h_mask[:, None] & i_mask[None, :]
+                w_tile = tl.load(weight_ih_ptr + w_offs, mask=w_mask, other=0.0).to(
+                    tl.float32
+                )
+
+                x_tile = tl.load(
+                    input_ptr + t_inp_off + i_offs, mask=i_mask, other=0.0
+                ).to(tl.float32)
+
+                ih_acc += tl.sum(w_tile * x_tile[None, :], axis=1)
+
+            if bias_ih_ptr is not None:
+                b_ih = tl.load(bias_ih_ptr + h_offs, mask=h_mask, other=0.0).to(
+                    tl.float32
+                )
+                ih_acc += b_ih
+
+            # --- hh = W_hh[h_offs, :] @ h_prev + b_hh ---
+            hh_acc = tl.zeros([BLOCK_SIZE], dtype=tl.float32)
+
+            for hid_in_start in range(0, hidden_size, CHUNK):
+                j_offs = hid_in_start + chunk_offs
+                j_mask = j_offs < hidden_size
+
+                # W_hh tile: (BLOCK_SIZE, CHUNK) — row-major.
+                w_offs = h_offs[:, None] * hidden_size + j_offs[None, :]
+                w_mask = h_mask[:, None] & j_mask[None, :]
+                w_tile = tl.load(weight_hh_ptr + w_offs, mask=w_mask, other=0.0).to(
+                    tl.float32
+                )
+
+                h_tile = tl.load(h_scratch_base + j_offs, mask=j_mask, other=0.0).to(
+                    tl.float32
+                )
+
+                hh_acc += tl.sum(w_tile * h_tile[None, :], axis=1)
+
+            if bias_hh_ptr is not None:
+                b_hh = tl.load(bias_hh_ptr + h_offs, mask=h_mask, other=0.0).to(
+                    tl.float32
+                )
+                hh_acc += b_hh
+
+            # --- h_new = relu(ih + hh) ---
+            h_new = ih_acc + hh_acc
+            h_new = tl.where(h_new > 0, h_new, 0.0)
+
+            # Write to output (all time steps) and to scratch (next step).
+            tl.store(output_ptr + t_out_off + h_offs, h_new, mask=h_mask)
+            tl.store(h_scratch_base + h_offs, h_new, mask=h_mask)
+
+    # Final hidden state resides at h_scratch_base → hidden_output_ptr.
+
+
+@triton.jit
+def _init_hidden(
+    hidden_output_ptr,
+    hx_ptr,
+    batch_idx,
+    hidden_size,
+    num_hid_blocks,
+    BLOCK_SIZE: tl.constexpr,
+):
+    """Initialize the scratch hidden state from hx (or zeros)."""
+    bid_offs = tl.arange(0, BLOCK_SIZE)
+    for hid_block in range(num_hid_blocks):
+        h_start = hid_block * BLOCK_SIZE
+        h_offs = h_start + bid_offs
+        h_mask = h_offs < hidden_size
+        if hx_ptr is not None:
+            h_val = tl.load(
+                hx_ptr + batch_idx * hidden_size + h_offs,
+                mask=h_mask,
                 other=0.0,
             ).to(tl.float32)
-            x_chunk = tl.load(
-                input_ptr + t_input_offset + i + tl.arange(0, 64),
-                mask=tl.arange(0, 64) < (input_size - i),
-                other=0.0,
-            ).to(tl.float32)
-            ih += tl.dot(x_chunk, w_ih_chunk)
-
-        if bias_ih_ptr is not None:
-            b_ih = tl.load(
-                bias_ih_ptr + tl.arange(0, 64),
-                mask=tl.arange(0, 64) < hidden_size,
-                other=0.0,
-            ).to(tl.float32)
-            ih += b_ih
-
-        # Compute hidden-to-hidden: W_hh @ h + b_hh
-        hh = tl.zeros(hidden_size, tl.float32)
-        for i in range(0, hidden_size, 64):
-            w_hh_chunk = tl.load(
-                weight_hh_ptr + i * hidden_size + tl.arange(0, 64),
-                mask=tl.arange(0, 64) < (hidden_size - i),
-                other=0.0,
-            ).to(tl.float32)
-            h_chunk = h
-            hh += tl.dot(h_chunk, w_hh_chunk)
-
-        if bias_hh_ptr is not None:
-            b_hh = tl.load(
-                bias_hh_ptr + tl.arange(0, 64),
-                mask=tl.arange(0, 64) < hidden_size,
-                other=0.0,
-            ).to(tl.float32)
-            hh += b_hh
-
-        # Compute new hidden state: h = relu(ih + hh)
-        h_new = ih + hh
-        h = tl.where(h_new > 0, h_new, 0.0)
-
-    # Store output
-    if t == seq_len - 1:
+        else:
+            h_val = tl.zeros([BLOCK_SIZE], dtype=tl.float32)
         tl.store(
-            output_ptr + output_offset + tl.arange(0, BLOCK_SIZE),
-            h,
-            mask=tl.arange(0, BLOCK_SIZE) < hidden_size,
+            hidden_output_ptr + batch_idx * hidden_size + h_offs,
+            h_val,
+            mask=h_mask,
         )
 
-    # Store final hidden state
-    if hidden_output_ptr is not None:
-        hx_output_offset = batch_idx * hidden_size
-        tl.store(
-            hidden_output_ptr + hx_output_offset + tl.arange(0, BLOCK_SIZE),
-            h,
-            mask=tl.arange(0, BLOCK_SIZE) < hidden_size,
-        )
+
+# ---------------------------------------------------------------------------
+# Host-side helpers
+# ---------------------------------------------------------------------------
 
 
-def rnn_relu_forward(
+def _params_unpack(params, has_biases):
+    """Unpack RNN _flat_weights in correct PyTorch order.
+
+    PyTorch _flat_weights: [w_ih, w_hh, b_ih, b_hh]
+    (The original KernelGen-generated code incorrectly swapped b_ih and w_hh.)
+    """
+    if has_biases:
+        weight_ih, weight_hh, bias_ih, bias_hh = params[:4]
+        return weight_ih, weight_hh, bias_ih, bias_hh
+    else:
+        return params[0], params[1], None, None
+
+
+def rnn_relu_kernel_forward(
     input,
     hx,
     params,
@@ -167,96 +211,57 @@ def rnn_relu_forward(
     bidirectional,
     batch_first,
 ):
-    """
-    Forward pass for rnn_relu.
+    """Launch the Triton RNN ReLU kernel after validating config."""
+    logger.debug("GEMS RNN_RELU FORWARD (kernel launch)")
 
-    Args:
-        input: Tensor of shape (seq_len, batch, input_size) or (batch, seq_len, input_size)
-        hx: Tensor of shape (num_layers * num_directions, batch, hidden_size)
-        params: Tuple of weight tensors
-        has_biases: Whether to use biases
-        num_layers: Number of RNN layers
-        dropout: Dropout probability
-        train: Whether in training mode
-        bidirectional: Whether to use bidirectional RNN
-        batch_first: Whether batch is the first dimension
-
-    Returns:
-        output: Tensor of shape (seq_len, batch, hidden_size * num_directions)
-            or (batch, seq_len, hidden_size * num_directions)
-        hidden: Tensor of shape (num_layers * num_directions, batch, hidden_size)
-    """
-    logger.debug("GEMS RNN_RELU FORWARD")
-
-    # Validate configuration: only single-layer, unidirectional, no-dropout supported
     if num_layers > 1 or bidirectional:
         raise NotImplementedError(
             "GEMS RNN_RELU only supports single-layer unidirectional"
         )
-
-    # Dropout during training is not supported in the Triton implementation
     if dropout > 0 and train:
         raise NotImplementedError(
             "GEMS RNN_RELU does not support dropout in train mode"
         )
 
-    # Get dimensions
     if batch_first:
-        batch_size = input.shape[0]
-        seq_len = input.shape[1]
-        input_size = input.shape[2]
+        batch_size, seq_len, input_size = input.shape
     else:
-        seq_len = input.shape[0]
-        batch_size = input.shape[1]
-        input_size = input.shape[2]
+        seq_len, batch_size, input_size = input.shape
 
-    # Get hidden size from hx or params
     if hx is not None:
         hidden_size = hx.shape[2]
+    elif len(params) > 0:
+        hidden_size = params[0].shape[0]
     else:
-        # Try to get from params
-        if len(params) > 0:
-            hidden_size = params[0].shape[0]
-        else:
-            raise ValueError("Cannot determine hidden_size")
+        raise ValueError("Cannot determine hidden_size")
 
-    # Determine output dimensions
     num_directions = 2 if bidirectional else 1
     if batch_first:
         output_shape = (batch_size, seq_len, hidden_size * num_directions)
     else:
         output_shape = (seq_len, batch_size, hidden_size * num_directions)
 
-    # Create output tensors
     output = torch.empty(output_shape, dtype=input.dtype, device=input.device)
     hidden_shape = (num_layers * num_directions, batch_size, hidden_size)
     hidden = torch.empty(hidden_shape, dtype=input.dtype, device=input.device)
 
-    # Handle hx being None
     if hx is None:
         hx = torch.zeros(hidden_shape, dtype=input.dtype, device=input.device)
 
-    # Extract params
-    if has_biases:
-        weight_ih, bias_ih, weight_hh, bias_hh = params[:4]
-    else:
-        weight_ih = params[0]
-        weight_hh = params[1]
-        bias_ih = None
-        bias_hh = None
+    weight_ih, weight_hh, bias_ih, bias_hh = _params_unpack(params, has_biases)
 
-    # Ensure contiguous
     input = input.contiguous()
     output = output.contiguous()
     hidden = hidden.contiguous()
+    weight_ih = weight_ih.contiguous()
+    weight_hh = weight_hh.contiguous()
+    if bias_ih is not None:
+        bias_ih = bias_ih.contiguous()
+    if bias_hh is not None:
+        bias_hh = bias_hh.contiguous()
 
-    # Define grid
-    total_elements = seq_len * batch_size
+    grid = (batch_size,)
 
-    # Calculate grid
-    grid = lambda meta: (triton.cdiv(total_elements, meta["BLOCK_SIZE"]),)
-
-    # Launch kernel
     with torch.cuda.device(input.device):
         rnn_relu_forward_kernel[grid](
             input,
@@ -271,17 +276,21 @@ def rnn_relu_forward(
             batch_size,
             input_size,
             hidden_size,
-            num_layers,
-            bidirectional,
             batch_first,
         )
 
     return output, hidden
 
 
-# Custom autograd function for RNN ReLU forward and backward
 class RnnReluFunction(torch.autograd.Function):
-    """Autograd function for single-layer unidirectional RNN with ReLU."""
+    """Autograd for single-layer unidirectional RNN with ReLU.
+
+    Forward  → Triton kernel (fast).
+    Backward → recompute forward in native PyTorch, then autograd.
+               The Triton kernel is opaque to PyTorch autograd, so the
+               backward pass reconstructs the computation graph using
+               native PyTorch operations.
+    """
 
     @staticmethod
     def forward(
@@ -296,26 +305,21 @@ class RnnReluFunction(torch.autograd.Function):
         bidirectional,
         batch_first,
     ):
-        logger.debug("GEMS RNN_RELU FORWARD")
+        logger.debug("GEMS RNN_RELU FUNCTION FORWARD")
 
-        # Save tensors and configuration for backward pass
-        ctx.save_for_backward(input, hx)
-        ctx.params = params
-        ctx.has_biases = has_biases
-        ctx.num_layers = num_layers
-        ctx.dropout = dropout
-        ctx.train = train
-        ctx.bidirectional = bidirectional
-        ctx.batch_first = batch_first
-
-        # Only supports single-layer, unidirectional, no-dropout
         if num_layers > 1 or bidirectional or (dropout > 0 and train):
             raise NotImplementedError(
                 "GEMS RNN_RELU only supports single-layer unidirectional"
             )
 
-        # Delegate to the Triton kernel-based forward implementation
-        return rnn_relu_forward(
+        ctx.save_for_backward(input, hx)
+        ctx.params = params
+        ctx.has_biases = has_biases
+        ctx.num_layers = num_layers
+        ctx.bidirectional = bidirectional
+        ctx.batch_first = batch_first
+
+        return rnn_relu_kernel_forward(
             input,
             hx,
             params,
@@ -329,72 +333,83 @@ class RnnReluFunction(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output, grad_hidden):
-        logger.debug("GEMS RNN_RELU BACKWARD")
+        logger.debug("GEMS RNN_RELU FUNCTION BACKWARD")
 
         input, hx = ctx.saved_tensors
         params = ctx.params
         has_biases = ctx.has_biases
         num_layers = ctx.num_layers
-        dropout = ctx.dropout
-        train = ctx.train
         bidirectional = ctx.bidirectional
         batch_first = ctx.batch_first
 
-        # Unsupported configurations are rejected
-        if num_layers > 1 or bidirectional or (dropout > 0 and train):
+        if num_layers > 1 or bidirectional:
             raise NotImplementedError(
                 "GEMS RNN_RELU backward: unsupported configuration"
             )
 
-        # For simple single-layer case, recompute forward and use autograd
-        output, hidden = rnn_relu_forward(
-            input,
-            hx,
-            params,
-            has_biases,
-            num_layers,
-            dropout,
-            train,
-            bidirectional,
-            batch_first,
-        )
+        weight_ih, weight_hh, bias_ih, bias_hh = _params_unpack(params, has_biases)
 
-        # Compute input and hidden state gradients via autograd
-        grad_input = torch.autograd.grad(output, input, grad_output, retain_graph=True)[
-            0
-        ]
-        grad_hx = (
-            torch.autograd.grad(output, hx, grad_output, retain_graph=True)[0]
-            if hx is not None
-            else None
-        )
-
-        # Compute parameter gradients (weight_ih, weight_hh, bias_ih, bias_hh)
-        grad_params = []
-        for p in params:
-            if p.requires_grad:
-                grad_p = torch.autograd.grad(output, p, grad_output, retain_graph=True)[
-                    0
-                ]
-                grad_params.append(grad_p)
+        if batch_first:
+            batch_size, seq_len, input_size = input.shape
+        else:
+            seq_len, batch_size, input_size = input.shape
+        # ---- recompute forward in native PyTorch ----
+        h = hx[0].clone()  # (batch, hidden)
+        outputs = []
+        for t_idx in range(seq_len):
+            if batch_first:
+                xt = input[:, t_idx, :]
             else:
-                grad_params.append(None)
+                xt = input[t_idx, :, :]
+            # h = relu(xt @ W_ih^T + h @ W_hh^T + b_ih + b_hh)
+            pre_act = (
+                torch.addmm(bias_ih, xt, weight_ih.t())
+                if has_biases
+                else torch.mm(xt, weight_ih.t())
+            )
+            pre_act += (
+                torch.addmm(bias_hh, h, weight_hh.t())
+                if has_biases
+                else torch.mm(h, weight_hh.t())
+            )
+            h = torch.relu(pre_act)
+            outputs.append(h)
 
-        # Pad grad_params to match expected number of parameters
+        if batch_first:
+            output_native = torch.stack(outputs, dim=1)
+        else:
+            output_native = torch.stack(outputs, dim=0)
+        hx_native = h.unsqueeze(0)
+
+        # ---- compute gradients via autograd ----
+        grad_output_flat = grad_output.reshape(output_native.shape)
+        grad_hidden_flat = grad_hidden.reshape(hx_native.shape)
+
+        all_weight_grads = torch.autograd.grad(
+            outputs=[output_native, hx_native],
+            inputs=[input, hx] + list(params),
+            grad_outputs=[grad_output_flat, grad_hidden_flat],
+            retain_graph=False,
+        )
+
+        grad_input = all_weight_grads[0]
+        grad_hx = all_weight_grads[1]
+        grad_params = list(all_weight_grads[2:])
+
+        # Pad grad_params to match the full params tuple.
         while len(grad_params) < len(params):
             grad_params.append(None)
 
-        # Return gradients: (input, hx, params, has_biases, num_layers, dropout, train, bidirectional, batch_first)
         return (
             grad_input,
             grad_hx,
             tuple(grad_params),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
+            None,  # has_biases
+            None,  # num_layers
+            None,  # dropout
+            None,  # train
+            None,  # bidirectional
+            None,  # batch_first
         )
 
 
@@ -409,20 +424,17 @@ def rnn_relu(
     bidirectional=False,
     batch_first=False,
 ):
-    """
-    Applies an Elman RNN with ReLU activation.
+    """Applies an Elman RNN with ReLU activation.
 
-    This is a wrapper that handles parameter management and calls the appropriate implementation.
+    Uses Triton kernel for forward, native PyTorch recomputation for backward.
     Supports single-layer, unidirectional RNN without dropout.
+    Multi-layer, bidirectional, and train-mode dropout raise NotImplementedError.
     """
     logger.debug("GEMS RNN_RELU")
 
-    # Validate that params are provided
     if params is None:
-        raise ValueError("Either hx or params must be provided")
+        raise ValueError("params must be provided")
 
-    # Use Triton implementation for supported single-layer configuration
-    # Multi-layer, bidirectional, and dropout are not supported
     if num_layers == 1 and not bidirectional and dropout == 0:
         return RnnReluFunction.apply(
             input,
@@ -436,7 +448,6 @@ def rnn_relu(
             batch_first,
         )
     else:
-        # Unsupported configuration
         raise NotImplementedError(
-            "GEMS RNN_RELU only supports single-layer " "unidirectional without dropout"
+            "GEMS RNN_RELU only supports single-layer unidirectional without dropout"
         )
