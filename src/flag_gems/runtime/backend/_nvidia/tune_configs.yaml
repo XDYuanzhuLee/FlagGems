@@ -2078,3 +2078,16 @@ conv_transpose1d:
       BLOCK_IC: 32
     num_warps: 4
     num_stages: 3
+
+rnn_relu:
+  - gen: true
+    param_map:
+      META:
+        BLOCK_SIZE: block_size
+      num_warps: 4
+      num_stages: 4
+    block_size:
+      - 128
+      - 256
+      - 512
+      - 1024

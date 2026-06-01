@@ -5,6 +5,7 @@ import torch
 import triton
 import triton.language as tl
 
+from flag_gems import runtime
 from flag_gems.utils import libentry
 
 logger = logging.getLogger(__name__)
@@ -12,12 +13,7 @@ logger = logging.getLogger(__name__)
 
 @libentry()
 @triton.autotune(
-    configs=[
-        triton.Config({"BLOCK_SIZE": 128}, num_stages=4, num_warps=4),
-        triton.Config({"BLOCK_SIZE": 256}, num_stages=4, num_warps=4),
-        triton.Config({"BLOCK_SIZE": 512}, num_stages=4, num_warps=4),
-        triton.Config({"BLOCK_SIZE": 1024}, num_stages=4, num_warps=4),
-    ],
+    configs=runtime.get_tuned_config("rnn_relu"),
     key=["seq_len", "batch_size", "input_size"],
 )
 @triton.jit
