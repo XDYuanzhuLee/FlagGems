@@ -7,6 +7,8 @@ from . import accuracy_utils as utils
 
 RNN_HIDDEN_SIZES = [8, 16]
 
+pytestmark = pytest.mark.rnn_relu
+
 
 @pytest.mark.rnn_relu
 @pytest.mark.parametrize("batch_first", [False, True])

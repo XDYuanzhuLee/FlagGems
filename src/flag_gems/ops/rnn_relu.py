@@ -454,6 +454,8 @@ def rnn_relu(
 
     if params is None:
         raise ValueError("params must be provided")
+    if hx is None:
+        raise ValueError("hx must be provided to match torch.rnn_relu schema")
 
     if num_layers == 1 and not bidirectional and dropout == 0:
         return RnnReluFunction.apply(
