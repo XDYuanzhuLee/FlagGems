@@ -29,6 +29,7 @@ def rnn_relu_forward_kernel(
     bias_hh_ptr,
     output_ptr,
     hidden_output_ptr,
+    hidden_read_ptr,
     seq_len,
     batch_size,
     input_size,
@@ -42,9 +43,10 @@ def rnn_relu_forward_kernel(
     Grid: (batch_size,) — one program per batch element.
     Each program computes all time steps sequentially.
 
-    Hidden state is kept in global-memory scratch space (hidden_output_ptr)
-    so the kernel works correctly even when hidden_size > BLOCK_SIZE.
-    All intermediate hidden states are written to output_ptr.
+    Double-buffered hidden state: hidden_read_ptr holds the previous-step
+    hidden state (read-only within a time step) while hidden_output_ptr
+    accumulates the current-step hidden state.  This avoids chunk-level
+    race conditions when hidden_size > BLOCK_SIZE.
     """
     batch_idx = tl.program_id(0)
     if batch_idx >= batch_size:
@@ -74,6 +76,7 @@ def rnn_relu_forward_kernel(
         batch_out_stride = hidden_size
 
     h_scratch_base = hidden_output_ptr + batch_idx * hidden_size
+    h_read_base = hidden_read_ptr + batch_idx * hidden_size
 
     for t in range(seq_len):
         if batch_first:
@@ -82,6 +85,15 @@ def rnn_relu_forward_kernel(
         else:
             t_inp_off = t * (batch_size * input_size) + batch_idx * input_size
             t_out_off = t * (batch_size * hidden_size) + batch_idx * hidden_size
+
+        # Double-buffer: snapshot previous-step hidden state into read buffer
+        # so later chunks don't read already-updated values from this step.
+        for hid_block in range(num_hid_blocks):
+            h_start = hid_block * BLOCK_SIZE
+            h_offs = h_start + bid_offs
+            h_mask = h_offs < hidden_size
+            h_val = tl.load(h_scratch_base + h_offs, mask=h_mask, other=0.0)
+            tl.store(h_read_base + h_offs, h_val, mask=h_mask)
 
         # Process hidden_size in BLOCK_SIZE-sized output chunks.
         for hid_block in range(num_hid_blocks):
@@ -129,7 +141,7 @@ def rnn_relu_forward_kernel(
                     tl.float32
                 )
 
-                h_tile = tl.load(h_scratch_base + j_offs, mask=j_mask, other=0.0).to(
+                h_tile = tl.load(h_read_base + j_offs, mask=j_mask, other=0.0).to(
                     tl.float32
                 )
 
@@ -244,6 +256,7 @@ def rnn_relu_kernel_forward(
     output = torch.empty(output_shape, dtype=input.dtype, device=input.device)
     hidden_shape = (num_layers * num_directions, batch_size, hidden_size)
     hidden = torch.empty(hidden_shape, dtype=input.dtype, device=input.device)
+    hidden_read = torch.empty(hidden_shape, dtype=input.dtype, device=input.device)
 
     if hx is None:
         hx = torch.zeros(hidden_shape, dtype=input.dtype, device=input.device)
@@ -253,6 +266,7 @@ def rnn_relu_kernel_forward(
     input = input.contiguous()
     output = output.contiguous()
     hidden = hidden.contiguous()
+    hidden_read = hidden_read.contiguous()
     weight_ih = weight_ih.contiguous()
     weight_hh = weight_hh.contiguous()
     if bias_ih is not None:
@@ -272,6 +286,7 @@ def rnn_relu_kernel_forward(
             bias_hh,
             output,
             hidden,
+            hidden_read,
             seq_len,
             batch_size,
             input_size,
@@ -353,57 +368,62 @@ class RnnReluFunction(torch.autograd.Function):
             batch_size, seq_len, input_size = input.shape
         else:
             seq_len, batch_size, input_size = input.shape
-        # ---- recompute forward in native PyTorch ----
-        h = hx[0].clone()  # (batch, hidden)
-        outputs = []
-        for t_idx in range(seq_len):
+
+        with torch.enable_grad():
+            # ---- recompute forward in native PyTorch ----
+            h = hx[0].clone()  # (batch, hidden)
+            outputs = []
+            for t_idx in range(seq_len):
+                if batch_first:
+                    xt = input[:, t_idx, :]
+                else:
+                    xt = input[t_idx, :, :]
+                # h = relu(xt @ W_ih^T + h @ W_hh^T + b_ih + b_hh)
+                pre_act = (
+                    torch.addmm(bias_ih, xt, weight_ih.t())
+                    if has_biases
+                    else torch.mm(xt, weight_ih.t())
+                )
+                pre_act += (
+                    torch.addmm(bias_hh, h, weight_hh.t())
+                    if has_biases
+                    else torch.mm(h, weight_hh.t())
+                )
+                h = torch.relu(pre_act)
+                outputs.append(h)
+
             if batch_first:
-                xt = input[:, t_idx, :]
+                output_native = torch.stack(outputs, dim=1)
             else:
-                xt = input[t_idx, :, :]
-            # h = relu(xt @ W_ih^T + h @ W_hh^T + b_ih + b_hh)
-            pre_act = (
-                torch.addmm(bias_ih, xt, weight_ih.t())
-                if has_biases
-                else torch.mm(xt, weight_ih.t())
+                output_native = torch.stack(outputs, dim=0)
+            hx_native = h.unsqueeze(0)
+
+            # ---- compute gradients via autograd ----
+            grad_output_flat = grad_output.reshape(output_native.shape)
+            grad_hidden_flat = grad_hidden.reshape(hx_native.shape)
+
+            all_weight_grads = torch.autograd.grad(
+                outputs=[output_native, hx_native],
+                inputs=[input, hx] + list(params),
+                grad_outputs=[grad_output_flat, grad_hidden_flat],
+                retain_graph=False,
             )
-            pre_act += (
-                torch.addmm(bias_hh, h, weight_hh.t())
-                if has_biases
-                else torch.mm(h, weight_hh.t())
-            )
-            h = torch.relu(pre_act)
-            outputs.append(h)
-
-        if batch_first:
-            output_native = torch.stack(outputs, dim=1)
-        else:
-            output_native = torch.stack(outputs, dim=0)
-        hx_native = h.unsqueeze(0)
-
-        # ---- compute gradients via autograd ----
-        grad_output_flat = grad_output.reshape(output_native.shape)
-        grad_hidden_flat = grad_hidden.reshape(hx_native.shape)
-
-        all_weight_grads = torch.autograd.grad(
-            outputs=[output_native, hx_native],
-            inputs=[input, hx] + list(params),
-            grad_outputs=[grad_output_flat, grad_hidden_flat],
-            retain_graph=False,
-        )
 
         grad_input = all_weight_grads[0]
         grad_hx = all_weight_grads[1]
-        grad_params = list(all_weight_grads[2:])
+        grad_params = all_weight_grads[2:]
 
-        # Pad grad_params to match the full params tuple.
-        while len(grad_params) < len(params):
-            grad_params.append(None)
+        for p, g in zip(params, grad_params):
+            if g is not None:
+                if p.grad is None:
+                    p.grad = g.to(p.dtype)
+                else:
+                    p.grad.add_(g)
 
         return (
             grad_input,
             grad_hx,
-            tuple(grad_params),
+            None,  # params — not a Variable, grads accumulated manually above
             None,  # has_biases
             None,  # num_layers
             None,  # dropout

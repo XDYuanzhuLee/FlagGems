@@ -101,3 +101,76 @@ def test_rnn_relu_direct_wrapper(
     atol = {torch.float32: 2e-3, torch.float16: 5e-3, torch.bfloat16: 3e-2}[dtype]
     utils.gems_assert_close(out, ref_out[0], dtype, atol=atol)
     utils.gems_assert_close(hidden, ref_out[1], dtype, atol=atol)
+
+
+@pytest.mark.rnn_relu_direct_backward
+def test_rnn_relu_direct_backward():
+    """Direct wrapper backward: compare gradients against native PyTorch recomputation."""
+    from flag_gems.ops.rnn_relu import _params_unpack
+    from flag_gems.ops.rnn_relu import rnn_relu as gems_rnn_relu
+
+    seq, batch, input_size, hidden_size = 4, 2, 8, 8
+    dtype = torch.float32
+
+    inp_data = torch.randn(seq, batch, input_size, device=flag_gems.device, dtype=dtype)
+    hx_data = torch.randn(1, batch, hidden_size, device=flag_gems.device, dtype=dtype)
+    rnn = torch.nn.RNN(input_size, hidden_size, 1, nonlinearity="relu").to(
+        device=flag_gems.device, dtype=dtype
+    )
+    rnn.flatten_parameters()
+    params_data = tuple(p.detach().clone() for p in rnn._flat_weights)
+
+    # Side 1: FlagGems (through custom autograd)
+    inp_g = inp_data.detach().clone().requires_grad_(True)
+    hx_g = hx_data.detach().clone().requires_grad_(True)
+    params_g = tuple(p.detach().clone().requires_grad_(True) for p in params_data)
+    out_g, hid_g = gems_rnn_relu(
+        inp_g, hx_g, params_g, True, 1, 0.0, True, False, False
+    )
+    (out_g.sum() + hid_g.sum()).backward()
+
+    # Side 2: Native PyTorch recompute (same as backward internals)
+    inp_r = inp_data.detach().clone().requires_grad_(True)
+    hx_r = hx_data.detach().clone().requires_grad_(True)
+    params_r = tuple(p.detach().clone().requires_grad_(True) for p in params_data)
+    weight_ih, weight_hh, bias_ih, bias_hh = _params_unpack(params_r, True)
+    h = hx_r[0].clone()
+    outputs = []
+    for t_idx in range(seq):
+        xt = inp_r[t_idx, :, :]
+        pre_act = torch.addmm(bias_ih, xt, weight_ih.t())
+        pre_act += torch.addmm(bias_hh, h, weight_hh.t())
+        h = torch.relu(pre_act)
+        outputs.append(h)
+    out_r = torch.stack(outputs, dim=0)
+    hid_r = h.unsqueeze(0)
+    (out_r.sum() + hid_r.sum()).backward()
+
+    torch.testing.assert_close(inp_g.grad, inp_r.grad)
+    torch.testing.assert_close(hx_g.grad, hx_r.grad)
+    for pg, pr in zip(params_g, params_r):
+        torch.testing.assert_close(pg.grad, pr.grad)
+
+
+@pytest.mark.rnn_relu_large_hidden
+@pytest.mark.parametrize("hidden_size", [128, 256, 512])
+def test_rnn_relu_large_hidden(hidden_size):
+    """Regression: hidden_size previously had chunk-level read-after-write bug."""
+    from flag_gems.ops.rnn_relu import rnn_relu as gems_rnn_relu
+
+    seq, batch, input_size = 3, 1, 16
+    dtype = torch.float32
+
+    inp = torch.randn(seq, batch, input_size, device=flag_gems.device, dtype=dtype)
+    hx = torch.randn(1, batch, hidden_size, device=flag_gems.device, dtype=dtype)
+    rnn = torch.nn.RNN(input_size, hidden_size, 1, nonlinearity="relu").to(
+        device=flag_gems.device, dtype=dtype
+    )
+    params = tuple(p.detach() for p in rnn._flat_weights)
+
+    ref = torch.rnn_relu(inp, hx, params, True, 1, 0.0, False, False, False)
+    out_gems = gems_rnn_relu(inp, hx, params, True, 1, 0.0, False, False, False)
+
+    atol = 2e-3
+    torch.testing.assert_close(out_gems[0], ref[0], atol=atol, rtol=1e-3)
+    torch.testing.assert_close(out_gems[1], ref[1], atol=atol, rtol=1e-3)
