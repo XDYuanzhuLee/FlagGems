@@ -3897,6 +3897,17 @@ ops:
       - Tensor
     stages:
       - stable: '2.1'
+  - id: MatmulBiasActivation
+    description: Fused matmul + bias + ReLU activation.
+    for:
+      - MatmulBiasActivation
+    labels:
+      - aten
+      - KernelGen
+    kind:
+      - BLAS
+    stages:
+      - alpha: '5.1'
   - id: max
     description: Returns the maximum value of all elements in the `input` tensor.
     for:
