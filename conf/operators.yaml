@@ -6002,6 +6002,18 @@ ops:
       - Math
     stages:
       - beta: '5.0'
+  - id: special_shifted_chebyshev_polynomial_v
+    description: |
+      Computes the shifted Chebyshev polynomial of the third kind V_n^*(x).
+    for:
+      - special.shifted_chebyshev_polynomial_v
+    labels:
+      - aten
+      - KernelGen
+    kind:
+      - Math
+    stages:
+      - alpha: '5.1'
   - id: sqrt
     description: Returns a new tensor with the square-root of the elements of `input`.
     for:
