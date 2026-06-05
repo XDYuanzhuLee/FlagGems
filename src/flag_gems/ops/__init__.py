@@ -382,6 +382,7 @@ from flag_gems.ops.topk import topk
 from flag_gems.ops.trace import trace
 from flag_gems.ops.tril import tril, tril_, tril_out
 from flag_gems.ops.triu import triu, triu_
+from flag_gems.ops.unbind_copy import unbind_copy
 from flag_gems.ops.unfold_backward import unfold_backward
 from flag_gems.ops.uniform import uniform_
 from flag_gems.ops.unique import _unique2
@@ -913,6 +914,7 @@ __all__ = [
     "true_divide",
     "true_divide_",
     "true_divide_out",
+    "unbind_copy",
     "unfold_backward",
     "uniform_",
     "unique_consecutive",

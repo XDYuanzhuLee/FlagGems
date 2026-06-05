@@ -6603,6 +6603,17 @@ ops:
       - NeuralNetwork
     stages:
       - stable: '5.0'
+  - id: unbind_copy
+    description: Removes a tensor dimension and returns a tuple of all slices along a given dimension as copies.
+    for:
+      - unbind_copy.int
+    labels:
+      - aten
+      - KernelGen
+    kind:
+      - Tensor
+    stages:
+      - beta: '5.1'
   - id: uniform_
     description: Fills `self` tensor with numbers sampled from the continuous uniform distribution.
     for:
