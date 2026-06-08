@@ -3444,7 +3444,7 @@ ops:
       - beta: '5.0'
   - id: linalg_slogdet
     description: |
-      Computes the sign and natural logarithm of the absolute value of the determinant of a square matrix using Gaussian elimination without pivoting. Does not handle matrices that require row swaps (e.g., zero leading pivot); for such inputs the result may be incorrect.
+      Computes the sign and natural logarithm of the absolute value of the determinant of a square matrix using LU decomposition with partial pivoting.
     for:
       - linalg_slogdet
     labels:

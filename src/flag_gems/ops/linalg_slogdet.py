@@ -21,77 +21,96 @@ def slogdet_kernel(
     LU_out,
     pivots_out,
     n,
-    M,
     stride_a,
     stride_sign,
     stride_logabsdet,
     stride_lu,
-    BLOCK_SIZE: tl.constexpr,
+    stride_pivots,
 ):
     """
-    Compute slogdet for square matrices using Gaussian elimination without pivoting.
+    Compute slogdet for square matrices using LU decomposition with partial pivoting.
     Each program handles one matrix in the batch.
 
-    Note: This kernel does not implement partial pivoting. It uses the diagonal
-    element A[k,k] as the pivot at each step. Matrices that require row swaps
-    (e.g., with a zero or near-zero leading pivot) will be incorrectly reported
-    as singular.
+    At each column k, the kernel finds the row with the largest absolute value in
+    the subdiagonal portion of column k, swaps that row with row k if needed, and
+    performs Gaussian elimination on the rows below.
     """
-    # Get the matrix index (batch index)
     pid = tle.program_id(0)
 
-    # Initialize sign to 1.0 and logabsdet to 0.0
     sign = 1.0
     logabsdet = 0.0
+    num_swaps = 0
 
-    # Get the starting pointer for this matrix
-    A_mat = A_input + pid * M * stride_a
+    A_mat = A_input + pid * n * stride_a
     sign_out_mat = sign_out + pid * stride_sign
     logabsdet_out_mat = logabsdet_out + pid * stride_logabsdet
-    LU_out_mat = LU_out + pid * stride_lu
+    LU_out_mat = LU_out + pid * n * stride_lu
+    pivots_out_mat = pivots_out + pid * stride_pivots
 
-    # Gaussian elimination
-    for k in range(1, n):
-        # Get pivot element
-        pivot = tl.load(A_mat + (k - 1) * stride_a + (k - 1)).to(tl.float32)
-        pivot_abs = tl.abs(pivot)
+    for k in range(n):
+        # --- Find pivot: row with max |A[i,k]| for i in [k, n-1] ---
+        pivot_row = k
+        pivot_max = tl.abs(tl.load(A_mat + k * stride_a + k).to(tl.float32))
+        for i in range(k + 1, n):
+            val = tl.abs(tl.load(A_mat + i * stride_a + k).to(tl.float32))
+            if val > pivot_max:
+                pivot_max = val
+                pivot_row = i
 
-        # Skip if pivot is zero (singular matrix)
-        if pivot_abs > 1e-10:
-            # Do elimination for rows below
-            for i in range(k, n):
-                # Compute multiplier
-                a_ik = tl.load(A_mat + i * stride_a + (k - 1)).to(tl.float32)
-                factor = a_ik / pivot
+        # Store pivot index (1-based, int32)
+        tl.store(pivots_out_mat + k, pivot_row + 1)
 
-                # Update remaining columns
-                for j in range(k, n):
-                    a_ij = tl.load(A_mat + i * stride_a + j).to(tl.float32)
-                    a_kj = tl.load(A_mat + (k - 1) * stride_a + j).to(tl.float32)
-                    new_val = a_ij - factor * a_kj
-                    tl.store(
-                        A_mat + i * stride_a + j,
-                        new_val.to(A_mat.dtype.element_ty),
-                    )
+        # --- Swap rows if pivot row differs from k ---
+        if pivot_row != k:
+            for j in range(n):
+                tmp_k = tl.load(A_mat + k * stride_a + j)
+                tmp_p = tl.load(A_mat + pivot_row * stride_a + j)
+                tl.store(A_mat + pivot_row * stride_a + j, tmp_k)
+                tl.store(A_mat + k * stride_a + j, tmp_p)
+            sign = -sign
+            num_swaps += 1
 
-    # Compute logabsdet from diagonal elements
+        # --- Eliminate below row k ---
+        pivot = tl.load(A_mat + k * stride_a + k).to(tl.float32)
+        for i in range(k + 1, n):
+            a_ik = tl.load(A_mat + i * stride_a + k).to(tl.float32)
+            factor = a_ik / pivot
+            tl.store(A_mat + i * stride_a + k, factor.to(A_mat.dtype.element_ty))
+
+            for j in range(k + 1, n):
+                a_ij = tl.load(A_mat + i * stride_a + j).to(tl.float32)
+                a_kj = tl.load(A_mat + k * stride_a + j).to(tl.float32)
+                new_val = a_ij - factor * a_kj
+                tl.store(
+                    A_mat + i * stride_a + j,
+                    new_val.to(A_mat.dtype.element_ty),
+                )
+
+    # --- Compute sign and logabsdet from U diagonal ---
+    is_singular = False
     for i in range(n):
         diag = tl.load(A_mat + i * stride_a + i).to(tl.float32)
         diag_abs = tl.abs(diag)
 
-        # Handle near-zero diagonal elements (singular matrix)
-        is_singular = diag_abs < 1e-10
-        diag_abs = tl.where(is_singular, 1.0, diag_abs)
-        sign = tl.where(is_singular, 0.0, sign)
+        # Detect singular (near-zero diagonal)
+        if diag_abs < 1e-10:
+            is_singular = True
 
-        # Update sign based on diagonal element
-        diag_sign = tl.where(diag > 0, 1.0, tl.where(diag < 0, -1.0, 0.0))
-        sign = sign * diag_sign
+        # Clamp away from zero so log() is safe
+        diag_abs = tl.maximum(diag_abs, 1e-300)
 
-        # Add to logabsdet
-        logabsdet = logabsdet + tl.log(diag_abs)
+        # Accumulate sign from diagonal element sign
+        if diag < 0.0:
+            sign = -sign
 
-    # Copy the LU decomposition to output
+        logabsdet = logabsdet + tl.log(diag_abs).to(tl.float32)
+
+    # Handle singular: sign=0, logabsdet=-inf
+    if is_singular:
+        sign = 0.0
+        logabsdet = float("-inf")
+
+    # --- Copy LU to output ---
     for i in range(n):
         for j in range(n):
             val = tl.load(A_mat + i * stride_a + j)
@@ -105,27 +124,27 @@ def slogdet_kernel(
 def slogdet(A):
     """
     Compute the sign and natural logarithm of the absolute value of the determinant
-    of a square matrix using Gaussian elimination without pivoting.
+    of a square matrix using LU decomposition with partial pivoting.
 
-    Note: This implementation does not perform partial pivoting. Matrices that
-    require row swaps (e.g., with a zero or near-zero leading pivot) will be
-    incorrectly reported as singular. For well-conditioned random matrices the
-    results match PyTorch within the test tolerance.
+    At each step the kernel selects the row with the largest absolute value in the
+    pivot column, swaps rows as needed, and performs Gaussian elimination.  The
+    returned sign and logabsdet match PyTorch for well-conditioned and singular
+    inputs (including matrices that require row swaps), and the pivots output
+    contains valid 1-based pivot indices.
 
     Args:
         A: tensor of shape (*, n, n) where * is zero or more batch dimensions.
 
     Returns:
         A tuple (sign, logabsdet, LU, pivots) where:
-        - sign has the same dtype as A
-        - logabsdet is always real-valued
-        - LU is the LU decomposition
-        - pivots is the pivot indices (not computed in this implementation)
+        - sign has the same shape and dtype as the batch dimensions
+        - logabsdet is real-valued with the same shape as the batch dimensions
+        - LU is the LU decomposition, same shape and dtype as A
+        - pivots is an int32 tensor of shape (*, n) with 1-based pivot indices
     """
     logger.debug("GEMS slogdet")
     assert A.dim() >= 2, "Input must be at least 2D"
     assert A.shape[-1] == A.shape[-2], "Input must be square"
-    # linalg.slogdet only supports float32/float64 on CUDA
     assert A.dtype in (
         torch.float32,
         torch.float64,
@@ -137,14 +156,11 @@ def slogdet(A):
     for dim in batch_shape:
         batch_size *= dim
 
-    # Output tensors
     sign = torch.empty(batch_shape, dtype=A.dtype, device=A.device)
     logabsdet = torch.empty(batch_shape, dtype=A.dtype, device=A.device)
     LU = torch.empty(A.shape, dtype=A.dtype, device=A.device)
-    # pivots is not computed in this implementation, return a dummy tensor
-    pivots = torch.empty(batch_shape, dtype=torch.int32, device=A.device)
+    pivots = torch.empty(batch_shape + (n,), dtype=torch.int32, device=A.device)
 
-    # Handle empty batch
     if batch_size == 0:
         return (
             torch.zeros_like(sign),
@@ -153,20 +169,15 @@ def slogdet(A):
             torch.zeros_like(pivots),
         )
 
-    # Make a copy of input to avoid modifying the original
     A_copy = A.clone()
 
-    # Get stride for batch
     stride_a = A_copy.stride(-2)
     stride_sign = sign.stride(-1) if sign.dim() > 0 else 0
     stride_logabsdet = logabsdet.stride(-1) if logabsdet.dim() > 0 else 0
     stride_lu = LU.stride(-2)
+    stride_pivots = pivots.stride(-1) if pivots.dim() > 0 else n
 
-    # Launch kernel
     grid = (batch_size,)
-
-    # Choose block size based on matrix size
-    block_size = 32 if n <= 32 else 64
 
     with torch_device_fn.device(A.device):
         slogdet_kernel[grid](
@@ -176,27 +187,23 @@ def slogdet(A):
             LU,
             pivots,
             n,
-            A_copy.shape[-2],
             stride_a,
             stride_sign,
             stride_logabsdet,
             stride_lu,
-            block_size,
+            stride_pivots,
         )
 
     return sign, logabsdet, LU, pivots
 
 
-# Wrapper for use with torch.linalg.slogdet interface
 def linalg_slogdet(A):
     """
     Wrapper that matches torch.linalg.slogdet interface.
-    Returns only (sign, logabsdet) named tuple.
+    Returns a named tuple (sign, logabsdet).
     """
     sign, logabsdet, LU, pivots = slogdet(A)
 
-    # Return as named tuple like torch.linalg.slogdet
-    # Create a simple named tuple-like object
     class SlogdetResult:
         def __init__(self, sign, logabsdet):
             self.sign = sign
@@ -220,7 +227,5 @@ def linalg_slogdet(A):
 
 
 def slogdet_(A):
-    """
-    In-place version of slogdet (not supported, raises error).
-    """
+    """In-place version (not supported)."""
     raise NotImplementedError("In-place slogdet is not supported")
