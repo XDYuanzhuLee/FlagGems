@@ -6052,6 +6052,29 @@ ops:
       - DSA
     stages:
       - beta: '5.0'
+  - id: special_gammainc
+    description: |
+      Computes the regularized lower incomplete gamma function P(a, x) element-wise.
+    for:
+      - special.gammainc
+    labels:
+      - aten
+      - KernelGen
+    kind:
+      - Math
+    stages:
+      - alpha: '5.1'
+  - id: special_gammainc_out
+    description: A variant of `special_gammainc()` with output saved to provided `out`.
+    for:
+      - special.gammainc.out
+    labels:
+      - aten
+      - KernelGen
+    kind:
+      - Math
+    stages:
+      - alpha: '5.1'
   - id: special_i0e
     description: |
       Computes the exponentially scaled zeroth order modified Bessel function
