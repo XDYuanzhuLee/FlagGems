@@ -54,6 +54,7 @@ def test_rnn_relu(seq_len, batch_size, input_size, hidden_size, dtype, batch_fir
     utils.gems_assert_close(res_out[1], ref_out[1], dtype)
 
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="Triton kernel is CUDA-only")
 @pytest.mark.rnn_relu_direct_wrapper
 @pytest.mark.parametrize("batch_first", [False, True])
 @pytest.mark.parametrize("input_size", [8, 16])
@@ -105,6 +106,7 @@ def test_rnn_relu_direct_wrapper(
     utils.gems_assert_close(hidden, ref_out[1], dtype, atol=atol)
 
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="Triton kernel is CUDA-only")
 @pytest.mark.rnn_relu_direct_backward
 def test_rnn_relu_direct_backward():
     """Direct wrapper backward: compare gradients against native PyTorch recomputation."""
@@ -154,6 +156,7 @@ def test_rnn_relu_direct_backward():
         torch.testing.assert_close(pg.grad, pr.grad)
 
 
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="Triton kernel is CUDA-only")
 @pytest.mark.rnn_relu_large_hidden
 @pytest.mark.parametrize("hidden_size", [128, 256, 512])
 def test_rnn_relu_large_hidden(hidden_size):
