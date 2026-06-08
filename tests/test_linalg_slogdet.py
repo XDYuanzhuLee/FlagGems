@@ -37,3 +37,39 @@ def test_linalg_slogdet(shape, dtype):
     # pivoting accumulates floating point error, especially for larger matrices.
     # Uses the same atol as test_svd.py for consistency with other matrix decompositions.
     utils.gems_assert_close(res_out.logabsdet, ref_out.logabsdet, dtype, atol=2e-3)
+
+
+@pytest.mark.linalg_slogdet
+@pytest.mark.xfail(
+    reason=(
+        "Gaussian elimination without pivoting cannot handle matrices with "
+        "zero leading pivot. A permutation matrix that swaps the first row "
+        "has A[0,0]=0, which the kernel treats as singular even though the "
+        "matrix is non-singular (det=-1)."
+    ),
+    strict=True,
+)
+def test_linalg_slogdet_zero_leading_pivot():
+    """Targeted test: permutation matrix with zero leading pivot.
+
+    This matrix is non-singular (det=-1) but the current Gaussian elimination
+    kernel without pivoting reads A[0,0]=0 as the first pivot and skips
+    elimination, incorrectly reporting sign=0. PyTorch's LU decomposition with
+    partial pivoting handles this correctly.
+    """
+    # 3x3 permutation matrix that swaps rows 0 and 1
+    A = torch.tensor(
+        [[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]],
+        dtype=torch.float32,
+        device=flag_gems.device,
+    )
+
+    ref_A = utils.to_reference(A)
+    ref_out = torch.linalg.slogdet(ref_A)
+
+    with flag_gems.use_gems():
+        res_out = torch.linalg.slogdet(A)
+
+    # PyTorch reference: sign=-1, logabsdet=0 for this permutation matrix
+    utils.gems_assert_close(res_out.sign, ref_out.sign, torch.float32)
+    utils.gems_assert_close(res_out.logabsdet, ref_out.logabsdet, torch.float32)

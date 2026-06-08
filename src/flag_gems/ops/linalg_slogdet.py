@@ -29,8 +29,13 @@ def slogdet_kernel(
     BLOCK_SIZE: tl.constexpr,
 ):
     """
-    Compute slogdet for square matrices using Gaussian elimination.
+    Compute slogdet for square matrices using Gaussian elimination without pivoting.
     Each program handles one matrix in the batch.
+
+    Note: This kernel does not implement partial pivoting. It uses the diagonal
+    element A[k,k] as the pivot at each step. Matrices that require row swaps
+    (e.g., with a zero or near-zero leading pivot) will be incorrectly reported
+    as singular.
     """
     # Get the matrix index (batch index)
     pid = tle.program_id(0)
@@ -100,7 +105,12 @@ def slogdet_kernel(
 def slogdet(A):
     """
     Compute the sign and natural logarithm of the absolute value of the determinant
-    of a square matrix.
+    of a square matrix using Gaussian elimination without pivoting.
+
+    Note: This implementation does not perform partial pivoting. Matrices that
+    require row swaps (e.g., with a zero or near-zero leading pivot) will be
+    incorrectly reported as singular. For well-conditioned random matrices the
+    results match PyTorch within the test tolerance.
 
     Args:
         A: tensor of shape (*, n, n) where * is zero or more batch dimensions.
