@@ -4203,6 +4203,17 @@ ops:
       - NeuralNetwork
     stages:
       - stable: '2.2'
+  - id: pdist_backward
+    description: Computes the gradient of pairwise distance computation.
+    for:
+      - _pdist_backward
+    labels:
+      - aten
+      - KernelGen
+    kind:
+      - Math
+    stages:
+      - alpha: '5.1'
   - id: renorm
     description: >
       Returns a tensor where each sub-tensor along the given dimension
