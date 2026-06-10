@@ -6063,7 +6063,7 @@ ops:
     kind:
       - Math
     stages:
-      - alpha: '5.1'
+      - alpha: '5.3'
   - id: special_gammainc_out
     description: A variant of `special_gammainc()` with output saved to provided `out`.
     for:
@@ -6074,7 +6074,7 @@ ops:
     kind:
       - Math
     stages:
-      - alpha: '5.1'
+      - alpha: '5.3'
   - id: special_i0e
     description: |
       Computes the exponentially scaled zeroth order modified Bessel function
