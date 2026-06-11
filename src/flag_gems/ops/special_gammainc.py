@@ -19,6 +19,8 @@ import torch
 import triton
 import triton.language as tl
 
+from flag_gems.utils import tl_extra_shim
+
 logger = logging.getLogger(__name__)
 
 
@@ -37,31 +39,35 @@ def gammainc_kernel(a_ptr, x_ptr, out_ptr, n_elements, BLOCK_SIZE: tl.constexpr)
     x_f32 = x.to(tl.float32)
 
     # Handle edge cases
-    # If a <= 0 or x <= 0, return nan
-    result = tl.where((a_f32 > 0.0) & (x_f32 > 0.0), 0.0, float("nan"))
+    # P(a, 0) = 0 for a > 0; NaN for a <= 0 or x < 0
+    result = tl.where((a_f32 > 0.0) & (x_f32 >= 0.0), 0.0, float("nan"))
+    x_is_zero = x_f32 == 0.0
 
-    # Regularized lower incomplete gamma function P(a, x)
+    # Regularized lower incomplete gamma function P(a, x) for x > 0
     # Using series expansion for small x and continued fraction for large x
 
     # Determine which method to use based on x and a
     # Series expansion is better when x < a + 1
     use_series = x_f32 < (a_f32 + 1.0)
 
-    # For series expansion: P(a, x) = e^(-x) * x^a * sum(n=0..inf, x^n / (a*(a+1)*...*(a+n)))
-    # We limit to a reasonable number of iterations
-    # Series approximation works well for small x
-    # Use up to 200 terms for series expansion
+    # Series expansion: P(a, x) = exp(-x) * x^a * sum_{n=0} x^n / Gamma(a+n+1)
+    # with term recurrence: t_0 = 1/Gamma(a+1), t_n = t_{n-1} * x / (a+n)
+    # Implemented via: sum_n starting from 1/a, then divide by Gamma(a) at the end.
+    # sum = Gamma(a) * sum_{n=0} x^n / Gamma(a+n+1) = sum_{n=0} x^n / ((a)_n * a)
+    # where (a)_n = a*(a+1)*...*(a+n-1) is the rising factorial.
+    # So series_result = exp(-x) * x^a * sum / Gamma(a)
     series_sum = 0.0
     term = 1.0 / a_f32
     series_sum = term
     for i in range(1, 200):
         term = term * x_f32 / (a_f32 + tl.cast(i, tl.float32))
         series_sum = series_sum + term
-        # Check for convergence
         if tl.abs(term) < tl.abs(series_sum) * 1e-10:
             break
 
-    series_result = tl.exp(-x_f32) * tl.pow(x_f32, a_f32) * series_sum
+    # Divide by Gamma(a) to get the regularized value P(a, x)
+    log_gamma_a = tl_extra_shim.lgamma(a_f32)
+    series_result = tl.exp(-x_f32 + a_f32 * tl.log(x_f32) - log_gamma_a) * series_sum
 
     # For continued fraction: use Lentz's method
     # This is more stable for large x
@@ -83,6 +89,10 @@ def gammainc_kernel(a_ptr, x_ptr, out_ptr, n_elements, BLOCK_SIZE: tl.constexpr)
     frac_result = tl.where(frac_result < 0.0, 0.0, frac_result)
 
     # Combine results
+    # For a > 0 and x > 0: pick series or continued fraction based on size
+    # For a > 0 and x == 0: P(a, 0) = 0 (already set in result)
+    # The continued fraction path uses a first-order asymptotic approximation;
+    # a full Lentz's implementation would be needed for high accuracy at large x.
     result = tl.where(
         (a_f32 > 0.0) & (x_f32 > 0.0),
         tl.where(use_series, series_result, frac_result),
