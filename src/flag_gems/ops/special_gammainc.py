@@ -74,7 +74,7 @@ def gammainc_kernel(a_ptr, x_ptr, out_ptr, n_elements, BLOCK_SIZE: tl.constexpr)
     #
     # CF = b_0 + a_1/(b_1 + a_2/(b_2 + ...))
     #   b_0 = x + 1 - a
-    #   a_n = n(n - a),  b_n = x + 2n + 1 - a   (n >= 1)
+    #   a_n = n(a - n),  b_n = x + 2n + 1 - a   (n >= 1)
     # Then Q = e^{-x} * x^a / (Gamma(a) * CF) and P = 1 - Q.
     tiny = 1e-30
     b0 = x_f32 + 1.0 - a_f32
@@ -83,7 +83,7 @@ def gammainc_kernel(a_ptr, x_ptr, out_ptr, n_elements, BLOCK_SIZE: tl.constexpr)
     D_val = 0.0 * x_f32
     for i_val in range(1, 300):
         i_f = tl.cast(i_val, tl.float32)
-        an = i_f * (i_f - a_f32)
+        an = i_f * (a_f32 - i_f)
         bn = x_f32 + 2.0 * i_f + 1.0 - a_f32
 
         D_val = bn + an * D_val
