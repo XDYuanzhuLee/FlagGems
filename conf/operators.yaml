@@ -6716,7 +6716,7 @@ ops:
     kind:
       - NeuralNetwork
     stages:
-      - alpha: '5.3'
+      - alpha: '5.4'
   - id: upsample_linear1d
     description: |
       Upsamples the `input`, using linear mode.
