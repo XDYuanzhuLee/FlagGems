@@ -6613,7 +6613,7 @@ ops:
     kind:
       - Tensor
     stages:
-      - beta: '5.1'
+      - alpha: '5.4'
   - id: uniform_
     description: Fills `self` tensor with numbers sampled from the continuous uniform distribution.
     for:
