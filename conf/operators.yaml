@@ -2219,6 +2219,7 @@ ops:
       - expm1_
     labels:
       - aten
+      - KernelGen
     kind:
       - Math
     stages:

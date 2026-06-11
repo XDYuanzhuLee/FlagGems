@@ -7,13 +7,7 @@ from packaging import version
 from flag_gems import testing  # noqa: F401
 from flag_gems import runtime
 from flag_gems.config import aten_patch_list, resolve_user_setting
-from flag_gems.experimental_ops import *  # noqa: F403
-from flag_gems.fused import *  # noqa: F403
 from flag_gems.logging_utils import setup_flaggems_logging, teardown_flaggems_logging
-from flag_gems.modules import *  # noqa: F403
-from flag_gems.ops import *  # noqa: F403
-from flag_gems.patches import *  # noqa: F403
-from flag_gems.patches import patch_empty_vllm  # noqa: F401
 from flag_gems.runtime import flagtune
 from flag_gems.runtime.backend import SpecOpRegistrar
 from flag_gems.runtime.op_registrar import GeneralOpRegistrar
@@ -21,6 +15,13 @@ from flag_gems.runtime.op_registrar import GeneralOpRegistrar
 __version__ = "5.0.2"
 device = runtime.device.name
 vendor_name = runtime.device.vendor_name
+from flag_gems.experimental_ops import *  # noqa: F403, E402
+from flag_gems.fused import *  # noqa: F403, E402
+from flag_gems.modules import *  # noqa: F403, E402
+from flag_gems.ops import *  # noqa: F403, E402
+from flag_gems.patches import *  # noqa: F403, E402
+from flag_gems.patches import patch_empty_vllm  # noqa: F401, E402
+
 backend_info = runtime.device
 aten_lib = torch.library.Library("aten", "IMPL")
 
