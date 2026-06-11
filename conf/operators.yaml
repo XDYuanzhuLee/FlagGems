@@ -5315,6 +5315,17 @@ ops:
     stages:
       - alpha: '5.0'
       - beta: '5.3'
+  - id: replication_pad3d_backward
+    description: Computes the gradient of `replication_pad3d`.
+    for:
+      - replication_pad3d_backward
+    labels:
+      - aten
+      - KernelGen
+    kind:
+      - NeuralNetwork
+    stages:
+      - alpha: '5.3'
   - id: reshape_and_cache
     description: Store the key/value token states into the pre-allcated kv_cache buffers of paged attention.
     for:
