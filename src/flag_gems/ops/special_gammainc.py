@@ -69,30 +69,40 @@ def gammainc_kernel(a_ptr, x_ptr, out_ptr, n_elements, BLOCK_SIZE: tl.constexpr)
     log_gamma_a = tl_extra_shim.lgamma(a_f32)
     series_result = tl.exp(-x_f32 + a_f32 * tl.log(x_f32) - log_gamma_a) * series_sum
 
-    # For continued fraction: use Lentz's method
-    # This is more stable for large x
-    # P(a, x) = e^(-x) * x^a / Gamma(a) * (1 / (x + 1 - a + ...))
-    # Simplified: use a reasonable approximation for large x
+    # Lentz's continued fraction for Q(a,x) = Gamma(a,x)/Gamma(a)
+    # for the large-x regime (x >= a + 1).
+    #
+    # CF = b_0 + a_1/(b_1 + a_2/(b_2 + ...))
+    #   b_0 = x + 1 - a
+    #   a_n = n(n - a),  b_n = x + 2n + 1 - a   (n >= 1)
+    # Then Q = e^{-x} * x^a / (Gamma(a) * CF) and P = 1 - Q.
+    tiny = 1e-30
+    b0 = x_f32 + 1.0 - a_f32
+    f_val = b0
+    C_val = b0
+    D_val = 0.0 * x_f32
+    for i_val in range(1, 300):
+        i_f = tl.cast(i_val, tl.float32)
+        an = i_f * (i_f - a_f32)
+        bn = x_f32 + 2.0 * i_f + 1.0 - a_f32
 
-    # For large x, use asymptotic approximation: P(a, x) ~ 1 - e^(-x) * x^(a-1) * (1 + (1-a)/x + ...)
-    # Actually, for the upper incomplete gamma Q(a, x) ~ e^(-x) * x^(a-1) * (1 + (a-1)/x + ...)
-    # And P(a, x) = 1 - Q(a, x)
+        D_val = bn + an * D_val
+        D_val = tl.where(tl.abs(D_val) < tiny, tiny, D_val)
 
-    # Use a simpler approximation for large x
-    # P(a, x) ≈ 1 when x >> a
-    # Approximation using the complement for large x
-    exp_neg_x = tl.exp(-x_f32)
-    upper_approx = exp_neg_x * tl.pow(x_f32, a_f32 - 1.0)
-    frac_result = 1.0 - upper_approx
-    # Clamp to [0, 1] for valid probability
-    frac_result = tl.where(frac_result > 1.0, 1.0, frac_result)
-    frac_result = tl.where(frac_result < 0.0, 0.0, frac_result)
+        C_val = bn + an / C_val
+        C_val = tl.where(tl.abs(C_val) < tiny, tiny, C_val)
+
+        D_val = 1.0 / D_val
+        delta = C_val * D_val
+        f_val = f_val * delta
+
+    log_gamma_a = tl_extra_shim.lgamma(a_f32)
+    log_q = a_f32 * tl.log(x_f32) - x_f32 - log_gamma_a - tl.log(f_val)
+    q_val = tl.exp(log_q)
+    q_val = tl.where(q_val > 1.0, 1.0, tl.where(q_val < 0.0, 0.0, q_val))
+    frac_result = 1.0 - q_val
 
     # Combine results
-    # For a > 0 and x > 0: pick series or continued fraction based on size
-    # For a > 0 and x == 0: P(a, 0) = 0 (already set in result)
-    # The continued fraction path uses a first-order asymptotic approximation;
-    # a full Lentz's implementation would be needed for high accuracy at large x.
     result = tl.where(
         (a_f32 > 0.0) & (x_f32 > 0.0),
         tl.where(use_series, series_result, frac_result),
