@@ -6529,6 +6529,31 @@ ops:
     stages:
       - beta: '5.0'
       - stable: '5.3'
+  - id: special_erfc
+    description: |
+      Computes the complementary error function for each element of the input tensor.
+    for:
+      - special.erfc
+    labels:
+      - aten
+      - pointwise
+      - KernelGen
+    kind:
+      - Math
+    stages:
+      - alpha: '5.4'
+  - id: erfc_
+    description: In-place version of `special_erfc`.
+    for:
+      - erfc_
+    labels:
+      - aten
+      - pointwise
+      - KernelGen
+    kind:
+      - Math
+    stages:
+      - alpha: '5.4'
   - id: split_with_sizes_copy
     description: |
       Splits a tensor into sub-tensors along a given dimension,
