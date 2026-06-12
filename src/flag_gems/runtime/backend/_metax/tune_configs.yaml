@@ -1366,3 +1366,14 @@ polar:
   - 1
   - 2
   - 4
+
+max_unpool3d:
+- META:
+    BLOCK_SIZE: 1024
+  num_warps: 4
+- META:
+    BLOCK_SIZE: 2048
+  num_warps: 4
+- META:
+    BLOCK_SIZE: 4096
+  num_warps: 8
