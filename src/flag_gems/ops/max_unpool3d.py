@@ -157,9 +157,8 @@ def max_unpool3d_kernel(
         n * stride_on + c * stride_oc + od * stride_od + oh * stride_oh + ow * stride_ow
     )
 
-    # Store the value at the computed output position using atomic add
-    # to handle potential conflicts (multiple pooled positions may map to same output)
-    tl.atomic_add(output_ptr + output_offset, value, mask=mask)
+    # Store the value at the computed output position
+    tl.store(output_ptr + output_offset, value, mask=mask)
 
 
 def max_unpool3d(
