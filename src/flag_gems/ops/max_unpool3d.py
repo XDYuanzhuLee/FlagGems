@@ -22,7 +22,6 @@ import triton
 import triton.language as tl
 
 from flag_gems.runtime import torch_device_fn
-from flag_gems.utils import libentry
 from flag_gems.utils import triton_lang_extension as tle
 
 logger = logging.getLogger(__name__)
@@ -163,7 +162,6 @@ def max_unpool3d_kernel(
     tl.atomic_add(output_ptr + output_offset, value, mask=mask)
 
 
-@libentry()
 def max_unpool3d(
     input: torch.Tensor,
     indices: torch.Tensor,
