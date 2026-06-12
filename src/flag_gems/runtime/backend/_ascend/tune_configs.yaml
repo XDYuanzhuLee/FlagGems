@@ -273,9 +273,10 @@ complex:
     META:
       BLOCK_SIZE: blocks
   blocks:
-  - 1024
-  - 2048
-  - 4096
+    - 1024
+    - 2048
+    - 4096
+  dtypes: ["float32"]
 
 index_select:
 - gen: true
