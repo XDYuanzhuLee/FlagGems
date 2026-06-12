@@ -181,7 +181,7 @@ def max_unpool3d(
 
     # Flatten tensors for kernel launch
     # Grid: one thread per BLOCK_SIZE elements
-    n_elements = N * input.shape[2] * input.shape[3] * input.shape[4]
+    n_elements = input.numel()
     ID, IH, IW = input.shape[2], input.shape[3], input.shape[4]
     # BLOCK_SIZE=1024 balances occupancy and memory bandwidth for typical 3D unpool sizes
     BLOCK_SIZE = 1024
