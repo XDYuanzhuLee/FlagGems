@@ -9,14 +9,14 @@ from .conftest import QUICK_MODE
 # QUICK_MODE uses float32 only for faster CI validation
 FLOAT_DTYPES = [torch.float32] if QUICK_MODE else utils.FLOAT_DTYPES
 
-# 3D shapes (N, C, D, H, W) compatible with kernel_size=2, stride=2 max_pool3d
-# These produce valid pooled sizes with D//2, H//2, W//2
+# 3D shapes (N, C, D, H, W) with all spatial dims even,
+# needed by max_unpool3d with kernel_size=2, stride=2
 UPSAMPLE_SHAPES_3D = [
     (4, 8, 32, 32, 32),
-    (3, 5, 17, 19, 23),
+    (3, 5, 16, 18, 22),
     (2, 16, 8, 64, 64),
     (12, 24, 16, 16, 16),
-    (1, 2, 63, 65, 67),
+    (1, 2, 62, 64, 66),
 ]
 
 

@@ -158,7 +158,12 @@ def max_unpool3d_kernel(
     )
 
     # Store the value at the computed output position
-    tl.store(output_ptr + output_offset, value, mask=mask)
+    # Bounds check: flat_idx decoded via OH/OW may produce coordinates
+    # outside the output tensor when original input dims are not evenly
+    # divisible by stride (e.g. ceil_mode=False MaxPool on odd-sized dims).
+    # In that case the index maps beyond the computed output_size, so skip.
+    in_bounds = (od >= 0) & (od < OD) & (oh >= 0) & (oh < OH) & (ow >= 0) & (ow < OW)
+    tl.store(output_ptr + output_offset, value, mask=mask & in_bounds)
 
 
 def max_unpool3d(
