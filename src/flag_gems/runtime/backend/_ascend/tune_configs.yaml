@@ -276,7 +276,6 @@ complex:
     - 1024
     - 2048
     - 4096
-  dtypes: ["float32"]
 
 index_select:
 - gen: true

@@ -15,10 +15,10 @@ logger = logging.getLogger(f'flag_gems.runtime._ascend.ops.{__name__.split(".")[
 @triton.autotune(configs=runtime.get_tuned_config("complex"), key=["N2"])
 @triton.jit
 def complex_kernel_flat(
-    real_ptr,  # float32/64
-    imag_ptr,  # float32/64
-    out_ptr,  # view 后的 float32/64
-    N2,  # 2 * 元素个数
+    real_ptr,
+    imag_ptr,
+    out_ptr,
+    N2,
     BLOCK_SIZE: tl.constexpr,
 ):
     pid = tl.program_id(0)
@@ -36,12 +36,17 @@ def complex_kernel_flat(
 
 
 def complex(real, imag):
-    if real.dtype == torch.float32:
-        out_dtype, base_dtype = torch.complex64, torch.float32
-    else:
-        out_dtype, base_dtype = torch.complex128, torch.float64
+    requested_out_dtype = (
+        torch.complex64 if real.dtype == torch.float32 else torch.complex128
+    )
 
-    # 1. 记录形状并展平 (解决 0 维 view 问题)
+    if real.dtype == torch.float64:
+        real = real.to(torch.float32)
+        imag = imag.to(torch.float32)
+
+    base_dtype = torch.float32
+    kernel_out_dtype = torch.complex64
+
     orig_shape = real.shape
     real_flat = real.reshape(-1).contiguous()
     imag_flat = imag.reshape(-1).contiguous()
@@ -49,15 +54,12 @@ def complex(real, imag):
     N = real_flat.numel()
     N2 = 2 * N
 
-    # 2. 分配空间并创建浮点视图 (解决 complex 指针签名问题)
-    out_flat = torch.empty(N, dtype=out_dtype, device=real.device)
+    out_flat = torch.empty(N, dtype=kernel_out_dtype, device=real.device)
     out_view = out_flat.view(base_dtype)
 
-    # 3. 设置 Grid
     def grid(meta):
         return (triton.cdiv(N2, meta["BLOCK_SIZE"]),)
 
-    # 4. 启动 Kernel
     with torch_device_fn.device(real.device):
         complex_kernel_flat[grid](
             real_flat,
@@ -66,5 +68,9 @@ def complex(real, imag):
             N2,
         )
 
-    # 5. 还原形状
-    return out_flat.reshape(orig_shape)
+    res = out_flat.reshape(orig_shape)
+
+    if res.dtype != requested_out_dtype:
+        res = res.to(requested_out_dtype)
+
+    return res
