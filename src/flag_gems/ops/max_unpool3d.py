@@ -173,9 +173,7 @@ def max_unpool3d(
 ) -> torch.Tensor:
     logger.debug("GEMS MAX_UNPOOL3D")
 
-    assert (
-        input.dtype.is_floating_point
-    ), "max_unpool3d only supports floating-point dtypes"
+    assert input.dtype.is_floating_point, "max_unpool3d only supports floating-point dtypes"  # fmt: skip
 
     # Compute output_size if not provided
     OD, OH, OW = compute_output_size(input, indices, output_size, stride, padding)
