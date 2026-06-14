@@ -25,7 +25,7 @@ logger = logging.getLogger("flag_gems." + __name__)
 __erfc = tl_extra_shim.erfc
 
 
-@pointwise_dynamic(promotion_methods=[(0, "INT_TO_FLOAT")])
+@pointwise_dynamic(promotion_methods=[(0, "DEFAULT")])
 @triton.jit
 def special_erfc_func(x):
     output = __erfc(x.to(tl.float32))
