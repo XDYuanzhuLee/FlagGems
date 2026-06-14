@@ -27,20 +27,19 @@ __erfc = tl_extra_shim.erfc
 
 @pointwise_dynamic(promotion_methods=[(0, "DEFAULT")])
 @triton.jit
-def special_erfc_func(x):
+def _erfc_kernel(x):
     output = __erfc(x.to(tl.float32))
     return output
 
 
-def erfc(x):
-    logger.debug("GEMS ERFC")
-    return special_erfc_func(x)
-
-
 def special_erfc(x):
-    return erfc(x)
+    logger.debug("GEMS SPECIAL_ERFC")
+    return _erfc_kernel(x)
+
+
+erfc = special_erfc
 
 
 def erfc_(x):
     logger.debug("GEMS ERFC_")
-    return special_erfc_func(x, out0=x)
+    return _erfc_kernel(x, out0=x)

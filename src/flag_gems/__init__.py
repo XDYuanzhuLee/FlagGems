@@ -241,6 +241,7 @@ _FULL_CONFIG = (
     ("equal", equal),
     ("erf", erf),
     ("erf_", erf_),
+    ("erfc", erfc),
     ("erfc_", erfc_),
     ("exp", exp),
     ("exp.out", exp_out),
