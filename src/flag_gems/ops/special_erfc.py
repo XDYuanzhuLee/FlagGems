@@ -22,25 +22,25 @@ from flag_gems.utils import pointwise_dynamic, tl_extra_shim
 
 logger = logging.getLogger("flag_gems." + __name__)
 
-__erfc = tl_extra_shim.erfc
+_erfc = tl_extra_shim.erfc
 
 
 @pointwise_dynamic(promotion_methods=[(0, "INT_TO_FLOAT")])
 @triton.jit
-def special_erfc_func(x):
-    output = __erfc(x.to(tl.float32))
+def _erfc_kernel(x):
+    output = _erfc(x.to(tl.float32))
     return output
 
 
-def erfc(x):
-    logger.debug("GEMS ERFC")
-    return special_erfc_func(x)
-
-
 def special_erfc(x):
-    return erfc(x)
+    logger.debug("GEMS SPECIAL_ERFC")
+    return _erfc_kernel(x)
+
+
+# Alias: torch.erfc dispatches to the same implementation
+erfc = special_erfc
 
 
 def erfc_(x):
     logger.debug("GEMS ERFC_")
-    return special_erfc_func(x, out0=x)
+    return _erfc_kernel(x, out0=x)
