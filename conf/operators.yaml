@@ -6559,12 +6559,11 @@ ops:
       - Math
     stages:
       - alpha: '5.4'
-  - id: special_logit_out
+  - id: special_logit_
     description: |
-      Returns a new tensor with the logit of the elements of input.
-      Input is clamped to [eps, 1 - eps] when eps is not None.
+      The in-place version of `special_logit()`.
     for:
-      - special.logit.out
+      - special_logit_
     labels:
       - aten
       - KernelGen
@@ -6572,11 +6571,12 @@ ops:
       - Math
     stages:
       - alpha: '5.4'
-  - id: special_logit_
+  - id: special_logit_out
     description: |
-      The in-place version of `special_logit()`.
+      Returns a new tensor with the logit of the elements of input.
+      Input is clamped to [eps, 1 - eps] when eps is not None.
     for:
-      - special_logit_
+      - special.logit.out
     labels:
       - aten
       - KernelGen

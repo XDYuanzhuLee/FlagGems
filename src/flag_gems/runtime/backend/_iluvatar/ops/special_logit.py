@@ -43,3 +43,23 @@ def logit(input: torch.Tensor, eps=None):
         # No clamp needed when eps is 0
         # Use eps=0.0 to make the kernel work
         return logit_kernel(input, 0.0)
+
+
+def logit_(input: torch.Tensor, eps=None):
+    logger.debug("GEMS_ILUVATAR LOGIT_")
+    if eps is None:
+        eps = 0.0
+    else:
+        eps = float(eps)
+        if not (0.0 <= eps <= 0.5):
+            raise ValueError("eps must be in the range [0.0, 0.5].")
+
+    if not isinstance(input, torch.Tensor):
+        raise TypeError("input must be a torch.Tensor")
+    if not input.is_floating_point():
+        raise TypeError("logit_ expected a floating point tensor as input")
+
+    if eps > 0.0:
+        return logit_kernel(input, eps, out0=input)
+    else:
+        return logit_kernel(input, 0.0, out0=input)
