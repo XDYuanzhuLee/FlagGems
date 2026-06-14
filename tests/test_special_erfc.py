@@ -28,9 +28,9 @@ def test_erfc_(shape, dtype):
     x = torch.randn(shape, dtype=dtype, device=flag_gems.device)
     ref_x = utils.to_reference(x)
     if dtype in (torch.float16, torch.bfloat16):
-        ref_out = torch.ops.aten.erfc_(ref_x.float())
-        ref_out = ref_out.to(dtype)
-        ref_x = ref_x.to(dtype)
+        ref_tmp = ref_x.float()
+        ref_out = torch.ops.aten.erfc_(ref_tmp).to(dtype)
+        ref_x.copy_(ref_out)
     else:
         ref_out = torch.ops.aten.erfc_(ref_x)
     with flag_gems.use_gems():
