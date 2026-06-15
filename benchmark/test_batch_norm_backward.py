@@ -83,6 +83,7 @@ def test_batch_norm_backward():
             )
 
     if flag_gems.vendor_name == "mthreads":
+        # mthreads only supports float32 for batch_norm_backward
         dtypes = [torch.float32]
     else:
         dtypes = consts.FLOAT_DTYPES
@@ -94,5 +95,66 @@ def test_batch_norm_backward():
         dtypes=dtypes,
     )
     bench.set_gems(flag_gems.batch_norm_backward)
+
+    bench.run()
+
+
+@pytest.mark.batch_norm_backward
+def test_batch_norm_backward_cudnn():
+    """Benchmark for batch_norm_backward (cuDNN version)."""
+
+    def batch_norm_backward_cudnn_input_fn(shape, dtype, device):
+        for forward_args in batchnorm_input_fn(shape, dtype, device):
+            (
+                inp,
+                weight,
+                bias,
+                running_mean,
+                running_var,
+                training,
+                _,
+                eps,
+                _,
+            ) = forward_args
+
+            grad_output = torch.randn_like(inp)
+            channels = weight.shape[0] if weight is not None else inp.shape[1]
+
+            if running_mean is None:
+                running_mean = torch.zeros(channels, dtype=dtype, device=device)
+            if running_var is None:
+                running_var = torch.ones(channels, dtype=dtype, device=device)
+
+            save_mean = torch.randn(channels, dtype=torch.float32, device=device)
+            save_var = torch.randn(channels, dtype=torch.float32, device=device)
+            output_mask = [True, weight is not None, bias is not None]
+            reserve = torch.empty(1, device=device)
+
+            yield (
+                grad_output,
+                inp,
+                weight,
+                running_mean,
+                running_var,
+                save_mean,
+                save_var,
+                training,  # update parameter
+                eps,
+                output_mask,
+                reserve,
+            )
+
+    if flag_gems.vendor_name == "mthreads":
+        dtypes = [torch.float32]
+    else:
+        dtypes = consts.FLOAT_DTYPES
+
+    bench = NormBenchmark(
+        input_fn=batch_norm_backward_cudnn_input_fn,
+        op_name="batch_norm_backward",
+        torch_op=torch.ops.aten.batch_norm_backward,
+        dtypes=dtypes,
+    )
+    bench.set_gems(flag_gems.batch_norm_backward_cudnn)
 
     bench.run()
