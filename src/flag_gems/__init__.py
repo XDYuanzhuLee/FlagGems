@@ -537,7 +537,7 @@ _FULL_CONFIG = (
     ("special_i0e.out", special_i0e_out),
     ("special_i1", special_i1),
     ("special_i1.out", special_i1_out),
-    ("special_shifted_chebyshev_polynomial_v", special_shifted_chebyshev_polynomial_v),
+    ("special.shifted_chebyshev_polynomial_v", special_shifted_chebyshev_polynomial_v),
     ("split_with_sizes_copy", split_with_sizes_copy),
     ("sqrt", sqrt),
     ("sqrt_", sqrt_),

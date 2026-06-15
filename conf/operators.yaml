@@ -6533,7 +6533,7 @@ ops:
     description: |
       Computes the shifted Chebyshev polynomial of the third kind V_n^*(x).
     for:
-      - special_shifted_chebyshev_polynomial_v
+      - special.shifted_chebyshev_polynomial_v
     labels:
       - aten
       - pointwise
