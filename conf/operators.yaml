@@ -864,17 +864,6 @@ ops:
       - Math
     stages:
       - stable: '2.2'
-  - id: ilshift__
-    description: Computes the in-place bitwise left shift of `self` by `other` bits.
-    for:
-      - __ilshift__.Tensor
-    labels:
-      - aten
-      - KernelGen
-    kind:
-      - Math
-    stages:
-      - alpha: '5.4'
   - id: bitwise_left_shift
     description: Computes the left arithmetic shift of `input` by `other` bits.
     for:
@@ -3260,6 +3249,17 @@ ops:
     stages:
       - beta: '5.0'
       - stable: '5.3'
+  - id: ilshift
+    description: Computes the in-place bitwise left shift of `self` by `other` bits.
+    for:
+      - __ilshift__.Tensor
+    labels:
+      - aten
+      - KernelGen
+    kind:
+      - Math
+    stages:
+      - alpha: '5.4'
   - id: index
     description: |
       Extract, access or modify specific elements, slices, or subsets of data within a tensor.
