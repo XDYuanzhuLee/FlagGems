@@ -4,7 +4,7 @@ import torch
 import flag_gems
 from flag_gems.utils import shape_utils
 
-from . import base
+from . import base, consts
 
 
 class ComplexBenchmark(base.GenericBenchmark):
@@ -29,7 +29,7 @@ def test_benchmark_complex():
         op_name="complex",
         torch_op=torch.complex,
         input_fn=_complex_input_fn,
-        dtypes=[torch.float32, torch.float64],
+        dtypes=consts.FLOAT_DTYPES,
     )
     bench.set_gems(flag_gems.complex)
     bench.run()

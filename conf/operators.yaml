@@ -1279,6 +1279,20 @@ ops:
       - NeuralNetwork
     stages:
       - beta: '5.3'
+  - id: complex
+    description: |
+      Combines real and imaginary parts into a complex tensor.
+      Returns a complex tensor where each element is real + imag * 1j.
+    for:
+      - complex
+    labels:
+      - aten
+      - KernelGen
+      - pointwise
+    kind:
+      - Math
+    stages:
+      - stable: '5.0'
   - id: concat_and_cache_mla
     description: |
       Writes the latent and RoPE value into KV cache for Multi-head Latent Attention forward case.
@@ -1291,19 +1305,6 @@ ops:
       - Attention
     stages:
       - beta: '3.0'
-  - id: complex
-    description: |
-      Combines real and imaginary parts into a complex tensor.
-      Returns a complex tensor where each element is real + imag * 1j.
-    for:
-      - complex
-    labels:
-      - aten
-      - pointwise
-    kind:
-      - Math
-    stages:
-      - stable: '5.0'
   - id: compute_global_topk_indices_and_lens
     description: |
       Converts local top-k sparse attention indices to global KV-cache indices and computes
