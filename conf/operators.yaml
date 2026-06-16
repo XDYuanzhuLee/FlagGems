@@ -791,7 +791,6 @@ ops:
   - id: batch_norm_backward
     description: The backward version of `batch_norm()`.
     for:
-      - native_batch_norm_backward
       - batch_norm_backward
     labels:
       - aten
