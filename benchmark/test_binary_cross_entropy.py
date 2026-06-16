@@ -28,11 +28,23 @@ def test_binary_cross_entropy():
     bench.run()
 
 
-@pytest.mark.binary_cross_entropy
+def binary_cross_entropy_out_input_fn(shape, dtype, device):
+    inp = torch.sigmoid(utils.generate_tensor_input(shape, dtype, device))
+    target = torch.randint(0, 2, shape, device=device).to(dtype)
+    out = torch.empty_like(inp)
+    yield inp, target, {"out": out}
+
+    if base.Config.bench_level == consts.BenchLevel.COMPREHENSIVE:
+        out_scalar = torch.empty((), device=device, dtype=dtype)
+        yield inp, target, {"reduction": "mean", "out": out_scalar}
+        yield inp, target, {"reduction": "sum", "out": out_scalar}
+
+
+@pytest.mark.binary_cross_entropy_out
 def test_binary_cross_entropy_out():
     bench = base.GenericBenchmark2DOnly(
-        op_name="binary_cross_entropy",
-        input_fn=binary_cross_entropy_input_fn,
+        op_name="binary_cross_entropy_out",
+        input_fn=binary_cross_entropy_out_input_fn,
         torch_op=torch.nn.functional.binary_cross_entropy,
         dtypes=consts.FLOAT_DTYPES,
     )

@@ -96,7 +96,7 @@ def test_binary_cross_entropy_weight(shape, dtype, reduction):
         utils.gems_assert_close(res_out, ref_out, dtype, equal_nan=True)
 
 
-@pytest.mark.binary_cross_entropy
+@pytest.mark.binary_cross_entropy_out
 @pytest.mark.parametrize("reduction", ["mean", "none", "sum"])
 @pytest.mark.parametrize("shape", utils.REDUCTION_SHAPES)
 @pytest.mark.parametrize("dtype", FLOAT_DTYPES)

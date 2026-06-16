@@ -810,18 +810,6 @@ ops:
       - Tensor
     stages:
       - beta: '5.3'
-  - id: bincount
-    description: Count the frequency of each value in an array of non-negative integers.
-    for:
-      - bincount
-    labels:
-      - aten
-      - pointwise
-      - KernelGen
-    kind:
-      - Reduction
-    stages:
-      - stable: '5.0'
   - id: binary_cross_entropy
     description: |
       Measures the binary cross entropy between the target and input probabilities,
@@ -837,6 +825,18 @@ ops:
       - NeuralNetwork
     stages:
       - alpha: '5.4'
+  - id: bincount
+    description: Count the frequency of each value in an array of non-negative integers.
+    for:
+      - bincount
+    labels:
+      - aten
+      - pointwise
+      - KernelGen
+    kind:
+      - Reduction
+    stages:
+      - stable: '5.0'
   - id: bitwise_and_scalar
     description: Computes the bitwise AND of `input` and `other` scalar.
     for:
