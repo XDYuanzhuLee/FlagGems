@@ -83,7 +83,9 @@ def test_as_strided_(shape, size_stride, dtype):
     )
 
     # Verify data is correct.
-    utils.gems_assert_close(res_out, ref_out, dtype)
+    # Inplace: inp and ref_inp are directly compared because res_out is inp and
+    # ref_out is ref_inp (both mutated in-place).
+    utils.gems_assert_close(inp, ref_inp, dtype)
 
 
 @pytest.mark.as_strided_
@@ -126,13 +128,17 @@ def test_as_strided_with_offset(shape, size_stride, storage_offset, dtype):
     )
 
     # Verify data is correct.
-    utils.gems_assert_close(res_out, ref_out, dtype)
+    # Inplace: inp and ref_inp are directly compared because res_out is inp and
+    # ref_out is ref_inp (both mutated in-place).
+    utils.gems_assert_close(inp, ref_inp, dtype)
 
 
 @pytest.mark.as_strided_
 @pytest.mark.parametrize("dtype", utils.FLOAT_DTYPES)
 def test_as_strided_inplace(dtype):
     """Test that as_strided_ is in-place and returns the original tensor."""
+    # A single fixed shape is sufficient for this dedicated inplace test;
+    # shape-only parametrization is already covered by test_as_strided_ above.
     shape = (12,)
     size = [3, 4]
     stride = [4, 1]
