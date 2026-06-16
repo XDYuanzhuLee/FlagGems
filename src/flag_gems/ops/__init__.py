@@ -59,7 +59,8 @@ from flag_gems.ops.bitwise_and import (
     bitwise_and_tensor,
     bitwise_and_tensor_,
 )
-from flag_gems.ops.bitwise_left_shift import bitwise_left_shift, bitwise_left_shift_
+from flag_gems.ops.bitwise_left_shift import bitwise_left_shift
+from flag_gems.ops.bitwise_left_shift_ import bitwise_left_shift_
 from flag_gems.ops.bitwise_not import bitwise_not, bitwise_not_
 from flag_gems.ops.bitwise_or import (
     bitwise_or_scalar,

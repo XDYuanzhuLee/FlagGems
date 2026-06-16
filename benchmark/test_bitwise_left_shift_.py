@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from . import consts
+from . import base, consts
 from .test_bitwise_left_shift import BitwiseLeftShiftBenchmark
 
 
