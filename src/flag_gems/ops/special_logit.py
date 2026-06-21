@@ -37,7 +37,7 @@ def special_logit_kernel(
     offsets = pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
     mask = offsets < n_elements
 
-    x = tl.load(x_ptr + offsets, mask=mask, other=0.0)
+    x = tl.load(x_ptr + offsets, mask=mask, other=0)
     x_f32 = x.to(tl.float32)
 
     if HAS_EPS:
@@ -61,7 +61,7 @@ def special_logit_inplace_kernel(
     offsets = pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
     mask = offsets < n_elements
 
-    x = tl.load(x_ptr + offsets, mask=mask, other=0.0)
+    x = tl.load(x_ptr + offsets, mask=mask, other=0)
     x_f32 = x.to(tl.float32)
 
     if HAS_EPS:

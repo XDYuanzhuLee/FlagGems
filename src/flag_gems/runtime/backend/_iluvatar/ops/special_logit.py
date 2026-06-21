@@ -9,7 +9,6 @@ from flag_gems.utils import pointwise_dynamic, tl_extra_shim
 logger = logging.getLogger(__name__)
 
 log = tl_extra_shim.log
-abs = tl_extra_shim.abs
 
 
 @pointwise_dynamic(is_tensor=[True, False], promotion_methods=[(0, "DEFAULT")])
