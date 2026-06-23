@@ -24,9 +24,13 @@ class BroadcastTensorsBenchmark(base.Benchmark):
 
     def get_input_iter(self, dtype) -> Generator:
         for shape in self.shapes:
-            # Produce two tensors of the same shape (no actual broadcasting needed)
-            inp1 = utils.generate_tensor_input(shape, dtype, self.device)
-            inp2 = utils.generate_tensor_input(shape, dtype, self.device)
+            # Produce two tensors with different shapes that require broadcasting
+            if len(shape) == 2:
+                inp1 = utils.generate_tensor_input((shape[0], 1), dtype, self.device)
+                inp2 = utils.generate_tensor_input((1, shape[1]), dtype, self.device)
+            else:
+                inp1 = utils.generate_tensor_input((1, shape[1], 1), dtype, self.device)
+                inp2 = utils.generate_tensor_input((shape[0], 1, shape[2]), dtype, self.device)
             yield inp1, inp2
 
 
