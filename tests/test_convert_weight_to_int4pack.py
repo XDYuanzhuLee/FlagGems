@@ -52,7 +52,8 @@ def test_convert_weight_to_int4pack(shape, innerKTiles):
     # These are different output formats, so comparison is done against a
     # Python reference implementing the same packing algorithm.
     if torch.cuda.is_available() and inp.device.type == "cuda":
-        # Verify PyTorch native is callable with uint8 input (informational)
+        # Informational: native callable probe only runs on CUDA; non-CUDA
+        # backends skip this branch entirely and rely on the reference below.
         try:
             torch._convert_weight_to_int4pack(
                 ref_inp.to(dtype=torch.uint8), innerKTiles
