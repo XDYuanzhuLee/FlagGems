@@ -52,14 +52,5 @@ def test_convert_weight_to_int4pack(shape, innerKTiles):
     # These are different output formats, so comparison is done against a
     # Python reference implementing the same packing algorithm.
 
-    # Smoke probe: call the native op on the current backend (incl. non-CUDA)
-    # so its availability is exercised on every backend. The result is
-    # discarded and any exception is swallowed.
-    try:
-        torch._convert_weight_to_int4pack(
-            ref_inp.to(dtype=torch.uint8), innerKTiles
-        )
-    except Exception:
-        pass
     ref_out = _reference_int4pack(ref_inp, innerKTiles)
     utils.gems_assert_equal(res_out, ref_out)
