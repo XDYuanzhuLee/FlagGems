@@ -44,21 +44,7 @@ def test_convert_weight_to_int4pack(shape, innerKTiles):
     with flag_gems.use_gems():
         res_out = flag_gems._convert_weight_to_int4pack(inp, innerKTiles)
 
-    # Use custom reference for accuracy validation.
-    # NOTE: PyTorch's native CUDA _convert_weight_to_int4pack expects uint8
-    # input and produces a Marlin-style tiled int32 output (shape depends on
-    # innerKTiles).  The FlagGems Triton kernel currently uses int32 input
-    # and produces a simple byte-pair-packed uint8 output of shape (M, N//2).
-    # These are different output formats, so comparison is done against a
-    # Python reference implementing the same packing algorithm.
-    if torch.cuda.is_available() and inp.device.type == "cuda":
-        # Informational: native callable probe only runs on CUDA; non-CUDA
-        # backends skip this branch entirely and rely on the reference below.
-        try:
-            torch._convert_weight_to_int4pack(
-                ref_inp.to(dtype=torch.uint8), innerKTiles
-            )
-        except RuntimeError:
-            pass
+    # Validate against a hand-written Python reference implementing the same
+    # packing: int32 input -> byte-pair-packed uint8 of shape (M, N//2).
     ref_out = _reference_int4pack(ref_inp, innerKTiles)
     utils.gems_assert_equal(res_out, ref_out)
