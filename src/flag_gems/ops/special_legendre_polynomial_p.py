@@ -25,49 +25,68 @@ from flag_gems.utils import pointwise_dynamic
 logger = logging.getLogger(__name__)
 
 
-@pointwise_dynamic(promotion_methods=[(0, "DEFAULT"), (1, "DEFAULT")])
+@pointwise_dynamic(promotion_methods=[(0, 1, "DEFAULT")])
 @triton.jit
 def special_legendre_polynomial_p_forward(x, n):
-    """Compute the Legendre polynomial P_n(x) using recurrence relation.
+    """Compute the Legendre polynomial P_n(x) using Bonnet's recurrence relation.
 
     P_0(x) = 1
     P_1(x) = x
-    P_{n+1}(x) = 2*x*P_n(x) - P_{n-1}(x)
+    (n+1) * P_{n+1}(x) = (2n+1) * x * P_n(x) - n * P_{n-1}(x)
     """
     n_val = n.to(tl.int32)
+    x_f32 = x.to(tl.float32)
+
+    # Broadcast scalar constants to the tile shape via x (pointwise_dynamic
+    # loads x as a block, so tl.full((1,), ...) / tl.zeros(1, ...) cannot
+    # broadcast against it). Same idiom as special_chebyshev_polynomial_w.
+    one = 1.0 + 0.0 * x_f32  # P_0 = 1
+    zero = 0.0 + 0.0 * x_f32  # for n < 0 -> 0
 
     # Handle n < 0 case - return 0
-    result = tl.where(n_val < 0, tl.zeros(1, dtype=x.dtype), x)
+    result = tl.where(n_val < 0, zero, x_f32)
 
     # P_0(x) = 1
-    result = tl.where(n_val == 0, tl.full((1,), 1.0, dtype=x.dtype), result)
+    result = tl.where(n_val == 0, one, result)
 
     # P_1(x) = x
-    result = tl.where(n_val == 1, x, result)
+    result = tl.where(n_val == 1, x_f32, result)
 
-    # For n > 1, use recurrence relation
-    # P_{n+1}(x) = 2*x*P_n(x) - P_{n-1}(x)
+    # For n > 1, use Bonnet's recurrence relation
+    # i * P_i(x) = (2i-1) * x * P_{i-1}(x) - (i-1) * P_{i-2}(x)
     # We compute iteratively from P_0 and P_1
-    p_prev2 = tl.full((1,), 1.0, dtype=x.dtype)  # P_0
-    p_prev1 = x  # P_1
+    p_prev2 = one  # P_0
+    p_prev1 = x_f32  # P_1
 
-    # Use a for loop to compute higher order polynomials
-    for i in range(
-        2, 256
-    ):  # Loop bound 256 covers degree up to n=255, sufficient for typical usage
+    # Loop bound 256 covers degree up to n=255, sufficient for typical usage.
+    # Use tl.static_range (not python range) so the loop is statically unrolled
+    # and the compiler can optimize, matching special_chebyshev_polynomial_w.
+    for i in tl.static_range(2, 256):
         # Only compute if n >= i
         mask = n_val >= i
-        p_curr = tl.where(mask, 2.0 * x * p_prev1 - p_prev2, p_prev1)
+        p_curr = tl.where(
+            mask,
+            ((2.0 * i - 1.0) * x_f32 * p_prev1 - (i - 1.0) * p_prev2) / i,
+            p_prev1,
+        )
         p_prev2 = tl.where(mask, p_prev1, p_prev2)
         p_prev1 = p_curr
 
     # Final result
     result = tl.where(n_val > 1, p_prev1, result)
 
-    return result
+    return result.to(x.dtype)
 
 
-def special_legendre_polynomial_p(x: torch.Tensor, n: torch.Tensor) -> torch.Tensor:
+def special_legendre_polynomial_p(x: torch.Tensor, n) -> torch.Tensor:
     logger.debug("GEMS SPECIAL_LEGENDRE_POLYNOMIAL_P")
     assert x.dtype == torch.float32, "only float32 supported"
+    # Convert scalar n to tensor so pointwise_dynamic's tensor check passes.
+    # torch.special.legendre_polynomial_p(x, n) with a python int dispatches to
+    # the n_scalar overload, which passes n as a Scalar; pointwise_dynamic
+    # treats every declared input as a tensor (is_tensor defaults to all True),
+    # so a scalar n trips check_tensor_attributes. Same idiom as
+    # special_chebyshev_polynomial_w.
+    if not isinstance(n, torch.Tensor):
+        n = torch.tensor(n, dtype=torch.int64, device=x.device)
     return special_legendre_polynomial_p_forward(x, n)

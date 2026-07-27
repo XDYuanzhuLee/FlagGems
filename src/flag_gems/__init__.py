@@ -739,7 +739,6 @@ _FULL_CONFIG = (
     ("special_chebyshev_polynomial_v", special_chebyshev_polynomial_v),
     ("special_airy_ai", special_airy_ai),
     ("special_airy_ai.out", special_airy_ai_out),
-    ("special_chebyshev_polynomial_v", special_chebyshev_polynomial_v),
     ("special_chebyshev_polynomial_w", special_chebyshev_polynomial_w),
     ("special_chebyshev_polynomial_w_out", special_chebyshev_polynomial_w_out),
     ("special_digamma", special_digamma),
