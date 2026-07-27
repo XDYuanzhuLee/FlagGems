@@ -233,9 +233,8 @@ def _native_batch_norm_legit_functional(
             is_train=training,
         )
 
-    # Convert inv_std to variance for the return value
-    # inv_std = rsqrt(var + eps), so save_var = 1/inv_std^2 - eps = var
-    save_var = 1.0 / (inv_std * inv_std) - eps
+    # PyTorch's save_var is in fact inv_std = 1/sqrt(var + eps), not the variance.
+    save_var = inv_std
 
     return (
         output.view_as(input),
