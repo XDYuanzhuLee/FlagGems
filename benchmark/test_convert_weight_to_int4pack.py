@@ -34,11 +34,6 @@ class ConvertWeightBenchmark(base.Benchmark):
         for shape in self.shapes:
             yield from self.input_fn(shape, cur_dtype, self.device)
 
-    def get_tflops(self, op, *args, **kwargs):
-        # TFLOPS doesn't make much sense for this operation
-        # Return a placeholder
-        return 0
-
 
 @pytest.mark.convert_weight_to_int4pack
 def test_convert_weight_to_int4pack():
