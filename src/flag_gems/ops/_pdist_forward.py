@@ -214,11 +214,10 @@ def _pdist_forward_general_kernel(
         )
 
         diff = tl.abs(xi - xj)
-        sum_pow += tl.sum(tl.pow(diff, p_val))
+        powered = tl.where(diff > 0.0, tl.exp(p_val * tl.log(diff)), 0.0)
+        sum_pow += tl.sum(powered)
 
-    safe_sum = tl.where(sum_pow == 0.0, 1.0, sum_pow)
-    dist = tl.exp(tl.log(safe_sum) / p_val)
-    dist = tl.where(sum_pow == 0.0, 0.0, dist)
+    dist = tl.where(sum_pow > 0.0, tl.exp(tl.log(sum_pow) / p_val), 0.0)
 
     tl.store(out_ptr + pid, dist)
 
