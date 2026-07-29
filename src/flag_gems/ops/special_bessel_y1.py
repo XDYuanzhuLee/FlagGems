@@ -26,6 +26,12 @@ logger = logging.getLogger(__name__)
 @pointwise_dynamic(promotion_methods=[(0, "INT_TO_FLOAT")])
 @triton.jit
 def special_bessel_y1_func(x):
+    # bessel_y1 oscillates sharply near its zeros, so float32 truncation cannot
+    # meet float64's rtol=1e-7. Route by input dtype: keep double precision for
+    # float64, otherwise compute in float32.
+    inp_dtype = x.type.element_ty
+    if inp_dtype == tl.float64:
+        return tl_extra_shim.y1(x.to(tl.float64)).to(x.dtype)
     return tl_extra_shim.y1(x.to(tl.float32)).to(x.dtype)
 
 
