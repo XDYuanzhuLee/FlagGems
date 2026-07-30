@@ -55,7 +55,7 @@ __all__ = [
     "full_like",
     "group_norm",
     "hadamard_transform",
-    "special_hermite_polynomial_he ",
+    "special_hermite_polynomial_he",
     "index",
     "index_put",
     "index_put_",
