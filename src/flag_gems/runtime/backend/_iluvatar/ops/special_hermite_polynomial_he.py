@@ -196,11 +196,11 @@ def special_hermite_polynomial_he(x, n):
 
     # Handle different input types
     if isinstance(x, torch.Tensor) and isinstance(n, torch.Tensor):
-        return hermite_he_func(x, n)
+        return special_hermite_polynomial_he_func(x, n)
     elif isinstance(x, torch.Tensor):
-        return hermite_he_func_tensor_scalar(x, n)
+        return special_hermite_polynomial_he_func_tensor_scalar(x, n)
     elif isinstance(n, torch.Tensor):
-        return hermite_he_func_scalar_tensor(x, n)
+        return special_hermite_polynomial_he_func_scalar_tensor(x, n)
     else:
         # Both scalar - use torch directly
         result = torch.special.hermite_polynomial_he(
