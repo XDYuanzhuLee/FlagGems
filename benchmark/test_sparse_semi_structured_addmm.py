@@ -5,7 +5,6 @@ import flag_gems
 from flag_gems.ops._sparse_semi_structured_addmm import (
     _sparse_semi_structured_addmm_ref,
 )
-from flag_gems.utils.device_info import get_device_capability
 
 from . import base, consts
 
@@ -16,15 +15,6 @@ SPARSE_SEMI_STRUCTURED_ADDMM_SHAPES = [
     (256, 128),
     (512, 512),
 ]
-
-
-def _select_torch_op():
-    # The native aten op is only available on compute capability 8.x; on other
-    # architectures fall back to the pure-PyTorch reference implementation.
-    major, _ = get_device_capability()
-    if major == 8:
-        return torch.ops.aten._sparse_semi_structured_addmm
-    return _sparse_semi_structured_addmm_ref
 
 
 class SparseSemiStructuredAddmmBenchmark(base.Benchmark):
@@ -48,7 +38,12 @@ class SparseSemiStructuredAddmmBenchmark(base.Benchmark):
 def test_sparse_semi_structured_addmm():
     bench = SparseSemiStructuredAddmmBenchmark(
         op_name="sparse_semi_structured_addmm",
-        torch_op=_select_torch_op(),
+        # The native aten op uses a different input format and a different 
+        # algorithm than the Gems implementation, so the native op cannot 
+        # serve as an equivalent baseline. Use the pure-PyTorch reference 
+        # implementation, which shares both the input format and the algorithm 
+        # with the Gems op.
+        torch_op=_sparse_semi_structured_addmm_ref,
         gems_op=flag_gems._sparse_semi_structured_addmm,
         dtypes=consts.FLOAT_DTYPES,
     )
