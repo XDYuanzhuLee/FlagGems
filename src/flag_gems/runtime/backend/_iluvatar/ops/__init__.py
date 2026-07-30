@@ -42,7 +42,7 @@ __all__ = [
     "div_mode",
     "div_mode_",
     "hadamard_transform",
-    "special_hermite_polynomial_he ",
+    "special_hermite_polynomial_he",
     "linear",
     "matmul_bf16",
     "matmul_int8",
