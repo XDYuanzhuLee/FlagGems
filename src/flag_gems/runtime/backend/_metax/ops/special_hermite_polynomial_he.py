@@ -11,7 +11,7 @@ logger = logging.getLogger("flag_gems." + __name__)
 
 @pointwise_dynamic(is_tensor=[True, True], promotion_methods=[(0, "INT_TO_FLOAT")])
 @triton.jit
-def hermite_polynomial_he_tensor_tensor(x, n):
+def special_hermite_polynomial_he_tensor_tensor(x, n):
     # Probabilist's Hermite polynomial He_n(x)
     # Recurrence: He_{n+1}(x) = x*He_n(x) - n*He_{n-1}(x)
     # He_0(x) = 1
@@ -73,7 +73,7 @@ def hermite_polynomial_he_tensor_tensor(x, n):
 
 @pointwise_dynamic(is_tensor=[True, False], promotion_methods=[(0, "INT_TO_FLOAT")])
 @triton.jit
-def hermite_polynomial_he_tensor_scalar(x, n):
+def special_hermite_polynomial_he_tensor_scalar(x, n):
     # Probabilist's Hermite polynomial He_n(x) with scalar n
     n_int = n.to(tl.int32)
     x_f32 = x.to(tl.float32)
@@ -125,11 +125,11 @@ def hermite_polynomial_he_tensor_scalar(x, n):
     return result
 
 
-def hermite_polynomial_he(x, n):
+def special_hermite_polynomial_he(x, n):
     logger.debug("METAX GEMS HERMITE_POLYNOMIAL_HE")
 
     if isinstance(n, torch.Tensor):
-        return hermite_polynomial_he_tensor_tensor(x, n)
+        return special_hermite_polynomial_he_tensor_tensor(x, n)
     else:
         # n is a scalar
-        return hermite_polynomial_he_tensor_scalar(x, n)
+        return special_hermite_polynomial_he_tensor_scalar(x, n)
