@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 @pointwise_dynamic(promotion_methods=[(0, "DEFAULT")])
 @triton.jit
-def hermite_he_func(x, n):
+def special_hermite_polynomial_he_func(x, n):
     # Probabilists' Hermite polynomial He_n(x)
     # He_0(x) = 1
     # He_1(x) = x
@@ -72,7 +72,7 @@ def hermite_he_func(x, n):
 
 @pointwise_dynamic(is_tensor=[True, False], promotion_methods=[(0, "DEFAULT")])
 @triton.jit
-def hermite_he_func_tensor_scalar(x, n):
+def special_hermite_polynomial_he_func_tensor_scalar(x, n):
     # Same as above but for tensor-scalar case
     n_int = n.to(tl.int32)
     x_f32 = x.to(tl.float32)
@@ -128,7 +128,7 @@ def hermite_he_func_tensor_scalar(x, n):
 
 @pointwise_dynamic(is_tensor=[False, True], promotion_methods=[(0, "DEFAULT")])
 @triton.jit
-def hermite_he_func_scalar_tensor(x, n):
+def special_hermite_polynomial_he_func_scalar_tensor(x, n):
     # Scalar x, tensor n - less common but handle it
     n_int = n.to(tl.int32)
     x_f32 = x.to(tl.float32)
@@ -182,7 +182,7 @@ def hermite_he_func_scalar_tensor(x, n):
     return result
 
 
-def hermite_polynomial_he(x, n):
+def special_hermite_polynomial_he(x, n):
     """Compute the probabilists' Hermite polynomial He_n(x).
 
     Args:
