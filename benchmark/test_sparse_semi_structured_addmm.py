@@ -38,10 +38,10 @@ class SparseSemiStructuredAddmmBenchmark(base.Benchmark):
 def test_sparse_semi_structured_addmm():
     bench = SparseSemiStructuredAddmmBenchmark(
         op_name="sparse_semi_structured_addmm",
-        # The native aten op uses a different input format and a different 
-        # algorithm than the Gems implementation, so the native op cannot 
-        # serve as an equivalent baseline. Use the pure-PyTorch reference 
-        # implementation, which shares both the input format and the algorithm 
+        # The native aten op uses a different input format and a different
+        # algorithm than the Gems implementation, so the native op cannot
+        # serve as an equivalent baseline. Use the pure-PyTorch reference
+        # implementation, which shares both the input format and the algorithm
         # with the Gems op.
         torch_op=_sparse_semi_structured_addmm_ref,
         gems_op=flag_gems._sparse_semi_structured_addmm,
