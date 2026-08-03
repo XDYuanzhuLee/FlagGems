@@ -19,7 +19,7 @@ import torch
 import triton
 import triton.language as tl
 
-from flag_gems.utils import pointwise_dynamic
+from flag_gems.utils import pointwise_dynamic, tl_extra_shim
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 @triton.jit
 def special_erfcx_func(x):
     # Use libdevice erfcx for accurate computation
-    return tl.extra.cuda.libdevice.erfcx(x)
+    return tl_extra_shim.erfcx(x)
 
 
 def special_erfcx(x):
