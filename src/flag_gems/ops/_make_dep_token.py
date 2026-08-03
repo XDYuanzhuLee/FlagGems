@@ -17,27 +17,10 @@
 import logging
 
 import torch
-import triton
-import triton.language as tl
 
 import flag_gems
-from flag_gems.utils import triton_lang_extension as tle
 
 logger = logging.getLogger(__name__)
-
-
-@triton.jit
-def _make_dep_token_kernel(
-    output_ptr,
-    n_elements,
-    BLOCK_SIZE: tl.constexpr,
-):
-    pid = tle.program_id(axis=0)
-    block_start = pid * BLOCK_SIZE
-    offsets = block_start + tl.arange(0, BLOCK_SIZE)
-    mask = offsets < n_elements
-    # Store uninitialized value (using 0.0 as placeholder, actual value doesn't matter)
-    tl.store(output_ptr + offsets, 0.0, mask=mask)
 
 
 def _make_dep_token(
@@ -61,16 +44,7 @@ def _make_dep_token(
     if device is None:
         device = flag_gems.device
 
-    # Create output tensor
+    # The returned tensor is uninitialized by definition; no kernel is needed.
     out = torch.empty((), dtype=dtype, device=device)
-
-    # Since this is a 0-dimensional tensor (scalar), there's only 1 element
-    # We still use the kernel pattern for consistency with FlagGems
-    n_elements = 1
-    grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
-
-    # BLOCK_SIZE=1 because the output is a scalar with only 1 element
-    BLOCK_SIZE = 1
-    _make_dep_token_kernel[grid](out, n_elements, BLOCK_SIZE=BLOCK_SIZE)
 
     return out
