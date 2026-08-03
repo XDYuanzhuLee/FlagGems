@@ -4252,6 +4252,17 @@ ops:
     stages:
       - beta: '5.0'
       - stable: '5.3'
+  - id: igamma_
+    description: In-place computation of the regularized lower incomplete gamma function.
+    for:
+      - igamma_
+    labels:
+      - aten
+      - KernelGen
+    kind:
+      - Math
+    stages:
+      - alpha: '5.4'
   - id: igammac_
     description: |
       In-place version of igammac. Computes the regularized upper incomplete gamma function complement.
@@ -4873,6 +4884,30 @@ ops:
       - BLAS
     stages:
       - alpha: '5.4'
+  - id: cholesky_solve
+    description: |-
+      Solves a system of linear equations with a symmetric positive-definite matrix
+      using its Cholesky factorization.
+    for:
+      - cholesky_solve
+    labels:
+      - aten
+    kind:
+      - BLAS
+    stages:
+      - alpha: '5.4'
+  - id: cholesky_solve_out
+    description: |-
+      Solves a system of linear equations with a symmetric positive-definite matrix
+      using its Cholesky factorization.
+    for:
+      - cholesky_solve.out
+    labels:
+      - aten
+    kind:
+      - BLAS
+    stages:
+      - alpha: '5.4'
   - id: linalg_eigvals
     description: Computes the eigenvalues of a square matrix.
     for:
@@ -5473,6 +5508,17 @@ ops:
       - Math
     stages:
       - alpha: '5.4'
+  - id: lstm
+    description: Triton kernel implementation for lstm.
+    for:
+      - aten.lstm
+    labels:
+      - aten
+      - KernelGen
+    kind:
+      - NeuralNetwork
+    stages:
+      - alpha: '5.4'
   - id: lt
     description: Computes that `input` is less than `other` element-wise.
     for:
@@ -5900,6 +5946,17 @@ ops:
       - Math
     stages:
       - stable: '2.1'
+  - id: miopen_batch_norm_backward
+    description: Triton kernel implementation for miopen_batch_norm_backward.
+    for:
+      - miopen_batch_norm_backward
+    labels:
+      - aten
+      - KernelGen
+    kind:
+      - Math
+    stages:
+      - alpha: '5.4'
   - id: mish
     description: Applies the Mish activation function element-wise.
     for:
@@ -5922,6 +5979,19 @@ ops:
       - KernelGen
       - pointwise
       - Activation
+    kind:
+      - NeuralNetwork
+    stages:
+      - alpha: '5.4'
+  - id: mish_backward
+    description: |
+      Computes the gradient of Mish activation with respect to the input.
+    for:
+      - mish_backward
+    labels:
+      - aten
+      - KernelGen
+      - pointwise
     kind:
       - NeuralNetwork
     stages:
@@ -6135,6 +6205,31 @@ ops:
     description: A variant of `nanmedian()` with the `out` argument.
     for:
       - nanmedian.out
+    labels:
+      - aten
+      - Reduction
+    kind:
+      - LinearAlg
+    stages:
+      - beta: '5.4'
+  - id: nansum
+    description: |
+      Returns the sum of all elements in the `input` tensor, treating `NaN` values as zero.
+      Supports global reduction and reduction along specified dimensions.
+    for:
+      - nansum
+    labels:
+      - aten
+      - Reduction
+    kind:
+      - LinearAlg
+    stages:
+      - beta: '5.4'
+  - id: nansum_out
+    description: |
+      A variant of `nansum()` with the `out` argument.
+    for:
+      - nansum.out
     labels:
       - aten
       - Reduction
@@ -6399,6 +6494,29 @@ ops:
       - Tensor
     stages:
       - alpha: '5.3'
+  - id: nonzero_static
+    description: |
+      Returns a fixed-size 2-D int64 tensor containing indices of nonzero elements.
+      Rows beyond the number of nonzero elements are filled with `fill_value`.
+    for:
+      - nonzero_static
+    labels:
+      - aten
+    kind:
+      - Tensor
+    stages:
+      - alpha: '5.4'
+  - id: nonzero_static_out
+    description: |
+      A variant of `nonzero_static` that writes the fixed-size result to `out`.
+    for:
+      - nonzero_static.out
+    labels:
+      - aten
+    kind:
+      - Tensor
+    stages:
+      - alpha: '5.4'
   - id: norm
     description: |
       Computes the norm of vectors, matrices, and tensors.
@@ -8035,6 +8153,19 @@ ops:
     stages:
       - beta: '5.0'
       - stable: '5.3'
+  - id: sgn
+    description: |
+      Computes the sign of each element in the input tensor, element-wise.
+      This function extends `sign()` to complex tensors.
+    for:
+      - sgn
+    labels:
+      - aten
+      - KernelGen
+    kind:
+      - Math
+    stages:
+      - alpha: '5.4'
   - id: sgn_
     description: |
       Computes the sign of each element in the `self` tensor, element-wise.
@@ -8050,6 +8181,19 @@ ops:
     stages:
       - beta: '5.0'
       - stable: '5.3'
+  - id: sgn_out
+    description: |
+      Writes the element-wise sign of the input tensor to the `out` tensor.
+      This function extends `sign()` to complex tensors.
+    for:
+      - sgn.out
+    labels:
+      - aten
+      - KernelGen
+    kind:
+      - Math
+    stages:
+      - alpha: '5.4'
   - id: scalar_tensor
     description: |
       Creates a 0-dimensional (scalar) tensor from a Python numeric value.
@@ -8095,6 +8239,34 @@ ops:
       - NeuralNetwork
     stages:
       - stable: '3.0'
+  - id: sign
+    description: |
+      Returns a new tensor with the sign of the elements of input.
+      For real numbers: 1 if x > 0, -1 if x < 0, 0 if x == 0, 0 if x is NaN.
+      Complex dtypes are not supported (use torch.sgn instead).
+    for:
+      - sign
+    labels:
+      - aten
+      - KernelGen
+      - pointwise
+    kind:
+      - Math
+    stages:
+      - alpha: '5.4'
+  - id: sign_out
+    description: |
+      Out-variant of sign. Writes the element-wise sign to the `out` tensor.
+    for:
+      - sign.out
+    labels:
+      - aten
+      - KernelGen
+      - pointwise
+    kind:
+      - Math
+    stages:
+      - alpha: '5.4'
   - id: signbit
     description: Tests if each element of `input` has its sign bit set or not.
     for:
@@ -9125,6 +9297,17 @@ ops:
       - Math
     stages:
       - stable: '2.2'
+  - id: subtract
+    description: Subtracts `other`, scaled by `alpha`, from `input`.
+    for:
+      - subtract.Tensor
+    labels:
+      - aten
+      - KernelGen
+    kind:
+      - Math
+    stages:
+      - alpha: '5.4'
   - id: subtract_
     description: In-place version of subtract. Subtracts other, scaled by alpha, from input.
     for:

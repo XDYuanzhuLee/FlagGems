@@ -172,6 +172,7 @@ from flag_gems.ops.cdist import _cdist_backward, _cdist_forward
 from flag_gems.ops.ceil import ceil, ceil_, ceil_out
 from flag_gems.ops.celu import celu, celu_
 from flag_gems.ops.channel_shuffle import channel_shuffle
+from flag_gems.ops.cholesky_solve import cholesky_solve, cholesky_solve_out
 from flag_gems.ops.clamp import (
     clamp,
     clamp_,
@@ -316,6 +317,7 @@ from flag_gems.ops.hstack import hstack
 from flag_gems.ops.hypot import hypot, hypot_out
 from flag_gems.ops.i0 import i0, i0_out
 from flag_gems.ops.i0_ import i0_
+from flag_gems.ops.igamma_ import igamma_
 from flag_gems.ops.igammac_ import igammac_
 from flag_gems.ops.im2col import im2col
 from flag_gems.ops.index import index
@@ -379,6 +381,7 @@ from flag_gems.ops.logit import logit, logit_out
 from flag_gems.ops.logit_ import logit_
 from flag_gems.ops.logspace import logspace
 from flag_gems.ops.logsumexp import logsumexp
+from flag_gems.ops.lstm import lstm
 from flag_gems.ops.lt import lt, lt_scalar
 from flag_gems.ops.lt_ import lt_, lt_scalar_
 from flag_gems.ops.margin_ranking_loss import margin_ranking_loss
@@ -401,7 +404,9 @@ from flag_gems.ops.mean import mean, mean_dim
 from flag_gems.ops.median import median, median_dim, median_dim_values, median_out
 from flag_gems.ops.min import min, min_dim
 from flag_gems.ops.minimum import minimum
+from flag_gems.ops.miopen_batch_norm_backward import miopen_batch_norm_backward
 from flag_gems.ops.mish import mish, mish_
+from flag_gems.ops.mish_backward import mish_backward
 from flag_gems.ops.mm import mm, mm_out, router_gemm
 from flag_gems.ops.mode import mode
 from flag_gems.ops.mse_loss import mse_loss
@@ -418,6 +423,7 @@ from flag_gems.ops.nanmedian import (
     nanmedian_dim_values,
     nanmedian_out,
 )
+from flag_gems.ops.nansum import nansum, nansum_out
 from flag_gems.ops.narrow import narrow
 from flag_gems.ops.narrow_copy import narrow_copy
 from flag_gems.ops.ne import ne, ne_scalar
@@ -435,6 +441,7 @@ from flag_gems.ops.nllloss import (
 )
 from flag_gems.ops.nonzero import nonzero
 from flag_gems.ops.nonzero_numpy import nonzero_numpy
+from flag_gems.ops.nonzero_static import nonzero_static, nonzero_static_out
 from flag_gems.ops.norm import norm, norm_scalar, norm_scalaropt_dim
 from flag_gems.ops.normal import (
     normal_,
@@ -535,8 +542,10 @@ from flag_gems.ops.select_backward import select_backward
 from flag_gems.ops.select_scatter import select_scatter
 from flag_gems.ops.selu import selu
 from flag_gems.ops.selu_ import selu_
+from flag_gems.ops.sgn import sgn, sgn_out
 from flag_gems.ops.sgn_ import sgn_
 from flag_gems.ops.sigmoid import sigmoid, sigmoid_, sigmoid_backward
+from flag_gems.ops.sign import sign, sign_out
 from flag_gems.ops.signbit import signbit, signbit_out
 from flag_gems.ops.silu import silu, silu_, silu_backward
 from flag_gems.ops.sin import sin, sin_
@@ -617,7 +626,7 @@ from flag_gems.ops.squeeze_copy import squeeze_copy
 from flag_gems.ops.stack import stack
 from flag_gems.ops.std import std
 from flag_gems.ops.sub import sub, sub_
-from flag_gems.ops.subtract_ import subtract_
+from flag_gems.ops.subtract_ import subtract, subtract_
 from flag_gems.ops.sum import sum, sum_dim, sum_dim_out, sum_out
 from flag_gems.ops.svd import svd
 from flag_gems.ops.sym_stride import sym_stride
@@ -855,6 +864,8 @@ __all__ = [
     "celu",
     "celu_",
     "channel_shuffle",
+    "cholesky_solve",
+    "cholesky_solve_out",
     "clamp",
     "clamp_",
     "clamp_max",
@@ -1030,6 +1041,7 @@ __all__ = [
     "i0",
     "i0_",
     "i0_out",
+    "igamma_",
     "igammac_",
     "im2col",
     "index",
@@ -1125,6 +1137,7 @@ __all__ = [
     "logit_out",
     "logspace",
     "logsumexp",
+    "lstm",
     "lt",
     "lt_",
     "lt_scalar",
@@ -1153,8 +1166,10 @@ __all__ = [
     "min",
     "min_dim",
     "minimum",
+    "miopen_batch_norm_backward",
     "mish",
     "mish_",
+    "mish_backward",
     "mm",
     "mm_out",
     "mode",
@@ -1171,6 +1186,8 @@ __all__ = [
     "nanmedian_dim",
     "nanmedian_dim_values",
     "nanmedian_out",
+    "nansum",
+    "nansum_out",
     "narrow",
     "narrow_copy",
     "ne",
@@ -1190,6 +1207,8 @@ __all__ = [
     "nll_loss_nd_forward",
     "nonzero",
     "nonzero_numpy",
+    "nonzero_static",
+    "nonzero_static_out",
     "norm",
     "norm_scalar",
     "norm_scalaropt_dim",
@@ -1306,10 +1325,14 @@ __all__ = [
     "select_scatter",
     "selu",
     "selu_",
+    "sgn",
     "sgn_",
+    "sgn_out",
     "sigmoid",
     "sigmoid_",
     "sigmoid_backward",
+    "sign",
+    "sign_out",
     "signbit",
     "signbit_out",
     "silu",
@@ -1390,6 +1413,7 @@ __all__ = [
     "std",
     "sub",
     "sub_",
+    "subtract",
     "subtract_",
     "sum",
     "sum_dim",
