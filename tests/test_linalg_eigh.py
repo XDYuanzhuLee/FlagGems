@@ -1,9 +1,36 @@
 import pytest
 import torch
+from contextlib import contextmanager
 
 import flag_gems
 
 from . import accuracy_utils as utils
+
+
+@contextmanager
+def _ieee_float32_matmul():
+    """Force IEEE float32 matmul (disable TF32) for the block, restore after.
+
+    TF32 (10-bit mantissa) on Ampere+ GPUs introduces ~1e-3 errors in float32
+    matmul, which corrupts the reconstruction verification of eigh
+    (V @ diag(w) @ V.T). Disable it for the verification matmul only; the op
+    under test is unaffected.
+    """
+    m = torch.backends.cuda.matmul
+    use_new = hasattr(m, "fp32_precision")
+    if use_new:
+        old = m.fp32_precision
+        m.fp32_precision = "ieee"
+    else:
+        old = m.allow_tf32
+        m.allow_tf32 = False
+    try:
+        yield
+    finally:
+        if use_new:
+            m.fp32_precision = old
+        else:
+            m.allow_tf32 = old
 
 # linalg_eigh only supports float32/float64.
 #
@@ -50,14 +77,15 @@ def _check_eigh_decomposition(A, eigenvalues, eigenvectors, atol=1e-3):
     This is sign-ambiguous-free: any valid eigenbasis reconstructs A and is
     orthonormal, regardless of per-vector sign choices.
     """
-    reconstructed = (
-        eigenvectors
-        @ torch.diag_embed(eigenvalues).to(eigenvectors.dtype)
-        @ eigenvectors.transpose(-2, -1)
-    )
-    ref_A = utils.to_reference(A, False)
-    utils.gems_assert_close(reconstructed, ref_A, reconstructed.dtype, atol=atol)
-    _assert_orthonormal(eigenvectors)
+    with _ieee_float32_matmul():
+        reconstructed = (
+            eigenvectors
+            @ torch.diag_embed(eigenvalues).to(eigenvectors.dtype)
+            @ eigenvectors.transpose(-2, -1)
+        )
+        ref_A = utils.to_reference(A, False)
+        utils.gems_assert_close(reconstructed, ref_A, reconstructed.dtype, atol=atol)
+        _assert_orthonormal(eigenvectors)
 
 
 @pytest.mark.linalg_eigh
