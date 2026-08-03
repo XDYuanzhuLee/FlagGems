@@ -1,6 +1,7 @@
+from contextlib import contextmanager
+
 import pytest
 import torch
-from contextlib import contextmanager
 
 import flag_gems
 
@@ -31,6 +32,7 @@ def _ieee_float32_matmul():
             m.fp32_precision = old
         else:
             m.allow_tf32 = old
+
 
 # linalg_eigh only supports float32/float64.
 #
