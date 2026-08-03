@@ -12,6 +12,7 @@ from . import accuracy_utils as utils
 def test_isposinf(shape, dtype):
     inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
     inp = torch.masked_fill(inp, inp > 1.0, float("inf"))
+    inp = torch.masked_fill(inp, inp < -1.0, -float("inf"))
     ref_inp = utils.to_reference(inp)
 
     ref_out = torch.isposinf(ref_inp)
