@@ -26,7 +26,7 @@ def test_special_hermite_polynomial_he(shape, dtype):
     inp2 = torch.randint(0, 11, shape, dtype=torch.int64, device=flag_gems.device)
 
     ref_inp1 = utils.to_reference(inp1, True)
-    ref_inp2 = utils.to_reference(inp2, True)
+    ref_inp2 = utils.to_reference(inp2)
 
     ref_out = torch.special.hermite_polynomial_he(ref_inp1, ref_inp2)
     with flag_gems.use_gems():
