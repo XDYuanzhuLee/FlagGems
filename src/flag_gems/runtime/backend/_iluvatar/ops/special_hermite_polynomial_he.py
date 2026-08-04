@@ -194,6 +194,22 @@ def special_hermite_polynomial_he(x, n):
     """
     logger.debug("GEMS_ILUVATAR SPECIAL_HERMITE_POLYNOMIAL_HE")
 
+    # Validate n is in supported range [0, 10]
+    if isinstance(n, torch.Tensor):
+        n_int = n.to(torch.int32)
+        n_min = n_int.min().item()
+        n_max = n_int.max().item()
+        if n_min < 0 or n_max > 10:
+            raise ValueError(
+                f"special_hermite_polynomial_he only supports n in [0, 10], "
+                f"got n in [{n_min}, {n_max}]"
+            )
+    elif isinstance(n, (int, float)):
+        if int(n) < 0 or int(n) > 10:
+            raise ValueError(
+                f"special_hermite_polynomial_he only supports n in [0, 10], got n={n}"
+            )
+
     # Handle different input types
     if isinstance(x, torch.Tensor) and isinstance(n, torch.Tensor):
         return special_hermite_polynomial_he_func(x, n)
