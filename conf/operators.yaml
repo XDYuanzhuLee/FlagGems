@@ -8350,6 +8350,7 @@ ops:
       - special.expit
     labels:
       - aten
+      - pointwise
       - KernelGen
     kind:
       - Math
