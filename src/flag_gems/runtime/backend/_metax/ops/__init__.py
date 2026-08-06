@@ -68,11 +68,8 @@ __all__ = [
     "log_sigmoid_forward",
     "log_softmax",
     "log_softmax_backward",
-<<<<<<< HEAD
     "linalg_svdvals",
     "linalg_vander",
-=======
->>>>>>> upstream/master
     "matmul_bf16",
     "matmul_int8",
     "masked_fill",

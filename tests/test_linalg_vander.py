@@ -6,6 +6,7 @@ import flag_gems
 from . import accuracy_utils as utils
 
 FLOAT_DTYPES = utils.FLOAT_DTYPES
+COMPLEX_DTYPES = [torch.complex64, torch.complex128]
 
 # linalg_vander tests
 VANDER_SHAPES = [
@@ -23,6 +24,17 @@ if flag_gems.vendor_name == "metax":
     VANDER_DTYPES = [torch.float32]
 else:
     VANDER_DTYPES = FLOAT_DTYPES
+
+
+def _assert_vander_close(res_out, ref_out, dtype):
+    # flag_gems.testing.RESOLUTION has no entry for complex128 (only complex32/64),
+    # so bypass gems_assert_close for complex128 and compare via torch.testing
+    # directly, mirroring the approach used by test_linalg_ldl_solve.
+    if dtype == torch.complex128:
+        res_out = utils.to_cpu(res_out, ref_out)
+        torch.testing.assert_close(res_out, ref_out, atol=1e-7, rtol=1e-7)
+    else:
+        utils.gems_assert_close(res_out, ref_out, dtype)
 
 
 @pytest.mark.linalg_vander
@@ -75,3 +87,37 @@ def test_linalg_vander_with_N(shape, N, dtype):
         res_out = torch.linalg.vander(x, N=N)
 
     utils.gems_assert_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.linalg_vander
+@pytest.mark.parametrize("shape", VANDER_SHAPES)
+@pytest.mark.parametrize("dtype", COMPLEX_DTYPES)
+def test_linalg_vander_complex(shape, dtype):
+    # Complex dtype coverage: torch.linalg.vander supports complex inputs.
+    # No upcast is needed because the reference supports complex natively.
+    x = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_x = utils.to_reference(x, False)
+
+    ref_out = torch.linalg.vander(ref_x)
+
+    with flag_gems.use_gems():
+        res_out = torch.linalg.vander(x)
+
+    _assert_vander_close(res_out, ref_out, dtype)
+
+
+@pytest.mark.linalg_vander
+@pytest.mark.parametrize("shape", VANDER_SHAPES)
+@pytest.mark.parametrize("N", [2, 3, 4, 8])
+@pytest.mark.parametrize("dtype", COMPLEX_DTYPES)
+def test_linalg_vander_with_N_complex(shape, N, dtype):
+    # Test complex dtype with explicit N parameter.
+    x = torch.randn(shape, dtype=dtype, device=flag_gems.device)
+    ref_x = utils.to_reference(x, False)
+
+    ref_out = torch.linalg.vander(ref_x, N=N)
+
+    with flag_gems.use_gems():
+        res_out = torch.linalg.vander(x, N=N)
+
+    _assert_vander_close(res_out, ref_out, dtype)
