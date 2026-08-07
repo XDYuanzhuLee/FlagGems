@@ -5,7 +5,6 @@ from .arange import arange, arange_start
 from .batch_norm import batch_norm, batch_norm_backward
 from .bmm import bmm
 from .exponential_ import exponential_
-from .fft_irfftn import fft_irfftn
 from .full import full
 from .full_like import full_like
 from .groupnorm import group_norm
@@ -51,7 +50,6 @@ __all__ = [
     "batch_norm_backward",
     "bmm",
     "exponential_",
-    "fft_irfftn",
     "full",
     "full_like",
     "group_norm",
