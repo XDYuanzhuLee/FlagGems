@@ -36,7 +36,7 @@ def test_grid_sampler_2d(dtype, shape, align_corners, padding_mode, interpolatio
 
     ref_in = utils.to_reference(input_t).to(torch.float32)
     ref_grid = utils.to_reference(grid).to(torch.float32)
-    # Reference uses the same interpolation mode as the kernel under, 
+    # Reference uses the same interpolation mode as the kernel under,
     # the bicubic path which uses Keys cubic convolution (a=-0.75).
     ref_code = _INTERP_CODE[interpolation_mode]
     pad_code = _PAD_CODE[padding_mode]
