@@ -22,155 +22,295 @@ import triton.language as tl
 logger = logging.getLogger(__name__)
 
 
-def fft_irfftn(input: torch.Tensor, s=None, dim=None, norm="backward"):
+@triton.jit
+def _irfft_kernel(
+    in_real,
+    in_imag,
+    out_ptr,
+    stride_in,
+    stride_out,
+    n_rows,
+    N: tl.constexpr,  # output (real) length
+    N_IN: tl.constexpr,  # input length = N//2 + 1
+    OUT_DTYPE: tl.constexpr,
+    COMPUTE_DTYPE: tl.constexpr,
+):
+    """1D inverse rfft via direct DFT. Grid: (n_rows, N).
+
+    y[i] = x[0]
+         + 2 * sum_{k=1..K} Re(x[k] * exp(+i*2*pi*k*i/N))
+         + (N even ? x[N//2] * cos(pi*i) : 0)
+    where K = N//2-1 for even N, N//2 for odd N (no Nyquist term then).
+    Output is unnormalized (caller applies norm).
     """
-    Compute the inverse of torch.fft.rfftn.
+    batch_idx = tl.program_id(0)
+    out_idx = tl.program_id(1)
+    if batch_idx >= n_rows:
+        return
+    two = tl.full((), 2.0, dtype=COMPUTE_DTYPE)
+    n_dt = tl.full((), N, dtype=COMPUTE_DTYPE)
+    two_pi_over_n = (two * 3.14159265358979323846) / n_dt
+    dc_re = tl.load(in_real + batch_idx * stride_in + 0).to(COMPUTE_DTYPE)
+    result = dc_re
+    if N % 2 == 0:
+        k_end = N // 2  # k = 1 .. N//2-1
+    else:
+        k_end = N_IN  # k = 1 .. N_IN-1
+    for k in range(1, k_end):
+        re = tl.load(in_real + batch_idx * stride_in + k).to(COMPUTE_DTYPE)
+        im = tl.load(in_imag + batch_idx * stride_in + k).to(COMPUTE_DTYPE)
+        k_dt = tl.full((), k, dtype=COMPUTE_DTYPE)
+        out_idx_dt = tl.full((), out_idx, dtype=COMPUTE_DTYPE)
+        angle = two_pi_over_n * k_dt * out_idx_dt
+        c = tl.cos(angle)
+        s = tl.sin(angle)
+        result = result + two * (re * c - im * s)
+    if N % 2 == 0:
+        nyq_re = tl.load(in_real + batch_idx * stride_in + (N // 2)).to(COMPUTE_DTYPE)
+        one = tl.full((), 1.0, dtype=COMPUTE_DTYPE)
+        neg_one = tl.full((), -1.0, dtype=COMPUTE_DTYPE)
+        sign = tl.where((out_idx % 2) == 0, one, neg_one)
+        result = result + nyq_re * sign
+    tl.store(out_ptr + batch_idx * stride_out + out_idx, result.to(OUT_DTYPE))
+
+
+@triton.jit
+def _ifft_kernel(
+    in_real,
+    in_imag,
+    out_real,
+    out_imag,
+    stride_in,
+    stride_out,
+    n_rows,
+    N: tl.constexpr,
+    COMPUTE_DTYPE: tl.constexpr,
+):
+    """1D inverse c2c fft via direct DFT. Grid: (n_rows, N).
+
+    y[i] = (1/N) * sum_{k=0..N-1} x[k] * exp(+i*2*pi*k*i/N)
+    Output is normalized by 1/N (backward mode); caller adjusts for other norms.
+    """
+    batch_idx = tl.program_id(0)
+    out_idx = tl.program_id(1)
+    if batch_idx >= n_rows:
+        return
+    acc_re = tl.full((), 0.0, dtype=COMPUTE_DTYPE)
+    acc_im = tl.full((), 0.0, dtype=COMPUTE_DTYPE)
+    two = tl.full((), 2.0, dtype=COMPUTE_DTYPE)
+    n_dt = tl.full((), N, dtype=COMPUTE_DTYPE)
+    two_pi_over_n = (two * 3.14159265358979323846) / n_dt
+    for k in range(N):
+        re = tl.load(in_real + batch_idx * stride_in + k).to(COMPUTE_DTYPE)
+        im = tl.load(in_imag + batch_idx * stride_in + k).to(COMPUTE_DTYPE)
+        k_dt = tl.full((), k, dtype=COMPUTE_DTYPE)
+        out_idx_dt = tl.full((), out_idx, dtype=COMPUTE_DTYPE)
+        angle = two_pi_over_n * k_dt * out_idx_dt
+        c = tl.cos(angle)
+        s = tl.sin(angle)
+        acc_re = acc_re + (re * c - im * s)
+        acc_im = acc_im + (re * s + im * c)
+    acc_re = acc_re / n_dt
+    acc_im = acc_im / n_dt
+    tl.store(out_real + batch_idx * stride_out + out_idx, acc_re)
+    tl.store(out_imag + batch_idx * stride_out + out_idx, acc_im)
+
+
+def _run_irfft_2d(x2d, n_out, out_dtype, compute_dtype):
+    """irfft on a contiguous (M, N_in) batch, output (M, n_out) real of out_dtype."""
+    M, _ = x2d.shape
+    xr = x2d.real.contiguous()
+    xi = x2d.imag.contiguous()
+    yr = torch.empty((M, n_out), device=x2d.device, dtype=out_dtype)
+    if out_dtype == torch.float16:
+        out_tl_dtype = tl.float16
+    elif out_dtype == torch.float64:
+        out_tl_dtype = tl.float64
+    else:
+        out_tl_dtype = tl.float32
+    if compute_dtype == torch.float64:
+        compute_tl_dtype = tl.float64
+    else:
+        compute_tl_dtype = tl.float32
+    _irfft_kernel[(M, n_out)](
+        xr,
+        xi,
+        yr,
+        xr.stride(0),
+        yr.stride(0),
+        M,
+        N=n_out,
+        N_IN=x2d.shape[1],
+        OUT_DTYPE=out_tl_dtype,
+        COMPUTE_DTYPE=compute_tl_dtype,
+    )
+    return yr
+
+
+def _run_ifft_2d(x2d, compute_dtype):
+    """c2c ifft on a contiguous (M, N) batch. Returns complex (M, N)."""
+    M, N = x2d.shape
+    xr = x2d.real.contiguous()
+    xi = x2d.imag.contiguous()
+    real_dtype = torch.float64 if compute_dtype == torch.float64 else torch.float32
+    yr = torch.empty((M, N), device=x2d.device, dtype=real_dtype)
+    yi = torch.empty((M, N), device=x2d.device, dtype=real_dtype)
+    if compute_dtype == torch.float64:
+        compute_tl_dtype = tl.float64
+    else:
+        compute_tl_dtype = tl.float32
+    _ifft_kernel[(M, N)](
+        xr,
+        xi,
+        yr,
+        yi,
+        xr.stride(0),
+        yr.stride(0),
+        M,
+        N=N,
+        COMPUTE_DTYPE=compute_tl_dtype,
+    )
+    return torch.complex(yr, yi)
+
+
+def _along_last(x, op, out_last_len=None):
+    """Apply a 1D op along the last axis of x (any ndim) via reshape->2d->op->restore.
+
+    out_last_len: length of the op output's last dim. None means same as input.
+    """
+    t = x.contiguous()
+    orig_shape = t.shape
+    new_last = out_last_len if out_last_len is not None else orig_shape[-1]
+    t2 = t.reshape(-1, orig_shape[-1])
+    y = op(t2)
+    y = y.reshape(orig_shape[:-1] + (new_last,))
+    return y
+
+
+def _along_dim(x, d, op, out_last_len=None):
+    """Apply a 1D op along dimension d of x (any ndim), preserving layout.
+
+    out_last_len: length of the op output's transformed dim. None means same as input.
+    """
+    if d == x.ndim - 1:
+        return _along_last(x, op, out_last_len=out_last_len)
+    perm = [i for i in range(x.ndim) if i != d] + [d]
+    t = x.permute(perm).contiguous()
+    orig_shape = t.shape
+    new_last = out_last_len if out_last_len is not None else orig_shape[-1]
+    t2 = t.reshape(-1, orig_shape[-1])
+    y = op(t2)
+    y = y.reshape(orig_shape[:-1] + (new_last,))
+    inv_perm = [0] * len(perm)
+    for i, p in enumerate(perm):
+        inv_perm[p] = i
+    return y.permute(inv_perm).contiguous()
+
+
+def fft_irfftn(input: torch.Tensor, s=None, dim=None, norm="backward"):
+    """Compute the N-dimensional inverse of torch.fft.rfftn.
 
     Args:
-        input: Complex tensor (half-Hermitian from rfftn)
-        s: Output size for each dimension
-        dim: Dimensions to transform
-        norm: Normalization mode ("forward", "backward", "ortho")
+        input: Complex tensor (half-Hermitian from rfftn).
+        s: Output size for each transformed dimension.
+        dim: Dimensions to transform. dim[-1] is the real (c2r) dimension;
+             dim[:-1] are complex (c2c) dimensions. Tuple order matters.
+        norm: "backward" (default) / "forward" / "ortho".
 
     Returns:
-        Real tensor
+        Real tensor.
     """
     logger.debug("GEMS FFT_IRFFTN")
 
     if not input.is_complex():
         raise ValueError("Input must be a complex tensor")
 
-    # Handle default dim (last dimension or all dimensions)
+    # Normalize dim: default to all dimensions, or the last len(s) if s is given.
     if dim is None:
         if s is not None:
             dim = tuple(range(-len(s), 0))
         else:
-            dim = (-1,)
-
-    # Convert dim to tuple if it's a single int
+            dim = tuple(range(-input.ndim, 0))
     if isinstance(dim, int):
         dim = (dim,)
+    dim = tuple(d % input.ndim for d in dim)
 
-    # Handle s parameter - output size for each transformed dimension
+    # Normalize s: default to input length along c2c dims, 2*(N_in-1) along the real dim.
     if s is None:
-        # Default: s[i] = 2 * (input.shape[dim[i]] - 1)
-        s = []
-        for d in dim:
-            if d < 0:
-                d = input.dim() + d
-            s.append(2 * (input.shape[d] - 1))
-        s = tuple(s)
-
-    # For simplicity, only handle the case where we transform the last dimension
-    # Multi-dimensional case is not supported yet
-    if len(dim) != 1 or dim[0] != -1:
-        raise NotImplementedError(
-            "fft_irfftn only supports transforming the last dimension for now"
+        s = tuple(
+            2 * (input.shape[d] - 1) if d == dim[-1] else input.shape[d] for d in dim
         )
+    if isinstance(s, int):
+        s = (s,)
+    if len(s) != len(dim):
+        raise ValueError(f"s length {len(s)} != dim length {len(dim)}")
 
-    # Now dim[0] is -1 (last dimension)
-    d = input.dim() - 1  # Convert to positive index
-    n_fft = s[0]
-    input_len = input.shape[d]
+    s_map = {dim[i]: s[i] for i in range(len(dim))}
+    real_dim = dim[-1]
+    cplx_dims = list(dim[:-1])
+    n_real = s_map[real_dim]
 
-    # Verify input is half-Hermitian
-    expected_len = n_fft // 2 + 1
-    if input_len != expected_len:
-        raise ValueError(
-            f"Input shape at dim {d} is {input_len}, expected {expected_len} for n_fft={n_fft}"
-        )
-
-    # Get the complex input as real/imag separate tensors
-    input_real = torch.real(input).contiguous()
-    input_imag = torch.imag(input).contiguous()
-
-    # Calculate output shape
-    output_shape = list(input.shape)
-    output_shape[d] = n_fft
-    output_shape = tuple(output_shape)
-
-    # Create output tensor
-    output = torch.empty(output_shape, dtype=torch.float32, device=input.device)
-
-    # Get the total number of 1D FFTs to compute
-    # This is the product of all dimensions except the transformed one
-    n_ffts = 1
-    for i in range(input.dim() - 1):
-        n_ffts *= input.shape[i]
-
-    n_output = n_fft
-
-    # Handle 1D case separately
-    if input.dim() == 1:
-        grid = (n_output,)
-        _irfft_kernel[grid](
-            input_real,
-            input_imag,
-            output,
-            n_fft,
-            n_output,
-        )
+    # Output dtype and compute dtype:
+    # complex64 -> float32 out, fp32 compute
+    # complex128 -> float64 out, fp64 compute
+    # complex32 -> float16 out, fp32 compute (kernels upcast to complex64)
+    if input.dtype == torch.complex64:
+        out_dtype = torch.float32
+        compute_dtype = torch.float32
+        work = input
+    elif input.dtype == torch.complex128:
+        out_dtype = torch.float64
+        compute_dtype = torch.float64
+        work = input
+    elif input.dtype == torch.complex32:
+        out_dtype = torch.float16
+        compute_dtype = torch.float32
+        work = input.to(torch.complex64)  # kernels operate on complex64
     else:
-        # Multi-dimensional case: transform last dimension
-        # Already contiguous, just need to process each 1D FFT
-        for i in range(n_ffts):
-            grid = (n_output,)
-            _irfft_kernel[grid](
-                input_real[i, :],
-                input_imag[i, :],
-                output[i, :],
-                n_fft,
-                n_output,
+        raise ValueError(f"Unsupported complex dtype: {input.dtype}")
+
+    # c2c ifft along each non-real dimension
+    for d in cplx_dims:
+        n = s_map[d]
+        if n != work.shape[d]:
+            raise NotImplementedError(
+                "fft_irfftn: s truncation/padding along non-real dims not supported; "
+                "input length along dim must equal s"
             )
+        work = _along_dim(work, d, lambda t: _run_ifft_2d(t, compute_dtype))
 
-    # Apply normalization
+    # irfft along the real dimension
+    n_in_expected = n_real // 2 + 1
+    if work.shape[real_dim] != n_in_expected:
+        raise ValueError(
+            f"Input shape at dim {real_dim} is {work.shape[real_dim]}, "
+            f"expected {n_in_expected} for n_real={n_real}"
+        )
+    work = _along_dim(
+        work,
+        real_dim,
+        lambda t: _run_irfft_2d(t, n_real, out_dtype, compute_dtype),
+        out_last_len=n_real,
+    )
+
+    # Normalization.
+    # Pipeline output P = (ifft_unnorm / N_cplx) * irfft_unnorm, where:
+    #   _ifft_kernel divides by N (so c2c dims carry 1/N_cplx total),
+    #   _irfft_kernel is unnormalized.
+    cplx_N_prod = 1
+    for d in cplx_dims:
+        cplx_N_prod *= s_map[d]
     if norm == "backward":
-        output = output / n_fft
+        work = work / n_real
+    elif norm == "forward":
+        work = work * cplx_N_prod
     elif norm == "ortho":
-        output = output / (n_fft**0.5)
-    # norm == "forward" means no normalization
+        work = work * (cplx_N_prod**0.5) / (n_real**0.5)
+    else:
+        raise ValueError(f"Invalid norm: {norm}")
 
-    return output
-
-
-@triton.jit
-def _irfft_kernel(
-    input_real, input_imag, output, n_fft: tl.constexpr, n_output: tl.constexpr
-):
-    """
-    Optimized inverse FFT kernel for 1D case.
-    For n_fft points, input has n_fft//2 + 1 complex values.
-    The formula is:
-    output[i] = input[0].real
-        + 2 * sum_{k=1}^{n_fft//2-1} (re[k]*cos(2*pi*k*i/n) - im[k]*sin(2*pi*k*i/n))
-        + input[n_fft//2].real * cos(pi*i)
-    """
-    # Get the position
-    pid = tl.program_id(0)
-    output_idx = pid
-
-    # Precompute 2*pi/n_fft
-    two_pi_over_n = 2.0 * 3.141592653589793 / n_fft
-
-    # DC component (k=0)
-    result = tl.load(input_real + 0).to(tl.float32)
-
-    # Positive frequencies (k=1 to n_fft//2-1)
-    for k in range(1, n_fft // 2):
-        re = tl.load(input_real + k).to(tl.float32)
-        im = tl.load(input_imag + k).to(tl.float32)
-        angle = two_pi_over_n * k * output_idx
-        result = result + 2.0 * (re * tl.cos(angle) - im * tl.sin(angle))
-
-    # Handle Nyquist frequency if n_fft is even
-    # Nyquist is at index n_fft//2
-    if n_fft % 2 == 0:
-        nyquist_idx = n_fft // 2
-        nyquist_re = tl.load(input_real + nyquist_idx).to(tl.float32)
-        # cos(pi * i) = (-1)^i
-        if output_idx % 2 == 0:
-            result = result + nyquist_re
-        else:
-            result = result - nyquist_re
-
-    tl.store(output + output_idx, result)
+    if out_dtype == torch.float16:
+        work = work.to(torch.float16)
+    elif out_dtype == torch.float64:
+        work = work.to(torch.float64)
+    return work

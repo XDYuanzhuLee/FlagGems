@@ -9,7 +9,8 @@ from . import base
 # operates on complex input (half-Hermitian from rfftn).
 
 
-# FFT irfftn benchmark shapes (only 1D shapes supported)
+# FFT irfftn benchmark shapes (1D and N-D). The kernels use a direct O(N^2)
+# DFT; transformed dimensions are kept small.
 FFT_IRFFTN_SHAPES = [
     (8,),
     (16,),
@@ -19,11 +20,15 @@ FFT_IRFFTN_SHAPES = [
     (256,),
     (512,),
     (1024,),
+    (4, 64),
+    (8, 128),
+    (2, 4, 32),
+    (4, 8, 64),
 ]
 
 
 class FFTIRFFTNBenchmark(base.GenericBenchmark):
-    """Benchmark for 1D fft_irfftn only."""
+    """Benchmark for 1D and N-D fft_irfftn."""
 
     def set_shapes(self, shape_file_path=None):
         self.shapes = FFT_IRFFTN_SHAPES
