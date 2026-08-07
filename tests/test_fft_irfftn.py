@@ -10,6 +10,11 @@ from . import accuracy_utils as utils
 # Reference is torch.fft.irfftn computed on device (utils.to_reference not
 # applicable since FFT comparison is GPU-native).
 
+# fft_irfftn is not supported on the metax backend.
+# complex32 (half-precision complex) FFT is a CUDA/cuFFT-only feature; other
+# backends (CPU MKL, metax maca, etc.) do not support torch.fft on complex32.
+
+
 # N-D shapes (1D, 2D, 3D). The underlying kernels use a direct O(N^2)
 # DFT, so transformed dimensions are kept small.
 FFT_IRFFTN_SHAPES = [
@@ -28,6 +33,7 @@ FFT_IRFFTN_SHAPES = [
 
 
 @pytest.mark.fft_irfftn
+@pytest.mark.skipif(flag_gems.vendor_name == "metax", reason="Not supported on metax")
 @pytest.mark.parametrize("shape", FFT_IRFFTN_SHAPES)
 @pytest.mark.parametrize(
     "dtype", utils.COMPLEX_DTYPES
@@ -70,6 +76,9 @@ FFT_IRFFTN_COMPLEX32_SHAPES = [
 
 
 @pytest.mark.fft_irfftn
+@pytest.mark.skipif(
+    flag_gems.vendor_name != "nvidia", reason="Not supported on non-nvidia backends"
+)
 @pytest.mark.parametrize("shape", FFT_IRFFTN_COMPLEX32_SHAPES)
 def test_fft_irfftn_complex32(shape):
     """Test fft_irfftn with complex32 (fp16 complex) input produces float16 output."""
@@ -95,6 +104,7 @@ FFT_IRFFTN_COMPLEX128_SHAPES = FFT_IRFFTN_SHAPES
 
 
 @pytest.mark.fft_irfftn
+@pytest.mark.skipif(flag_gems.vendor_name == "metax", reason="Not supported on metax")
 @pytest.mark.parametrize("shape", FFT_IRFFTN_COMPLEX128_SHAPES)
 def test_fft_irfftn_complex128(shape):
     """Test fft_irfftn with complex128 (fp64 complex) input produces float64 output."""
@@ -115,6 +125,7 @@ def test_fft_irfftn_complex128(shape):
 
 
 @pytest.mark.fft_irfftn
+@pytest.mark.skipif(flag_gems.vendor_name == "metax", reason="Not supported on metax")
 @pytest.mark.parametrize("shape", FFT_IRFFTN_SHAPES)
 def test_fft_irfftn_default_s(shape):
     """Test fft_irfftn with default s and dim (all dims transformed)."""
