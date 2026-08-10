@@ -10,6 +10,11 @@ ADAPTIVE_AVG_POOL3D_OUTPUT_SIZES = [
     (8, 8, 8),
     (3, 3, 3),
     (5, 5, 5),
+    # Upsampling cases where each input maps to more than 2 outputs per
+    # dimension. These exercise the dynamic MAX_OUT_D/H/W loop bound in
+    # the kernel; the previous static_range(0, 2) would miss contributions.
+    (7, 7, 7),
+    (8, 8, 8),
 ]
 
 
@@ -19,6 +24,11 @@ ADAPTIVE_AVG_POOL3D_SHAPES = [
     (2, 3, 16, 16, 16),
     (1, 1, 7, 7, 7),
     (1, 2, 10, 10, 10),
+    # Small inputs paired with the upsampling output sizes above to expose
+    # the static_range(0, 2) bug: ceil(out/in) >= 3 forces the kernel to
+    # iterate beyond 2 output positions per input.
+    (1, 1, 3, 3, 3),
+    (1, 1, 2, 2, 2),
 ]
 
 
@@ -29,24 +39,26 @@ ADAPTIVE_AVG_POOL3D_SHAPES = [
 def test_adaptive_avg_pool3d_backward(shape, output_size, dtype):
     # Create input tensor
     inp = torch.randn(shape, dtype=dtype, device=flag_gems.device)
-    ref_inp = utils.to_reference(inp)
+    grad_output = torch.randn(
+        (*shape[:-3], *output_size), device=flag_gems.device, dtype=dtype
+    )
+    ref_inp = utils.to_reference(inp, True)
+    ref_grad_output = utils.to_reference(grad_output, True)
 
-    # Compute forward pass to get output shape
-    ref_out = torch.nn.functional.adaptive_avg_pool3d(ref_inp, output_size)
-    torch.nn.functional.adaptive_avg_pool3d(inp, output_size)
-
-    # Compute backward with gradient of ones
-    grad_output = torch.ones_like(ref_out)
-
-    # Reference implementation
+    # Reference implementation (high-precision upcast)
     ref_grad = torch.ops.aten._adaptive_avg_pool3d_backward.default(
-        grad_output, ref_inp
+        ref_grad_output, ref_inp
     )
 
     # GEMS implementation
     with flag_gems.use_gems():
         gems_grad = torch.ops.aten._adaptive_avg_pool3d_backward.default(
-            grad_output.to(flag_gems.device), inp
+            grad_output, inp
         )
 
-    utils.gems_assert_close(gems_grad, ref_grad, dtype)
+    utils.gems_assert_close(
+        gems_grad,
+        ref_grad,
+        dtype,
+        reduce_dim=output_size[0] * output_size[1] * output_size[2],
+    )
