@@ -56,6 +56,9 @@ def _adaptive_avg_pool3d_backward_kernel(
     grad_in_stride_w,
     n_elements: tl.constexpr,
     BLOCK_SIZE: tl.constexpr,
+    MAX_OUT_D: tl.constexpr,
+    MAX_OUT_H: tl.constexpr,
+    MAX_OUT_W: tl.constexpr,
 ):
     pid = tl.program_id(0)
     block_start = pid * BLOCK_SIZE
@@ -89,16 +92,18 @@ def _adaptive_avg_pool3d_backward_kernel(
     w_out_max = tl.minimum(w_out_max, out_w)
 
     # Iterate over possible output positions (use static range)
-    # Each input can belong to at most 2 output positions per dimension
-    for d_out in tl.static_range(0, 2):
+    # Upper bound: each input position can map to at most ceil(out/in) + 1 output
+    # positions per dimension. Use a conservative constexpr computed host-side
+    # so upsampling (out > in) is handled correctly.
+    for d_out in tl.static_range(0, MAX_OUT_D):
         d_out_idx = d_out_min + d_out
         d_out_valid = (d_out_idx >= 0) & (d_out_idx < d_out_max)
 
-        for h_out in tl.static_range(0, 2):
+        for h_out in tl.static_range(0, MAX_OUT_H):
             h_out_idx = h_out_min + h_out
             h_out_valid = (h_out_idx >= 0) & (h_out_idx < h_out_max)
 
-            for w_out in tl.static_range(0, 2):
+            for w_out in tl.static_range(0, MAX_OUT_W):
                 w_out_idx = w_out_min + w_out
                 w_out_valid = (w_out_idx >= 0) & (w_out_idx < w_out_max)
 
@@ -141,7 +146,7 @@ def _adaptive_avg_pool3d_backward_kernel(
                     + h_out_idx * out_stride_h
                     + w_out_idx * out_stride_w
                 )
-                grad_out_val = tl.load(grad_out_ptr, mask=mask)
+                grad_out_val = tl.load(grad_out_ptr, mask=mask & out_valid)
 
                 # Accumulate only if in_region
                 contribution = tl.where(
@@ -184,6 +189,14 @@ def _adaptive_avg_pool3d_backward(
 
     n_elements = in_n * in_c * in_d * in_h * in_w
 
+    # Upper bound on the number of output positions a single input can map to
+    # per dimension. For adaptive pooling, input i contributes to outputs in
+    # [o_min, o_max) where o_max - o_min = ceil(out/in) (+1 at boundaries), so a
+    # conservative constexpr is ceil(out / in) + 1. This covers upsampling.
+    max_out_d = (out_d + in_d - 1) // in_d + 1
+    max_out_h = (out_h + in_h - 1) // in_h + 1
+    max_out_w = (out_w + in_w - 1) // in_w + 1
+
     grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
 
     _adaptive_avg_pool3d_backward_kernel[grid](
@@ -208,6 +221,9 @@ def _adaptive_avg_pool3d_backward(
         grad_input.stride(3),
         grad_input.stride(4),
         n_elements,
+        MAX_OUT_D=max_out_d,
+        MAX_OUT_H=max_out_h,
+        MAX_OUT_W=max_out_w,
     )
 
     return grad_input.to(grad_output.dtype)
