@@ -27,11 +27,18 @@ def test_special_hermite_polynomial_he(shape, dtype):
 
     ref_inp1 = utils.to_reference(inp1, True)
     ref_inp2 = utils.to_reference(inp2)
+    # iluvatar 的原生 PyTorch CUDA kernel 不支持 int64 n → float 的 cast
+    # (nvrtc ERROR_UNSUPPORTED_CAST)，参考计算强制走 CPU。
+    if flag_gems.vendor_name == "iluvatar":
+        ref_inp1 = ref_inp1.to("cpu")
+        ref_inp2 = ref_inp2.to("cpu")
 
     ref_out = torch.special.hermite_polynomial_he(ref_inp1, ref_inp2)
     with flag_gems.use_gems():
         res_out = torch.special.hermite_polynomial_he(inp1, inp2)
 
+    if flag_gems.vendor_name == "iluvatar":
+        res_out = res_out.to("cpu")
     utils.gems_assert_close(res_out, ref_out, dtype, equal_nan=True, atol=ATOL)
 
     # Also test scalar n path
@@ -40,4 +47,6 @@ def test_special_hermite_polynomial_he(shape, dtype):
         with flag_gems.use_gems():
             res_out = torch.special.hermite_polynomial_he(inp1, n)
 
+        if flag_gems.vendor_name == "iluvatar":
+            res_out = res_out.to("cpu")
         utils.gems_assert_close(res_out, ref_out, dtype, equal_nan=True, atol=ATOL)
