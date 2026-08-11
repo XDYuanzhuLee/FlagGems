@@ -65,7 +65,6 @@ __all__ = [
     "layer_norm",
     "layer_norm_backward",
     "linalg_svdvals",
-    "linalg_vander",
     "log_sigmoid_forward",
     "log_softmax",
     "log_softmax_backward",
