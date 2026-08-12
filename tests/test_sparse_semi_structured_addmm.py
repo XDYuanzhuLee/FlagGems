@@ -1,7 +1,6 @@
+import flag_gems
 import pytest
 import torch
-
-import flag_gems
 
 from . import accuracy_utils as utils
 
@@ -39,10 +38,22 @@ def _pr_meta_to_packed(mat1, meta_bool):
 def _aten_addmm_ref(input_tensor, mat1, meta, mat2, alpha=1.0, beta=1.0):
     """Reference output from the native ``aten._sparse_semi_structured_addmm``.
 
+    Since PyTorch 2.11 the aten op follows a sparse-linear style schema:
+    ``input`` (the first positional argument) must be a 1D bias vector of
+    length ``M`` (broadcast across columns), while this operator computes a
+    2D addmm ``alpha * (mat1 @ sparse(meta)) @ mat2 + beta * input`` with an
+    ``(M, N)`` input applied element-wise. The two are not equivalent for a
+    general 2D input, so the reference is split into two parts:
+
+    1. An empty input tensor is passed to the aten op to select the
+       no-bias epilogue path, which computes ``alpha * packed @ mat2`` only.
+       (The input dimension/size checks in the C++ kernel are gated on
+       ``input.numel() != 0``, so an empty tensor bypasses them.)
+    2. The ``beta * input`` contribution is added back in Python so the
+       full addmm semantics are reproduced.
+
     The CUTLASS backend is used so that ``packed.meta`` is a standalone int16
     tensor matching the ``Tensor mat1_meta`` parameter of the aten op schema.
-    ``alpha`` and ``beta`` are fused inside the aten C++ kernel, consistent
-    with addmm semantics.
 
     Must run on GPU since the CUTLASS backend does not support CPU.
     """
@@ -50,14 +61,19 @@ def _aten_addmm_ref(input_tensor, mat1, meta, mat2, alpha=1.0, beta=1.0):
     torch.sparse.SparseSemiStructuredTensor._FORCE_CUTLASS = True
     try:
         packed = _pr_meta_to_packed(mat1, meta)
-        return torch.ops.aten._sparse_semi_structured_addmm(
-            input_tensor,
+        # Empty input selects the no-bias epilogue: the aten op then only
+        # computes alpha * packed @ mat2 (with the 2:4 sparsity applied via meta).
+        empty_input = torch.zeros(0, dtype=mat1.dtype, device=mat1.device)
+        mm_out = torch.ops.aten._sparse_semi_structured_addmm(
+            empty_input,
             packed.packed,
             packed.meta,
             mat2,
             alpha=alpha,
-            beta=beta,
+            beta=1.0,
         )
+        # Re-apply the 2D input element-wise to restore addmm semantics.
+        return mm_out + beta * input_tensor
     finally:
         torch.sparse.SparseSemiStructuredTensor._FORCE_CUTLASS = old
 
