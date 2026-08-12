@@ -8658,6 +8658,16 @@ ops:
       Input is clamped to [eps, 1 - eps] when eps is not None.
     for:
       - special.logit
+    labels:
+      - aten
+      - KernelGen
+    kind:
+      - Math
+    stages:
+      - alpha: '5.4'
+  - id: special_logit_out
+    description: A variant of `special_logit` that allows the output to be assigned to another tensor.
+    for:
       - special.logit.out
     labels:
       - aten
