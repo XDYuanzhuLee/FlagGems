@@ -18,7 +18,6 @@ import logging
 import torch
 import triton
 import triton.language as tl
-
 from flag_gems.utils import libentry
 
 logger = logging.getLogger(__name__)
@@ -59,16 +58,14 @@ def _eig_2x2_kernel(A, eigenvalues, N, stride_a, stride_e, BLOCK_SIZE: tl.conste
     tl.store(eigenvalues + pid * stride_e + 1, ev_max)
 
 
-# NOTE: 3x3 analytical kernel and Jacobi iteration kernel were removed as dead code.
-# For n>2, this op falls back to torch.linalg.eigh on CPU (see below).
-
-
 def linalg_eigh(A, UPLO="L"):
     """
     Compute eigenvalue decomposition of symmetric/Hermitian matrices.
 
-    For 2x2 matrices, uses an analytical formula via Triton kernel.
-    For larger matrices, falls back to torch.linalg.eigh on CPU.
+    For n == 2, uses an analytical formula via a Triton kernel.
+    For n > 2, raises NotImplementedError.
+    For n < 2 (0x0 / 1x1), returns the diagonal as eigenvalues and the
+    identity as eigenvectors, computed on device.
     """
     logger.debug("GEMS LINALG_EIGH")
 
@@ -141,15 +138,15 @@ def linalg_eigh(A, UPLO="L"):
         eigenvalues = eigenvalues.reshape(*batch_shape, 2)
         eigenvectors = eigenvectors.reshape(*batch_shape, 2, 2)
 
+    elif n > 2:
+        raise NotImplementedError(
+            "linalg_eigh: n>2 is not supported by the FlagGems Triton kernel yet."
+        )
     else:
-        # NOTE: n>2 falls back to CPU, breaking CUDA graph compatibility.
-        # This is a design limitation pending a future n>2 Triton kernel.
-        # Test/benchmark shapes for this path are tagged `cpu_fallback_*`
-        # Convert to CPU, compute, then convert back
-        A_cpu = A.cpu()
-        eigenvalues_cpu, eigenvectors_cpu = torch.linalg.eigh(A_cpu, UPLO=UPLO)
-        eigenvalues = eigenvalues_cpu.to(A.device)
-        eigenvectors = eigenvectors_cpu.to(A.device)
+        # n < 2 (0x0 / 1x1): eigenvalues are the diagonal; eigenvectors are
+        # the identity. Both stay on device via host-side ops.
+        eigenvalues = A.diagonal(dim1=-2, dim2=-1).clone()
+        eigenvectors = torch.ones_like(A)
 
     # Convert back to original dtype
     if dtype != A.dtype:
