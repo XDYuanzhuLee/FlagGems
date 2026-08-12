@@ -86,6 +86,11 @@ def test_sparse_semi_structured_addmm(shape, dtype):
     if not _is_sm80_to_sm89():
         pytest.skip("aten._sparse_semi_structured_addmm only supports 8.x")
 
+    # float32 has no native backend that can represent 2:4 sparsity, so the
+    # aten reference is unavailable and the (correct) gems kernel is skipped.
+    if dtype == torch.float32:
+        pytest.skip("float32 2:4 sparsity has no supported native backend")
+
     M, N = shape
     K4 = 32  # K = 4 * K4
 
@@ -117,6 +122,11 @@ def test_sparse_semi_structured_addmm(shape, dtype):
 def test_sparse_semi_structured_addmm_with_alpha_beta(shape, dtype):
     if not _is_sm80_to_sm89():
         pytest.skip("aten._sparse_semi_structured_addmm only supports 8.x")
+
+    # float32 has no native backend that can represent 2:4 sparsity, so the
+    # aten reference is unavailable and the (correct) gems kernel is skipped.
+    if dtype == torch.float32:
+        pytest.skip("float32 2:4 sparsity has no supported native backend")
 
     M, N = shape
     K4 = 32  # K = 4 * K4
