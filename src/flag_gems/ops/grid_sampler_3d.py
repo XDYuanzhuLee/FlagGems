@@ -26,6 +26,20 @@ from flag_gems.utils import triton_lang_extension as tle
 logger = logging.getLogger(__name__)
 
 
+@triton.jit
+def _round_half_to_even_fp32(x):
+    """Round half to even (banker's rounding). ``x`` must be fp32.
+
+    The parity check stays entirely in the float domain (no int cast), so
+    backends with limited SelectionDAG lowering (e.g. Ascend) can compile it.
+    Mirrors ``flag_gems.ops.round.round_half_to_even_impl``.
+    """
+    r = tl.floor(x)
+    d = x - r
+    is_odd = tl.abs(r - 2.0 * tl.floor(r / 2.0)) > 0.5
+    return tl.where((d > 0.5) | ((tl.abs(d - 0.5) < 1e-10) & is_odd), r + 1.0, r)
+
+
 @libentry()
 @triton.jit
 def grid_sampler_3d_kernel(
@@ -140,61 +154,21 @@ def grid_sampler_3d_kernel(
             y_pad = (gy_refl + 1.0) * tl.cast(in_h, tl.float32) * 0.5 - 0.5
             z_pad = (gz_refl + 1.0) * tl.cast(in_d, tl.float32) * 0.5 - 0.5
 
-    # Banker's rounding for nearest mode (round half to even).
-    # Matches PyTorch behavior for fractional 0.5 cases.
+    # NEAREST: round half to even (banker's rounding), matching PyTorch.
     if interpolation_mode == 1:  # NEAREST
-        if padding_mode == 0:
-            # X
-            xf = tl.floor(x)
-            xfrac = x - xf
-            xhalf = xfrac == 0.5
-            xf_int = tl.cast(xf, tl.int32)
-            xeven = xf_int % 2 == 0
-            xr = tl.where(xfrac < 0.5, xf, xf + 1)
-            ix = tl.cast(tl.where(xhalf, tl.where(xeven, xf, xf + 1), xr), tl.int32)
-            # Y
-            yf = tl.floor(y)
-            yfrac = y - yf
-            yhalf = yfrac == 0.5
-            yf_int = tl.cast(yf, tl.int32)
-            yeven = yf_int % 2 == 0
-            yr = tl.where(yfrac < 0.5, yf, yf + 1)
-            iy = tl.cast(tl.where(yhalf, tl.where(yeven, yf, yf + 1), yr), tl.int32)
-            # Z
-            zf = tl.floor(z)
-            zfrac = z - zf
-            zhalf = zfrac == 0.5
-            zf_int = tl.cast(zf, tl.int32)
-            zeven = zf_int % 2 == 0
-            zr = tl.where(zfrac < 0.5, zf, zf + 1)
-            iz = tl.cast(tl.where(zhalf, tl.where(zeven, zf, zf + 1), zr), tl.int32)
-        else:
-            # X (padded)
-            xf = tl.floor(x_pad)
-            xfrac = x_pad - xf
-            xhalf = xfrac == 0.5
-            xf_int = tl.cast(xf, tl.int32)
-            xeven = xf_int % 2 == 0
-            xr = tl.where(xfrac < 0.5, xf, xf + 1)
-            ix = tl.cast(tl.where(xhalf, tl.where(xeven, xf, xf + 1), xr), tl.int32)
-            # Y (padded)
-            yf = tl.floor(y_pad)
-            yfrac = y_pad - yf
-            yhalf = yfrac == 0.5
-            yf_int = tl.cast(yf, tl.int32)
-            yeven = yf_int % 2 == 0
-            yr = tl.where(yfrac < 0.5, yf, yf + 1)
-            iy = tl.cast(tl.where(yhalf, tl.where(yeven, yf, yf + 1), yr), tl.int32)
-            # Z (padded)
-            zf = tl.floor(z_pad)
-            zfrac = z_pad - zf
-            zhalf = zfrac == 0.5
-            zf_int = tl.cast(zf, tl.int32)
-            zeven = zf_int % 2 == 0
-            zr = tl.where(zfrac < 0.5, zf, zf + 1)
-            iz = tl.cast(tl.where(zhalf, tl.where(zeven, zf, zf + 1), zr), tl.int32)
-        # Clamp rounded indices for border/reflection:
-        # banker's rounding can round in_w-0.5 to in_w (out of bounds).
+        # Pick the coordinate source once per axis instead of duplicating the
+        # rounding logic across the padding_mode branches.
+        if padding_mode == 0:  # ZEROS - keep original (possibly OOB) coords
+            xs, ys, zs = x, y, z
+        else:  # BORDER / REFLECTION - use padded coords
+            xs, ys, zs = x_pad, y_pad, z_pad
+
+        ix = tl.cast(_round_half_to_even_fp32(xs), tl.int32)
+        iy = tl.cast(_round_half_to_even_fp32(ys), tl.int32)
+        iz = tl.cast(_round_half_to_even_fp32(zs), tl.int32)
+
+        # Clamp rounded indices for border/reflection: banker's rounding can
+        # round size-0.5 up to size (out of bounds).
         if padding_mode != 0:
             ix = tl.maximum(0, tl.minimum(ix, in_w - 1))
             iy = tl.maximum(0, tl.minimum(iy, in_h - 1))
