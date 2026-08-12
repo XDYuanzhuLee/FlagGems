@@ -108,6 +108,9 @@ def test_sparse_semi_structured_addmm(shape, dtype):
 
     # NOTE: re-measure on sm_80/86/89 hardware since the CUTLASS C++ kernel is
     # not reachable on sm_90 (compute capability 8.x required).
+    # In quick-cpu mode (TO_CPU) the CUTLASS ref must stay on GPU, so move only
+    # the final ref_out to CPU here to honour the to_cpu() contract.
+    ref_out = utils.to_reference(ref_out)
     if dtype == torch.bfloat16:
         utils.gems_assert_close(res_out, ref_out, dtype, atol=0.15)
     elif dtype == torch.float16:
@@ -149,6 +152,9 @@ def test_sparse_semi_structured_addmm_with_alpha_beta(shape, dtype):
 
     # NOTE: re-measure on sm_80/86/89 hardware since the CUTLASS C++ kernel is
     # not reachable on sm_90 (compute capability 8.x required).
+    # In quick-cpu mode (TO_CPU) the CUTLASS ref must stay on GPU, so move only
+    # the final ref_out to CPU here to honour the to_cpu() contract.
+    ref_out = utils.to_reference(ref_out)
     if dtype == torch.bfloat16:
         utils.gems_assert_close(res_out, ref_out, dtype, atol=0.4)
     elif dtype == torch.float16:
