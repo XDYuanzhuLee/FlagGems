@@ -14,9 +14,10 @@
 
 from contextlib import contextmanager
 
-import flag_gems
 import pytest
 import torch
+
+import flag_gems
 
 from . import accuracy_utils as utils
 
