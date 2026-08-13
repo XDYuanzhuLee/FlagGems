@@ -129,6 +129,7 @@ def test_scaled_dot_product_efficient_attention_logsumexp(shape, dtype):
         is_causal=False,
     )
     ref_log_sumexp = ref_log_sumexp[:, :, :seq_len]
+    ref_log_sumexp = utils.to_reference(ref_log_sumexp)
 
     with flag_gems.use_gems():
         (
