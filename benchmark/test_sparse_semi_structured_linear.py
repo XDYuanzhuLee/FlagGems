@@ -1,6 +1,8 @@
 import pytest
 import torch
 
+import flag_gems
+
 from . import base, consts
 
 
@@ -58,6 +60,7 @@ def test_sparse_semi_structured_linear():
     bench = SparseSemiStructuredLinearBenchmark(
         op_name="sparse_semi_structured_linear",
         torch_op=_torch_ref,
+        gems_op=flag_gems._sparse_semi_structured_linear,
         use_bias=False,
     )
     bench.run()
@@ -68,6 +71,7 @@ def test_sparse_semi_structured_linear_with_bias():
     bench = SparseSemiStructuredLinearBenchmark(
         op_name="sparse_semi_structured_linear",
         torch_op=_torch_ref_with_bias,
+        gems_op=flag_gems._sparse_semi_structured_linear,
         use_bias=True,
     )
     bench.run()
