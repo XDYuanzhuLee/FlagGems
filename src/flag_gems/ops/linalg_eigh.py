@@ -64,20 +64,44 @@ def linalg_eigh(A, UPLO="L"):
     Compute eigenvalue decomposition of symmetric/Hermitian matrices.
 
     For n == 2, uses an analytical formula via a Triton kernel.
-    For n > 2, raises NotImplementedError.
+    For n > 2, falls back to the cuSOLVER/LAPACK path provided by
+    ``_linalg_eigh`` (the operator behind ``torch.linalg.eigh``).
     For n < 2 (0x0 / 1x1), returns the diagonal as eigenvalues and the
     identity as eigenvectors, computed on device.
+
+    The n > 2 fallback is the reverse direction of the delegation in
+    ``_linalg_eigh``: the two operators delegate to each other, but the
+    size guard makes the recursion acyclic (``_linalg_eigh`` only calls
+    this for n == 2; this only calls ``_linalg_eigh`` for n > 2).
     """
     logger.debug("GEMS LINALG_EIGH")
 
-    assert A.dtype.is_floating_point, "linalg_eigh only supports floating point dtypes"  # fmt: skip
     # Check input dimensions
     if A.ndim < 2 or A.shape[-1] != A.shape[-2]:
         raise ValueError(f"Input matrix must be square, got shape {A.shape}")
 
+    n = A.shape[-1]
+
+    # The on-device analytical path (the 2x2 Triton kernel and the n<2
+    # diagonal/identity construction) is real floating-point only: Triton
+    # cannot specialise complex dtypes, and n > 2 has no closed form. Route
+    # all complex inputs and all n > 2 inputs to the cuSOLVER/LAPACK path in
+    # ``_linalg_eigh`` (which supports float32 / complex64 / complex128 and
+    # arbitrary n). Lazy import avoids a top-level circular import
+    # (``_linalg_eigh`` calls this for n==2 real).
+    if n > 2 or not A.dtype.is_floating_point:
+        from flag_gems.ops._linalg_eigh import _linalg_eigh
+
+        return _linalg_eigh(A, UPLO=UPLO, compute_v=True)
+
+    # Below this point: n <= 2 and real floating point. fp16/bf16 are widened
+    # to fp32 for the 2x2 kernel below (Triton computes in fp32); the result
+    # is cast back. Native torch.linalg.eigh does not support fp16/bf16 at
+    # all, so this is an on-device enhancement for the 2x2 case.
+    assert A.dtype.is_floating_point, "linalg_eigh only supports floating point dtypes"  # fmt: skip
+
     # Handle batch dimensions
     batch_shape = A.shape[:-2]
-    n = A.shape[-1]
     batch_size = 1
     for dim in batch_shape:
         batch_size *= dim
@@ -140,9 +164,12 @@ def linalg_eigh(A, UPLO="L"):
         eigenvectors = eigenvectors.reshape(*batch_shape, 2, 2)
 
     elif n > 2:
-        raise NotImplementedError(
-            "linalg_eigh: n>2 is not supported by the FlagGems Triton kernel yet."
-        )
+        # The Triton analytical path is limited to 2x2 (no closed form for
+        # n >= 5); fall back to the cuSOLVER/LAPACK implementation in
+        # ``_linalg_eigh``. Lazy import avoids a top-level circular import.
+        from flag_gems.ops._linalg_eigh import _linalg_eigh
+
+        eigenvalues, eigenvectors = _linalg_eigh(A, UPLO=UPLO, compute_v=True)
     else:
         # n < 2 (0x0 / 1x1): eigenvalues are the diagonal; eigenvectors are
         # the identity. Both stay on device via host-side ops.
