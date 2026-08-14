@@ -18,15 +18,27 @@ import torch
 from . import base
 
 # Benchmark shapes for linalg_eigh.
-# Only n == 2 is benchmarked; the op raises NotImplementedError for n > 2.
+#
+# The op has two execution paths:
+#   - n == 2  -> Triton `_eig_2x2_kernel` (on device, CUDA-graph compatible).
+#   - n > 2   -> cuSOLVER / LAPACK fallback via `_linalg_eigh` (CPU round-trip).
 
-# n == 2: Triton `_eig_2x2_kernel` (on device, CUDA-graph compatible).
+# n == 2: Triton `_eig_2x2_kernel` (on device).
 EIG_BENCHMARK_2X2_SHAPES = [(2, 2)]
+
+# n > 2: cuSOLVER / LAPACK fallback (the path behind torch.linalg.eigh).
+EIG_BENCHMARK_CUSOLVER_SHAPES = [
+    (32, 32),
+    (64, 64),
+    (128, 128),
+    (256, 256),
+    (512, 512),
+]
 
 
 class LinalgEighBenchmark(base.Benchmark):
     def set_shapes(self, shape_file_path=None):
-        self.shapes = EIG_BENCHMARK_2X2_SHAPES
+        self.shapes = EIG_BENCHMARK_2X2_SHAPES + EIG_BENCHMARK_CUSOLVER_SHAPES
 
     def get_input_iter(self, cur_dtype):
         for shape in self.shapes:
@@ -40,7 +52,7 @@ def test_linalg_eigh():
     bench = LinalgEighBenchmark(
         op_name="linalg_eigh",
         torch_op=torch.linalg.eigh,
-        # linalg_eigh only supports float32/float64 on GPU
+        # linalg_eigh only supports float32 on GPU (cuSOLVER dtype constraint).
         dtypes=[torch.float32],
     )
     bench.run()
