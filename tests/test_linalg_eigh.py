@@ -51,52 +51,82 @@ def _ieee_float32_matmul():
 # linalg_eigh / _linalg_eigh registration.
 #
 # `torch.linalg.eigh` (the user-facing Python API) dispatches to
-# `aten::_linalg_eigh`, which is the operator registered to FlagGems.
-# The dispatch policy keeps #3951's Triton 2x2 kernel on the user path:
-#   - n == 2, float32, compute_v=True -> Triton `_eig_2x2_kernel` (on device).
-#   - n > 2  -> cuSOLVER / LAPACK via `_linalg_eigh` (CPU round-trip).
-#   - n < 2  -> on device: diagonal as eigenvalues, identity as eigenvectors.
-#
-# `aten::linalg_eigh` is a separate public entry that mirrors the same paths.
-# Shapes below are split so each path is explicitly exercised and labelled.
+# `aten::_linalg_eigh`, which is the operator registered to FlagGems. Both
+# `aten::_linalg_eigh` and `aten::linalg_eigh` are registered; both ultimately
+# run the on-device Triton paths:
+#   - n == 2 real                 -> closed-form `_eig_2x2_kernel`.
+#   - 3 <= n <= 64 real / 2n<=128 complex -> register-resident Jacobi.
+#   - n > 64 real / 2n > 128 complex      -> global-memory pair-wise Jacobi.
+#   - n < 2                       -> diagonal / identity on device.
+# Complex inputs use a real embedding (2n x 2n real symmetric) and recover
+# complex eigenpairs from it. Shapes below are split so each path is exercised.
 
-# Path A: hits the Triton 2x2 kernel (via the user path torch.linalg.eigh).
-# Includes fp16/bf16 — these are widened to fp32 inside the 2x2 kernel path,
-# which is an on-device enhancement beyond native torch.linalg.eigh (which
-# raises NotImplementedError for Half/BFloat16).
+# Path A: closed-form 2x2 kernel (real). fp16/bf16 are widened to fp32 on
+# device, an enhancement over native torch.linalg.eigh (which raises
+# NotImplementedError for Half/BFloat16).
 EIG_2X2_SHAPES = [(2, 2)]
 EIG_2X2_LOWDTYPE = [torch.float16, torch.bfloat16]
 
-# Path B: n > 2, handled by the cuSOLVER fallback inside _linalg_eigh.
-EIG_CUSOLVER_SHAPES = [(3, 3), (5, 5), (8, 8), (16, 16), (32, 32)]
+# Path B: register-resident Jacobi (n > 2, within the tile bound).
+EIG_JACOBI_TILE_SHAPES = [
+    (3, 3),
+    (5, 5),
+    (8, 8),
+    (16, 16),
+    (32, 32),
+    (48, 48),
+    (64, 64),
+]
 
-# Path C: n < 2 (0x0 / 1x1), computed on device for real, cuSOLVER for complex.
+# Path B2: global-memory round-robin Jacobi (n > 64). Verified by
+# reconstruction only; the trailing precision is worse than cuSOLVER, so
+# element-wise eigenvalue comparison would not hold at these sizes.
+EIG_JACOBI_GLOBAL_SHAPES = [
+    (96, 96),
+    (128, 128),
+]
+
+# Path C: n < 2 (0x0 / 1x1), diagonal/identity on device.
 EIG_TRIVIAL_SHAPES = [(0, 0), (1, 1)]
 EIG_TRIVIAL_COMPLEX_SHAPES = [(0, 0), (1, 1)]
 
-# Complex n == 2: Triton cannot specialise complex dtypes, so even the 2x2
-# case routes to the cuSOLVER path (same as n > 2).
-EIG_COMPLEX_2X2_SHAPES = [(2, 2)]
+# Complex inputs (any n): real embedding then the real Jacobi path.
+# Up to n=32 (real embedding 2n<=64) hits the tile path; n>=48 (2n>=96)
+# hits the global path.
+EIG_COMPLEX_SHAPES = [(2, 2), (3, 3), (5, 5), (8, 8), (16, 16), (32, 32)]
+EIG_COMPLEX_GLOBAL_SHAPES = [(48, 48), (64, 64)]
 
 # Batched variants.
 EIG_BATCH_2X2_SHAPES = [(2, 2, 2)]
-EIG_BATCH_CUSOLVER_SHAPES = [(4, 3, 3), (1, 8, 8)]
+EIG_BATCH_JACOBI_SHAPES = [(4, 3, 3), (1, 8, 8)]
 EIG_BATCH_TRIVIAL_SHAPES = [(2, 0, 0), (3, 1, 1)]
-EIG_BATCH_CUSOLVER_COMPLEX_SHAPES = [(2, 3, 3), (1, 4, 4)]
+EIG_BATCH_COMPLEX_SHAPES = [(2, 3, 3), (1, 4, 4)]
 
-# UPLO is a core parameter of eigh; the default "L" is covered by the path
-# tests above, "U" is exercised separately against the cuSOLVER path.
+# UPLO is a core parameter of eigh; "L" is covered above, "U" separately.
 EIG_UPLO_U_SHAPES = [(3, 3), (5, 5)]
 EIG_UPLO_U_COMPLEX_SHAPES = [(3, 3), (5, 5)]
 
+# Eigenvalue element-wise tolerance per path. The Jacobi path has slightly
+# lower trailing precision than cuSOLVER, so the element-wise eigenvalue check
+# uses a looser atol than the reconstruction check.
+EIG_EVAL_ATOL = {torch.float32: 5e-4, torch.complex64: 5e-4}
 
-def make_symmetric_matrix(shape, dtype, device):
-    """Create a symmetric (or Hermitian) matrix for eigendecomposition."""
+
+def make_symmetric_matrix(shape, dtype, device, symmetric_only=True):
+    """Create a symmetric (or Hermitian) matrix for eigendecomposition.
+
+    When ``symmetric_only`` is False the matrix is made asymmetric so that the
+    UPLO selection (which triangle is used) is actually exercised.
+    """
     A = torch.randn(shape, dtype=dtype, device=device)
     if A.is_complex():
         A = (A + A.mH) / 2
     else:
         A = (A + A.transpose(-2, -1)) / 2
+    if not symmetric_only and A.shape[-1] >= 2:
+        # Perturb the upper triangle only; UPLO="L" must ignore it, "U" must
+        # use it. The reference is built with the matching UPLO below.
+        A = A + torch.triu(0.1 * torch.randn_like(A), diagonal=1)
     return A
 
 
@@ -110,11 +140,7 @@ def _assert_close(res, ref, dtype, atol=1e-4):
     pattern here.
     """
     if dtype == torch.complex128:
-        # FlagGems' gems_assert_close tolerance table has no complex128 entry.
-        # Mirror the cholesky_solve / linalg_ldl_solve / linalg_cross pattern:
-        # fall back to torch.testing.assert_close. Use only atol (the caller's
-        # value, ~1e-2 for sign/basis-ambiguous reconstruction) with a loose
-        # rtol, since near-zero elements otherwise dominate the relative error.
+        res = utils.to_cpu(res, ref)
         torch.testing.assert_close(res, ref, atol=atol, rtol=1e-3)
     else:
         utils.gems_assert_close(res, ref, dtype, atol=atol)
@@ -134,13 +160,32 @@ def _assert_orthonormal(v, atol=1e-2):
     _assert_close(gram, expected, gram.dtype, atol=atol)
 
 
+def _symmetrise(inp, UPLO):
+    """Mirror one triangle into the other, matching eigh's UPLO semantics.
+
+    Used as the reconstruction target for asymmetric UPLO inputs: eigh returns
+    eigenpairs of the symmetrised matrix, so the reconstruction must be checked
+    against that matrix, not the raw asymmetric input.
+    """
+    idx = torch.arange(inp.shape[-1], device=inp.device)
+    if UPLO == "U":
+        tri_mask = idx[None, :] >= idx[:, None]
+    else:
+        tri_mask = idx[None, :] <= idx[:, None]
+    tri = inp * tri_mask
+    sym = tri + (tri.mH if inp.is_complex() else tri.transpose(-2, -1))
+    sym = sym.clone()
+    sym.diagonal(dim1=-2, dim2=-1).copy_(tri.diagonal(dim1=-2, dim2=-1))
+    return sym
+
+
 def _check_eigh_decomposition(A, eigenvalues, eigenvectors, atol=1e-3):
     """Verify the eigendecomposition via the defining relation A = V diag(w) Vᴴ.
 
     For real inputs this is V diag(w) Vᵀ; for complex/Hermitian inputs it is
     V diag(w) Vᴴ (conjugate transpose). This is sign-ambiguous-free: any valid
     eigenbasis reconstructs A and is orthonormal, regardless of per-vector sign
-    choices. Works for both the Triton 2x2 path and the cuSOLVER path.
+    choices. Works for all Triton paths.
     """
     with _ieee_float32_matmul():
         v_t = (
@@ -156,6 +201,21 @@ def _check_eigh_decomposition(A, eigenvalues, eigenvectors, atol=1e-3):
         _assert_orthonormal(eigenvectors)
 
 
+def _assert_ascending(eigenvalues, atol=1e-4):
+    """Eigenvalues are returned in ascending order (torch.linalg.eigh contract).
+
+    Ties are allowed; only a strictly descending adjacent pair is a failure.
+    """
+    w = utils.to_reference(eigenvalues, False)
+    diffs = w[..., 1:] - w[..., :-1]
+    torch.testing.assert_close(
+        diffs,
+        torch.clamp(diffs, min=-atol),
+        atol=atol,
+        rtol=0,
+    )
+
+
 # ---------------------------------------------------------------------------
 # User path: torch.linalg.eigh -> aten::_linalg_eigh (the registered op)
 # ---------------------------------------------------------------------------
@@ -165,11 +225,11 @@ def _check_eigh_decomposition(A, eigenvalues, eigenvectors, atol=1e-3):
 @pytest.mark.parametrize(
     "shape",
     EIG_2X2_SHAPES,
-    ids=[f"gpu_kernel_2x2-{s[0]}x{s[1]}" for s in EIG_2X2_SHAPES],
+    ids=[f"kernel_2x2-{s[0]}x{s[1]}" for s in EIG_2X2_SHAPES],
 )
 @pytest.mark.parametrize("dtype", [torch.float32])
 def test_linalg_eigh_2x2_kernel(shape, dtype):
-    """n == 2 on the user path: exercised by the Triton `_eig_2x2_kernel`."""
+    """n == 2 real: the closed-form `_eig_2x2_kernel`."""
     inp = make_symmetric_matrix(shape, dtype, flag_gems.device)
 
     ref_inp = utils.to_reference(inp)
@@ -178,21 +238,19 @@ def test_linalg_eigh_2x2_kernel(shape, dtype):
     with flag_gems.use_gems():
         res_out = torch.linalg.eigh(inp)
 
-    # Eigenvalues
     utils.gems_assert_close(res_out[0], ref_out[0], dtype)
-    # Eigenvectors: reconstruct + orthonormality (sign-ambiguous-free)
     _check_eigh_decomposition(inp, res_out[0], res_out[1])
 
 
 @pytest.mark.linalg_eigh
 @pytest.mark.parametrize(
     "shape",
-    EIG_CUSOLVER_SHAPES,
-    ids=[f"cusolver_n{s[0]}" for s in EIG_CUSOLVER_SHAPES],
+    EIG_JACOBI_TILE_SHAPES,
+    ids=[f"jacobi_n{s[0]}" for s in EIG_JACOBI_TILE_SHAPES],
 )
-@pytest.mark.parametrize("dtype", [torch.float32, torch.complex64, torch.complex128])
-def test_linalg_eigh_cusolver(shape, dtype):
-    """n > 2 on the user path: handled by the cuSOLVER fallback in _linalg_eigh."""
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_linalg_eigh_jacobi(shape, dtype):
+    """n > 2 real on the user path: register-resident Jacobi."""
     inp = make_symmetric_matrix(shape, dtype, flag_gems.device)
 
     ref_inp = utils.to_reference(inp)
@@ -201,25 +259,20 @@ def test_linalg_eigh_cusolver(shape, dtype):
     with flag_gems.use_gems():
         res_out = torch.linalg.eigh(inp)
 
-    # Eigenvalues of a Hermitian matrix are real even for complex inputs.
-    utils.gems_assert_close(res_out[0], ref_out[0], res_out[0].dtype)
-    # cuSOLVER path: relax tolerance to absorb the CPU round-trip + TF32 recon.
+    # Eigenvalues element-wise (Jacobi tolerance), plus reconstruction.
+    utils.gems_assert_close(res_out[0], ref_out[0], dtype, atol=EIG_EVAL_ATOL[dtype])
     _check_eigh_decomposition(inp, res_out[0], res_out[1], atol=1e-2)
 
 
 @pytest.mark.linalg_eigh
 @pytest.mark.parametrize(
     "shape",
-    EIG_COMPLEX_2X2_SHAPES,
-    ids=[f"complex_2x2-{s[0]}x{s[1]}" for s in EIG_COMPLEX_2X2_SHAPES],
+    EIG_COMPLEX_SHAPES,
+    ids=[f"complex_n{s[0]}" for s in EIG_COMPLEX_SHAPES],
 )
 @pytest.mark.parametrize("dtype", [torch.complex64, torch.complex128])
-def test_linalg_eigh_complex_2x2(shape, dtype):
-    """Complex n == 2: Triton can't specialise complex dtypes, so this routes
-    to the cuSOLVER path (not the 2x2 analytical kernel). complex128 validation
-    uses torch.testing.assert_close because FlagGems' gems_assert_close
-    tolerance table has no complex128 entry (matches cholesky_solve/
-    linalg_ldl_solve/linalg_cross)."""
+def test_linalg_eigh_complex(shape, dtype):
+    """Complex inputs: real embedding then the real Jacobi path."""
     inp = make_symmetric_matrix(shape, dtype, flag_gems.device)
 
     ref_inp = utils.to_reference(inp)
@@ -228,8 +281,8 @@ def test_linalg_eigh_complex_2x2(shape, dtype):
     with flag_gems.use_gems():
         res_out = torch.linalg.eigh(inp)
 
-    # Eigenvalues of a Hermitian matrix are real (float32/float64 here).
-    utils.gems_assert_close(res_out[0], ref_out[0], res_out[0].dtype)
+    # Eigenvalues of a Hermitian matrix are real.
+    _assert_close(res_out[0], ref_out[0], res_out[0].dtype, atol=5e-4)
     _check_eigh_decomposition(inp, res_out[0], res_out[1], atol=1e-2)
 
 
@@ -237,11 +290,11 @@ def test_linalg_eigh_complex_2x2(shape, dtype):
 @pytest.mark.parametrize(
     "shape",
     EIG_BATCH_2X2_SHAPES,
-    ids=[f"gpu_kernel_2x2-batch{s[0]}" for s in EIG_BATCH_2X2_SHAPES],
+    ids=[f"kernel_2x2-batch{s[0]}" for s in EIG_BATCH_2X2_SHAPES],
 )
 @pytest.mark.parametrize("dtype", [torch.float32])
 def test_linalg_eigh_batch_2x2_kernel(shape, dtype):
-    """Batched n == 2 on the user path: each batch element hits the Triton kernel."""
+    """Batched n == 2 real: each batch element hits the 2x2 kernel."""
     inp = make_symmetric_matrix(shape, dtype, flag_gems.device)
 
     ref_inp = utils.to_reference(inp)
@@ -257,12 +310,12 @@ def test_linalg_eigh_batch_2x2_kernel(shape, dtype):
 @pytest.mark.linalg_eigh
 @pytest.mark.parametrize(
     "shape",
-    EIG_BATCH_CUSOLVER_SHAPES,
-    ids=[f"cusolver-batch{s[-1]}" for s in EIG_BATCH_CUSOLVER_SHAPES],
+    EIG_BATCH_JACOBI_SHAPES,
+    ids=[f"jacobi-batch{s[-1]}" for s in EIG_BATCH_JACOBI_SHAPES],
 )
 @pytest.mark.parametrize("dtype", [torch.float32])
-def test_linalg_eigh_batch_cusolver(shape, dtype):
-    """Batched n > 2 on the user path: cuSOLVER fallback."""
+def test_linalg_eigh_batch_jacobi(shape, dtype):
+    """Batched n > 2 real: register-resident Jacobi per batch element."""
     inp = make_symmetric_matrix(shape, dtype, flag_gems.device)
 
     ref_inp = utils.to_reference(inp)
@@ -271,7 +324,7 @@ def test_linalg_eigh_batch_cusolver(shape, dtype):
     with flag_gems.use_gems():
         res_out = torch.linalg.eigh(inp)
 
-    utils.gems_assert_close(res_out[0], ref_out[0], dtype)
+    utils.gems_assert_close(res_out[0], ref_out[0], dtype, atol=EIG_EVAL_ATOL[dtype])
     _check_eigh_decomposition(inp, res_out[0], res_out[1], atol=1e-2)
 
 
@@ -283,7 +336,7 @@ def test_linalg_eigh_batch_cusolver(shape, dtype):
 )
 @pytest.mark.parametrize("dtype", [torch.float32])
 def test_linalg_eigh_trivial(shape, dtype):
-    """n < 2 (0x0 / 1x1) on the user path: computed on device via host-side ops."""
+    """n < 2 (0x0 / 1x1) real: diagonal as eigenvalues, identity as eigenvectors."""
     inp = make_symmetric_matrix(shape, dtype, flag_gems.device)
 
     ref_inp = utils.to_reference(inp)
@@ -304,7 +357,7 @@ def test_linalg_eigh_trivial(shape, dtype):
 )
 @pytest.mark.parametrize("dtype", [torch.float32])
 def test_linalg_eigh_batch_trivial(shape, dtype):
-    """Batched n < 2 (0x0 / 1x1) on the user path: computed on device."""
+    """Batched n < 2 real on the user path: computed on device."""
     inp = make_symmetric_matrix(shape, dtype, flag_gems.device)
 
     ref_inp = utils.to_reference(inp)
@@ -325,16 +378,14 @@ def test_linalg_eigh_batch_trivial(shape, dtype):
 )
 @pytest.mark.parametrize("dtype", EIG_2X2_LOWDTYPE)
 def test_linalg_eigh_2x2_low_precision(shape, dtype):
-    """n == 2 fp16/bf16: the 2x2 Triton path widens to fp32 on device and casts
-    back. This is an enhancement over native torch.linalg.eigh (which raises
-    NotImplementedError for Half/BFloat16). cuSOLVER reference is unavailable for
-    these dtypes, so validate via reconstruction only."""
+    """n == 2 fp16/bf16: the 2x2 path widens to fp32 on device and casts back.
+    cuSOLVER reference is unavailable for these dtypes, so validate via
+    reconstruction only."""
     inp = make_symmetric_matrix(shape, dtype, flag_gems.device)
 
     with flag_gems.use_gems():
         res_out = torch.linalg.eigh(inp)
 
-    # Eigenvalues/vec are in the input (low-precision) dtype after the cast back.
     _check_eigh_decomposition(inp, res_out[0], res_out[1], atol=1e-2)
 
 
@@ -346,8 +397,7 @@ def test_linalg_eigh_2x2_low_precision(shape, dtype):
 )
 @pytest.mark.parametrize("dtype", [torch.complex64, torch.complex128])
 def test_linalg_eigh_trivial_complex(shape, dtype):
-    """Complex n < 2 (0x0 / 1x1): routed to cuSOLVER (the on-device trivial
-    path is real-floating-point only)."""
+    """Complex n < 2 (0x0 / 1x1): diagonal/identity on device."""
     inp = make_symmetric_matrix(shape, dtype, flag_gems.device)
 
     ref_inp = utils.to_reference(inp)
@@ -364,12 +414,12 @@ def test_linalg_eigh_trivial_complex(shape, dtype):
 @pytest.mark.linalg_eigh
 @pytest.mark.parametrize(
     "shape",
-    EIG_BATCH_CUSOLVER_COMPLEX_SHAPES,
-    ids=[f"cusolver_complex-batch{s[-1]}" for s in EIG_BATCH_CUSOLVER_COMPLEX_SHAPES],
+    EIG_BATCH_COMPLEX_SHAPES,
+    ids=[f"complex-batch{s[-1]}" for s in EIG_BATCH_COMPLEX_SHAPES],
 )
 @pytest.mark.parametrize("dtype", [torch.complex64, torch.complex128])
-def test_linalg_eigh_batch_cusolver_complex(shape, dtype):
-    """Batched complex n > 2 on the user path: cuSOLVER fallback."""
+def test_linalg_eigh_batch_complex(shape, dtype):
+    """Batched complex n > 2: real embedding then the real Jacobi path."""
     inp = make_symmetric_matrix(shape, dtype, flag_gems.device)
 
     ref_inp = utils.to_reference(inp)
@@ -378,7 +428,7 @@ def test_linalg_eigh_batch_cusolver_complex(shape, dtype):
     with flag_gems.use_gems():
         res_out = torch.linalg.eigh(inp)
 
-    _assert_close(res_out[0], ref_out[0], res_out[0].dtype)
+    _assert_close(res_out[0], ref_out[0], res_out[0].dtype, atol=5e-4)
     _check_eigh_decomposition(inp, res_out[0], res_out[1], atol=1e-2)
 
 
@@ -390,11 +440,9 @@ def test_linalg_eigh_batch_cusolver_complex(shape, dtype):
 )
 @pytest.mark.parametrize("dtype", [torch.float32])
 def test_linalg_eigh_uplo_upper(shape, dtype):
-    """UPLO="U" on the cuSOLVER path: the lower/upper triangle selection is a
-    core eigh parameter and must be honoured. Symmetric inputs make the two
-    triangles equivalent, so this mainly guards that "U" is forwarded
-    correctly (not silently dropped)."""
-    inp = make_symmetric_matrix(shape, dtype, flag_gems.device)
+    """UPLO="U": the upper triangle is used and the lower ignored. Inputs are
+    made asymmetric so the triangle selection is genuinely exercised."""
+    inp = make_symmetric_matrix(shape, dtype, flag_gems.device, symmetric_only=False)
 
     ref_inp = utils.to_reference(inp)
     ref_out = torch.linalg.eigh(ref_inp, UPLO="U")
@@ -402,8 +450,9 @@ def test_linalg_eigh_uplo_upper(shape, dtype):
     with flag_gems.use_gems():
         res_out = torch.linalg.eigh(inp, UPLO="U")
 
-    utils.gems_assert_close(res_out[0], ref_out[0], dtype)
-    _check_eigh_decomposition(inp, res_out[0], res_out[1], atol=1e-2)
+    utils.gems_assert_close(res_out[0], ref_out[0], dtype, atol=EIG_EVAL_ATOL[dtype])
+    # Reconstruction against the symmetrised matrix (eigh uses one triangle).
+    _check_eigh_decomposition(_symmetrise(inp, "U"), res_out[0], res_out[1], atol=1e-2)
 
 
 @pytest.mark.linalg_eigh
@@ -414,8 +463,8 @@ def test_linalg_eigh_uplo_upper(shape, dtype):
 )
 @pytest.mark.parametrize("dtype", [torch.complex64, torch.complex128])
 def test_linalg_eigh_uplo_upper_complex(shape, dtype):
-    """UPLO="U" on the complex cuSOLVER path."""
-    inp = make_symmetric_matrix(shape, dtype, flag_gems.device)
+    """UPLO="U" on the complex path."""
+    inp = make_symmetric_matrix(shape, dtype, flag_gems.device, symmetric_only=False)
 
     ref_inp = utils.to_reference(inp)
     ref_out = torch.linalg.eigh(ref_inp, UPLO="U")
@@ -423,8 +472,8 @@ def test_linalg_eigh_uplo_upper_complex(shape, dtype):
     with flag_gems.use_gems():
         res_out = torch.linalg.eigh(inp, UPLO="U")
 
-    _assert_close(res_out[0], ref_out[0], res_out[0].dtype)
-    _check_eigh_decomposition(inp, res_out[0], res_out[1], atol=1e-2)
+    _assert_close(res_out[0], ref_out[0], res_out[0].dtype, atol=5e-4)
+    _check_eigh_decomposition(_symmetrise(inp, "U"), res_out[0], res_out[1], atol=1e-2)
 
 
 # ---------------------------------------------------------------------------
@@ -436,14 +485,14 @@ def test_linalg_eigh_uplo_upper_complex(shape, dtype):
 @pytest.mark.linalg_eigh
 @pytest.mark.parametrize(
     "shape",
-    EIG_2X2_SHAPES + EIG_CUSOLVER_SHAPES,
-    ids=[f"ueigh-{s[0]}x{s[1]}" for s in EIG_2X2_SHAPES + EIG_CUSOLVER_SHAPES],
+    EIG_2X2_SHAPES + EIG_JACOBI_TILE_SHAPES,
+    ids=[f"ueigh-{s[0]}x{s[1]}" for s in EIG_2X2_SHAPES + EIG_JACOBI_TILE_SHAPES],
 )
 @pytest.mark.parametrize("dtype", [torch.float32])
 def test_underlying_linalg_eigh(shape, dtype):
     """Directly call aten::_linalg_eigh.default with compute_v=True.
 
-    n == 2 delegates to the Triton kernel; n > 2 goes through cuSOLVER.
+    n == 2 hits the 2x2 kernel; n > 2 hits the Jacobi path.
     """
     inp = make_symmetric_matrix(shape, dtype, flag_gems.device)
 
@@ -453,15 +502,15 @@ def test_underlying_linalg_eigh(shape, dtype):
     with flag_gems.use_gems():
         res_w, res_v = torch.ops.aten._linalg_eigh.default(inp, "L", True)
 
-    utils.gems_assert_close(res_w, ref_w, dtype)
+    utils.gems_assert_close(res_w, ref_w, dtype, atol=EIG_EVAL_ATOL[dtype])
     _check_eigh_decomposition(inp, res_w, res_v, atol=1e-2)
 
 
 @pytest.mark.linalg_eigh
 @pytest.mark.parametrize(
     "shape",
-    EIG_CUSOLVER_SHAPES,
-    ids=[f"ueigh_no_v_n{s[0]}" for s in EIG_CUSOLVER_SHAPES],
+    EIG_JACOBI_TILE_SHAPES,
+    ids=[f"ueigh_no_v_n{s[0]}" for s in EIG_JACOBI_TILE_SHAPES],
 )
 @pytest.mark.parametrize("dtype", [torch.float32])
 def test_underlying_linalg_eigh_no_vectors(shape, dtype):
@@ -474,7 +523,7 @@ def test_underlying_linalg_eigh_no_vectors(shape, dtype):
     with flag_gems.use_gems():
         res_w, res_v = torch.ops.aten._linalg_eigh.default(inp, "L", False)
 
-    utils.gems_assert_close(res_w, ref_w, dtype)
+    utils.gems_assert_close(res_w, ref_w, dtype, atol=EIG_EVAL_ATOL[dtype])
     # Eigenvectors tensor is empty when compute_v=False.
     assert res_v.numel() == 0
 
@@ -487,9 +536,7 @@ def test_underlying_linalg_eigh_no_vectors(shape, dtype):
 )
 @pytest.mark.parametrize("dtype", [torch.float32])
 def test_underlying_linalg_eigh_no_vectors_2x2(shape, dtype):
-    """compute_v=False with n == 2 real: the Triton delegation requires
-    compute_v=True, so this goes through the cuSOLVER path in _linalg_eigh
-    (distinct from the n==2 compute_v=True Triton delegation)."""
+    """compute_v=False with n == 2: still returns eigenvalues only."""
     inp = make_symmetric_matrix(shape, dtype, flag_gems.device)
 
     ref_inp = utils.to_reference(inp)
@@ -500,3 +547,175 @@ def test_underlying_linalg_eigh_no_vectors_2x2(shape, dtype):
 
     utils.gems_assert_close(res_w, ref_w, dtype)
     assert res_v.numel() == 0
+
+
+@pytest.mark.linalg_eigh
+@pytest.mark.parametrize(
+    "shape",
+    EIG_JACOBI_GLOBAL_SHAPES,
+    ids=[f"ueigh_no_v_global_n{s[0]}" for s in EIG_JACOBI_GLOBAL_SHAPES],
+)
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_underlying_linalg_eigh_no_vectors_global(shape, dtype):
+    """compute_v=False on the global-memory Jacobi path (n > 64).
+
+    Eigenvalues only; eigenvector computation is skipped (no V sort), and
+    the eigenvector tensor is empty.
+    """
+    inp = make_symmetric_matrix(shape, dtype, flag_gems.device)
+
+    ref_inp = utils.to_reference(inp)
+    ref_w, _ = torch.ops.aten._linalg_eigh.default(ref_inp, "L", False)
+
+    with flag_gems.use_gems():
+        res_w, res_v = torch.ops.aten._linalg_eigh.default(inp, "L", False)
+
+    res_w_cpu = utils.to_cpu(res_w, ref_w)
+    torch.testing.assert_close(
+        res_w_cpu.sort().values,
+        ref_w.sort().values,
+        atol=2e-2,
+        rtol=1e-3,
+    )
+    _assert_ascending(res_w)
+    assert res_v.numel() == 0
+
+
+@pytest.mark.linalg_eigh
+@pytest.mark.parametrize(
+    "shape",
+    EIG_COMPLEX_GLOBAL_SHAPES,
+    ids=[f"ueigh_no_v_complex_global_n{s[0]}" for s in EIG_COMPLEX_GLOBAL_SHAPES],
+)
+@pytest.mark.parametrize("dtype", [torch.complex64])
+def test_underlying_linalg_eigh_no_vectors_complex_global(shape, dtype):
+    """compute_v=False on the complex global path (complex64, 2n > 128).
+
+    The complex pick kernel is skipped; eigenvalues come from the real
+    embedding's Jacobi path alone, and eigenvectors are empty.
+    """
+    inp = make_symmetric_matrix(shape, dtype, flag_gems.device)
+
+    ref_inp = utils.to_reference(inp)
+    ref_w, _ = torch.ops.aten._linalg_eigh.default(ref_inp, "L", False)
+
+    with flag_gems.use_gems():
+        res_w, res_v = torch.ops.aten._linalg_eigh.default(inp, "L", False)
+
+    res_w_cpu = utils.to_cpu(res_w, ref_w)
+    torch.testing.assert_close(
+        res_w_cpu.sort().values,
+        ref_w.sort().values,
+        atol=2e-2,
+        rtol=1e-3,
+    )
+    _assert_ascending(res_w)
+    assert res_v.numel() == 0
+
+
+# ---------------------------------------------------------------------------
+# Global-memory round-robin path (n > 64 real, 2n > 128 complex): the large-n
+# Jacobi kernels. Verified by reconstruction + ascending order only; the
+# trailing precision is worse than cuSOLVER at these sizes.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.linalg_eigh
+@pytest.mark.parametrize(
+    "shape",
+    EIG_JACOBI_GLOBAL_SHAPES,
+    ids=[f"jacobi_global_n{s[0]}" for s in EIG_JACOBI_GLOBAL_SHAPES],
+)
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_linalg_eigh_jacobi_global(shape, dtype):
+    """n > 64 real: the global-memory round-robin Jacobi path."""
+    inp = make_symmetric_matrix(shape, dtype, flag_gems.device)
+
+    ref_inp = utils.to_reference(inp)
+    ref_out = torch.linalg.eigh(ref_inp)
+
+    with flag_gems.use_gems():
+        res_out = torch.linalg.eigh(inp)
+
+    _check_eigh_decomposition(inp, res_out[0], res_out[1], atol=1e-1)
+    _assert_ascending(res_out[0])
+    # Eigenvalue set agrees with the reference to the global-path tolerance.
+    res_w = utils.to_cpu(res_out[0], ref_out[0])
+    torch.testing.assert_close(
+        res_w.sort().values,
+        ref_out[0].sort().values,
+        atol=2e-2,
+        rtol=1e-3,
+    )
+
+
+@pytest.mark.linalg_eigh
+@pytest.mark.parametrize(
+    "shape",
+    EIG_COMPLEX_GLOBAL_SHAPES,
+    ids=[f"complex_global_n{s[0]}" for s in EIG_COMPLEX_GLOBAL_SHAPES],
+)
+@pytest.mark.parametrize("dtype", [torch.complex64])
+def test_linalg_eigh_complex_global(shape, dtype):
+    """Complex n >= 48: real embedding (2n >= 96) hits the global Jacobi path."""
+    inp = make_symmetric_matrix(shape, dtype, flag_gems.device)
+
+    ref_inp = utils.to_reference(inp)
+    ref_out = torch.linalg.eigh(ref_inp)
+
+    with flag_gems.use_gems():
+        res_out = torch.linalg.eigh(inp)
+
+    # Eigenvalues of a Hermitian matrix are real.
+    _assert_close(res_out[0], ref_out[0], res_out[0].dtype, atol=2e-2)
+    _check_eigh_decomposition(inp, res_out[0], res_out[1], atol=1e-1)
+    _assert_ascending(res_out[0])
+
+
+@pytest.mark.linalg_eigh
+@pytest.mark.parametrize("dtype", [torch.float32, torch.complex64])
+def test_linalg_eigh_ascending_order(dtype):
+    """Eigenvalues are returned in ascending order for every path."""
+    shapes = {
+        torch.float32: [(2, 2), (8, 8), (96, 96)],
+        torch.complex64: [(2, 2), (8, 8), (48, 48)],
+    }[dtype]
+    for shape in shapes:
+        inp = make_symmetric_matrix(shape, dtype, flag_gems.device)
+        with flag_gems.use_gems():
+            res_out = torch.linalg.eigh(inp)
+        _assert_ascending(res_out[0])
+
+
+@pytest.mark.linalg_eigh
+def test_linalg_eigh_nonsquare_raises():
+    """A non-square input must raise ValueError on the Gems path."""
+    A = torch.randn(3, 5, dtype=torch.float32, device=flag_gems.device)
+    with pytest.raises(ValueError):
+        with flag_gems.use_gems():
+            torch.linalg.eigh(A)
+
+
+@pytest.mark.linalg_eigh
+@pytest.mark.parametrize("dtype", [torch.float32, torch.complex64])
+def test_linalg_eigh_non_contiguous(dtype):
+    """A non-contiguous (transposed-view) symmetric input is accepted."""
+    n = 8
+    A = make_symmetric_matrix((n, n), dtype, flag_gems.device)
+    # A transposed view is non-contiguous but still symmetric (A == A.T/mH).
+    view = A.transpose(-2, -1).contiguous().transpose(-2, -1)
+    assert not view.is_contiguous()
+
+    ref_inp = utils.to_reference(view)
+    ref_out = torch.linalg.eigh(ref_inp)
+
+    with flag_gems.use_gems():
+        res_out = torch.linalg.eigh(view)
+
+    if dtype == torch.complex64:
+        _assert_close(res_out[0], ref_out[0], res_out[0].dtype, atol=5e-4)
+    else:
+        utils.gems_assert_close(
+            res_out[0], ref_out[0], dtype, atol=EIG_EVAL_ATOL[dtype]
+        )
+    _check_eigh_decomposition(view, res_out[0], res_out[1], atol=1e-2)
