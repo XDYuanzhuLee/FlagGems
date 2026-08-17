@@ -19,26 +19,27 @@ from . import base
 
 # Benchmark shapes for linalg_eigh.
 #
-# The op has two execution paths:
-#   - n == 2  -> Triton `_eig_2x2_kernel` (on device, CUDA-graph compatible).
-#   - n > 2   -> cuSOLVER / LAPACK fallback via `_linalg_eigh` (CPU round-trip).
+# The op has on-device Triton paths:
+#   - n == 2       -> closed-form `_eig_2x2_kernel`.
+#   - 3 <= n <= 64  -> register-resident Jacobi.
+#   - n > 64       -> global-memory pair-wise Jacobi (correct but slower; kept
+#                    small here to bound benchmark runtime from per-pair launches).
 
-# n == 2: Triton `_eig_2x2_kernel` (on device).
+# n == 2: closed-form kernel.
 EIG_BENCHMARK_2X2_SHAPES = [(2, 2)]
 
-# n > 2: cuSOLVER / LAPACK fallback (the path behind torch.linalg.eigh).
-EIG_BENCHMARK_CUSOLVER_SHAPES = [
+# n > 2: Jacobi path (register-resident up to 64, global above).
+EIG_BENCHMARK_SHAPES = [
+    (8, 8),
     (32, 32),
     (64, 64),
-    (128, 128),
-    (256, 256),
-    (512, 512),
+    (96, 96),
 ]
 
 
 class LinalgEighBenchmark(base.Benchmark):
     def set_shapes(self, shape_file_path=None):
-        self.shapes = EIG_BENCHMARK_2X2_SHAPES + EIG_BENCHMARK_CUSOLVER_SHAPES
+        self.shapes = EIG_BENCHMARK_2X2_SHAPES + EIG_BENCHMARK_SHAPES
 
     def get_input_iter(self, cur_dtype):
         for shape in self.shapes:
@@ -52,7 +53,6 @@ def test_linalg_eigh():
     bench = LinalgEighBenchmark(
         op_name="linalg_eigh",
         torch_op=torch.linalg.eigh,
-        # linalg_eigh only supports float32 on GPU (cuSOLVER dtype constraint).
         dtypes=[torch.float32],
     )
     bench.run()
