@@ -64,8 +64,8 @@ def _jacobi_eigh_tile_kernel(
     A,
     V,
     W,
-    N,
-    SWEEPS,
+    N: tl.constexpr,
+    SWEEPS: tl.constexpr,
     BLOCK_N: tl.constexpr,
     COMPUTE_V: tl.constexpr,
 ):
