@@ -67,12 +67,15 @@ def _jacobi_eigh_tile_kernel(
     N,
     SWEEPS,
     BLOCK_N: tl.constexpr,
+    COMPUTE_V: tl.constexpr,
 ):
     """Symmetric eigendecomposition of one N x N matrix in registers via Jacobi.
 
     One program per batch element. The whole matrix and the accumulator V
     reside in registers; each sweep zeroes off-diagonals pair by pair.
-    Eigenvalues are the final diagonal; V accumulates the rotations.
+    Eigenvalues are the final diagonal; V accumulates the rotations. When
+    COMPUTE_V is False the V accumulator is skipped (eigenvalues do not depend
+    on V).
     """
     batch = tl.program_id(0)
     r = tl.arange(0, BLOCK_N)
@@ -136,19 +139,21 @@ def _jacobi_eigh_tile_kernel(
                 g = tl.where((rr == q) & (cc == q), new_qq, g)
                 g = tl.where(((rr == p) & (cc == q)) | ((rr == q) & (cc == p)), 0.0, g)
 
-                vec_p = tl.sum(tl.where(cc == p, v, 0.0), axis=1)
-                vec_q = tl.sum(tl.where(cc == q, v, 0.0), axis=1)
-                new_vec_p = crot * vec_p - srot * vec_q
-                new_vec_q = srot * vec_p + crot * vec_q
-                v = tl.where(cc == p, new_vec_p[:, None], v)
-                v = tl.where(cc == q, new_vec_q[:, None], v)
+                if COMPUTE_V:
+                    vec_p = tl.sum(tl.where(cc == p, v, 0.0), axis=1)
+                    vec_q = tl.sum(tl.where(cc == q, v, 0.0), axis=1)
+                    new_vec_p = crot * vec_p - srot * vec_q
+                    new_vec_q = srot * vec_p + crot * vec_q
+                    v = tl.where(cc == p, new_vec_p[:, None], v)
+                    v = tl.where(cc == q, new_vec_q[:, None], v)
                 q += 1
             p += 1
         sweep += 1
 
     diag = tl.sum(tl.where(rr == cc, g, 0.0), axis=1)
     tl.store(W + batch * N + r, diag, mask=r < N)
-    tl.store(V + batch * N * N + rr * N + cc, v, mask=mask)
+    if COMPUTE_V:
+        tl.store(V + batch * N * N + rr * N + cc, v, mask=mask)
 
 
 @libentry()
@@ -197,6 +202,7 @@ def _jacobi_eigh_global_init_kernel(
     V,
     N: tl.constexpr,
     BLOCK_N: tl.constexpr,
+    COMPUTE_V: tl.constexpr,
 ):
     """Copy A into the working buffer and initialise V to the identity."""
     batch = tl.program_id(0)
@@ -210,8 +216,9 @@ def _jacobi_eigh_global_init_kernel(
     v_base = V + batch * N * N
     val = tl.load(a_base + rr * N + cc, mask=mask, other=0.0)
     tl.store(w_base + rr * N + cc, val, mask=mask)
-    ident = tl.where(rr == cc, 1.0, 0.0)
-    tl.store(v_base + rr * N + cc, ident, mask=mask)
+    if COMPUTE_V:
+        ident = tl.where(rr == cc, 1.0, 0.0)
+        tl.store(v_base + rr * N + cc, ident, mask=mask)
 
 
 @libentry()
@@ -276,6 +283,7 @@ def _jacobi_eigh_global_col_kernel(
     STEP,
     ROUND: tl.constexpr,
     BLOCK_N: tl.constexpr,
+    COMPUTE_V: tl.constexpr,
 ):
     """Apply the right rotation A := A J and accumulate V := V J.
 
@@ -310,10 +318,11 @@ def _jacobi_eigh_global_col_kernel(
     tl.store(w_base + rows * N + p2, new_col_p, mask=row_mask)
     tl.store(w_base + rows * N + q2, new_col_q, mask=row_mask)
 
-    vp = tl.load(v_base + rows * N + p2, mask=row_mask, other=0.0)
-    vq = tl.load(v_base + rows * N + q2, mask=row_mask, other=0.0)
-    tl.store(v_base + rows * N + p2, crot * vp - srot * vq, mask=row_mask)
-    tl.store(v_base + rows * N + q2, srot * vp + crot * vq, mask=row_mask)
+    if COMPUTE_V:
+        vp = tl.load(v_base + rows * N + p2, mask=row_mask, other=0.0)
+        vq = tl.load(v_base + rows * N + q2, mask=row_mask, other=0.0)
+        tl.store(v_base + rows * N + p2, crot * vp - srot * vq, mask=row_mask)
+        tl.store(v_base + rows * N + q2, srot * vp + crot * vq, mask=row_mask)
 
 
 @libentry()
@@ -513,21 +522,31 @@ def _symmetrise_by_uplo(A, UPLO):
     return sym
 
 
-def _jacobi_eigh_real(A, n):
-    """Real symmetric eigendecomposition via the Jacobi path selected by size."""
+def _jacobi_eigh_real(A, n, compute_v=True):
+    """Real symmetric eigendecomposition via the Jacobi path selected by size.
+
+    When compute_v is False, eigenvector computation and storage are skipped;
+    eigenvalues do not depend on V.
+    """
     batch = A.shape[0]
     block_n = triton.next_power_of_2(n)
     sweeps = 14 if n <= 17 else 12
 
     W = torch.empty((batch, n), dtype=torch.float32, device=A.device)
-    V = torch.empty((batch, n, n), dtype=torch.float32, device=A.device)
+    if compute_v:
+        V = torch.empty((batch, n, n), dtype=torch.float32, device=A.device)
+    else:
+        # A valid-but-unused pointer: the kernels guard every V access behind
+        # COMPUTE_V, so the buffer is never read or written here. Triton still
+        # needs a real pointer to compile, so a single-element tensor suffices.
+        V = torch.empty((1,), dtype=torch.float32, device=A.device)
 
     if n <= _EIGH_TILE_MAX_N:
         with torch_device_fn.device(A.device):
             _jacobi_eigh_tile_kernel[(batch,)](
-                A, V, W, n, sweeps, BLOCK_N=block_n, num_warps=4
+                A, V, W, n, sweeps, BLOCK_N=block_n, COMPUTE_V=compute_v, num_warps=4
             )
-        Ws, Vs = W, V
+        Ws = W
     else:
         # Global-memory Jacobi: each sweep drives every (p, q) pair via a
         # round-robin ordering. Per step, ROUND/2 disjoint pairs are rotated
@@ -540,7 +559,7 @@ def _jacobi_eigh_real(A, n):
         cs = torch.empty((batch, half, 2), dtype=torch.float32, device=A.device)
         with torch_device_fn.device(A.device):
             _jacobi_eigh_global_init_kernel[(batch,)](
-                A, work, V, N=n, BLOCK_N=block_n, num_warps=4
+                A, work, V, N=n, BLOCK_N=block_n, COMPUTE_V=compute_v, num_warps=4
             )
             for _ in range(sweeps):
                 for step in range(round_n - 1):
@@ -561,6 +580,7 @@ def _jacobi_eigh_real(A, n):
                         step,
                         ROUND=round_n,
                         BLOCK_N=block_n,
+                        COMPUTE_V=compute_v,
                         num_warps=4,
                     )
                     _jacobi_eigh_global_row_kernel[(batch, half)](
@@ -575,23 +595,33 @@ def _jacobi_eigh_real(A, n):
             _jacobi_eigh_extract_diag_kernel[(batch,)](
                 work, W, n, BLOCK_N=block_n, num_warps=4
             )
-        Ws, Vs = W, V
+        Ws = W
 
-    # Ascending sort with permuted eigenvector columns.
+    # Ascending sort of eigenvalues; permute eigenvector columns only when V
+    # was computed.
     W_sorted = torch.empty_like(Ws)
-    V_sorted = torch.empty_like(Vs)
-    with torch_device_fn.device(A.device):
-        _jacobi_eigh_sort_kernel[(batch, n)](
-            Ws, Vs, W_sorted, V_sorted, N=n, BLOCK_N=block_n, num_warps=1
-        )
-    return W_sorted, V_sorted
+    if compute_v:
+        V_sorted = torch.empty_like(V)
+        with torch_device_fn.device(A.device):
+            _jacobi_eigh_sort_kernel[(batch, n)](
+                Ws, V, W_sorted, V_sorted, N=n, BLOCK_N=block_n, num_warps=1
+            )
+        return W_sorted, V_sorted
+    else:
+        # Eigenvalues only: sort W ascending on device (no eigenvectors to
+        # permute, so the sort kernel is not needed).
+        W_sorted, _ = Ws.sort(dim=-1)
+        V_dummy = torch.empty((0,), dtype=torch.float32, device=A.device)
+        return W_sorted, V_dummy
 
 
-def _jacobi_eigh_complex(A, n):
+def _jacobi_eigh_complex(A, n, compute_v=True):
     """Complex Hermitian eigendecomposition via real embedding.
 
     A -> real symmetric R (2n x 2n) -> real Jacobi eigh -> recover complex (W, V).
-    Computed in float32; complex128 is widened only at the return cast.
+    Computed in float32; complex128 is widened only at the return cast. When
+    compute_v is False the pick kernel is skipped (eigenvalues come from the
+    real path alone).
     """
     batch = A.shape[0]
     a_ri = torch.view_as_real(A.contiguous()).reshape(batch, n, n, 2)
@@ -603,9 +633,16 @@ def _jacobi_eigh_complex(A, n):
             a_ri, R, M=n, N=n, BLOCK_SIZE=block_embed, num_warps=1
         )
 
-    W_real, V_real = _jacobi_eigh_real(R, real_n)
+    W_real, V_real = _jacobi_eigh_real(R, real_n, compute_v=compute_v)
 
-    W = torch.empty((batch, n), dtype=W_real.dtype, device=A.device)
+    # The embedding doubles each eigenvalue; take the even-indexed entries.
+    w_idx = torch.arange(0, n, device=A.device) * 2
+    W = W_real[..., w_idx]
+
+    if not compute_v:
+        V_dummy = torch.empty((0,), dtype=A.dtype, device=A.device)
+        return W, V_dummy
+
     # Pick writes float32 real/imag regardless of input complex width; collect
     # into a complex64 buffer and cast to the target dtype at the return.
     V_f32 = torch.empty((batch, n, n), dtype=torch.complex64, device=A.device)
@@ -626,7 +663,7 @@ def _jacobi_eigh_complex(A, n):
     return W, V
 
 
-def linalg_eigh(A, UPLO="L"):
+def linalg_eigh(A, UPLO="L", compute_v=True):
     """Eigenvalue decomposition of symmetric/Hermitian matrices on device.
 
     Dispatch by size (all paths are Triton kernels):
@@ -636,6 +673,9 @@ def linalg_eigh(A, UPLO="L"):
       - larger  : global-memory pair-wise Jacobi.
     Complex inputs use a real embedding; eigenvalues are real, eigenvectors
     complex and unitary. fp16/bf16 are widened to fp32 and cast back.
+
+    When compute_v is False, only eigenvalues are computed and eigenvectors
+    are returned as an empty tensor.
     """
     logger.debug("GEMS LINALG_EIGH")
 
@@ -646,6 +686,9 @@ def linalg_eigh(A, UPLO="L"):
     batch_shape = A.shape[:-2]
     out_dtype = A.dtype
     is_complex = A.is_complex()
+
+    # Eigenvector return type for the compute_v=False case: empty, input dtype.
+    empty_v = lambda: torch.empty((0,), dtype=out_dtype, device=A.device)
 
     if n < 2:
         # 0x0 / 1x1: eigenvalues are the diagonal, eigenvectors the identity.
@@ -660,6 +703,8 @@ def linalg_eigh(A, UPLO="L"):
             eigenvalues = diag.real.to(w_dtype)
         else:
             eigenvalues = diag.to(out_dtype)
+        if not compute_v:
+            return eigenvalues, empty_v()
         # Identity eigenvectors on the input's last two dims, built in a real
         # dtype then cast (avoids complex ones_like).
         eye = torch.eye(n, dtype=torch.float32, device=A.device)
@@ -690,10 +735,14 @@ def linalg_eigh(A, UPLO="L"):
                 BLOCK_SIZE=1,
             )
 
+        eigenvalues = eigenvalues.reshape(*batch_shape, 2)
+        if not compute_v:
+            return eigenvalues.to(out_dtype), empty_v()
+
         a_elem = A_flat[:, 0, 0]
         d_vec = A_flat[:, 0, 1]
-        ev1 = eigenvalues[:, 0]
-        ev2 = eigenvalues[:, 1]
+        ev1 = eigenvalues.reshape(-1, 2)[:, 0]
+        ev2 = eigenvalues.reshape(-1, 2)[:, 1]
 
         v1 = torch.stack([d_vec, ev1 - a_elem], dim=1)
         v2 = torch.stack([d_vec, ev2 - a_elem], dim=1)
@@ -713,18 +762,20 @@ def linalg_eigh(A, UPLO="L"):
         eigenvectors[:, 1, 0] = v1[:, 1]
         eigenvectors[:, 1, 1] = v2[:, 1]
 
-        eigenvalues = eigenvalues.reshape(*batch_shape, 2)
         eigenvectors = eigenvectors.reshape(*batch_shape, 2, 2)
     else:
         # General case: Jacobi (real) or real embedding (complex). Both operate
         # on a flattened (batch, n, n) layout and reshape back at the end.
         A_flat = A_sym.reshape(-1, n, n)
         if is_complex:
-            W, V = _jacobi_eigh_complex(A_flat, n)
+            W, V = _jacobi_eigh_complex(A_flat, n, compute_v=compute_v)
         else:
-            W, V = _jacobi_eigh_real(A_flat, n)
+            W, V = _jacobi_eigh_real(A_flat, n, compute_v=compute_v)
         eigenvalues = W.reshape(*batch_shape, n)
-        eigenvectors = V.reshape(*batch_shape, n, n)
+        if compute_v:
+            eigenvectors = V.reshape(*batch_shape, n, n)
+        else:
+            eigenvectors = empty_v()
 
     # Eigenvalues are always real; eigenvectors match the input dtype. For
     # complex input, complex64 -> float32 eigenvalues, complex128 -> float64.
@@ -735,6 +786,7 @@ def linalg_eigh(A, UPLO="L"):
         eigenvalues = eigenvalues.to(w_dtype)
     else:
         eigenvalues = eigenvalues.to(out_dtype)
-        eigenvectors = eigenvectors.to(out_dtype)
+        if compute_v:
+            eigenvectors = eigenvectors.to(out_dtype)
 
     return eigenvalues, eigenvectors

@@ -549,6 +549,70 @@ def test_underlying_linalg_eigh_no_vectors_2x2(shape, dtype):
     assert res_v.numel() == 0
 
 
+@pytest.mark.linalg_eigh
+@pytest.mark.parametrize(
+    "shape",
+    EIG_JACOBI_GLOBAL_SHAPES,
+    ids=[f"ueigh_no_v_global_n{s[0]}" for s in EIG_JACOBI_GLOBAL_SHAPES],
+)
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_underlying_linalg_eigh_no_vectors_global(shape, dtype):
+    """compute_v=False on the global-memory Jacobi path (n > 64).
+
+    Eigenvalues only; eigenvector computation is skipped (no V sort), and
+    the eigenvector tensor is empty.
+    """
+    inp = make_symmetric_matrix(shape, dtype, flag_gems.device)
+
+    ref_inp = utils.to_reference(inp)
+    ref_w, _ = torch.ops.aten._linalg_eigh.default(ref_inp, "L", False)
+
+    with flag_gems.use_gems():
+        res_w, res_v = torch.ops.aten._linalg_eigh.default(inp, "L", False)
+
+    res_w_cpu = utils.to_cpu(res_w, ref_w)
+    torch.testing.assert_close(
+        res_w_cpu.sort().values,
+        ref_w.sort().values,
+        atol=2e-2,
+        rtol=1e-3,
+    )
+    _assert_ascending(res_w)
+    assert res_v.numel() == 0
+
+
+@pytest.mark.linalg_eigh
+@pytest.mark.parametrize(
+    "shape",
+    EIG_COMPLEX_GLOBAL_SHAPES,
+    ids=[f"ueigh_no_v_complex_global_n{s[0]}" for s in EIG_COMPLEX_GLOBAL_SHAPES],
+)
+@pytest.mark.parametrize("dtype", [torch.complex64])
+def test_underlying_linalg_eigh_no_vectors_complex_global(shape, dtype):
+    """compute_v=False on the complex global path (complex64, 2n > 128).
+
+    The complex pick kernel is skipped; eigenvalues come from the real
+    embedding's Jacobi path alone, and eigenvectors are empty.
+    """
+    inp = make_symmetric_matrix(shape, dtype, flag_gems.device)
+
+    ref_inp = utils.to_reference(inp)
+    ref_w, _ = torch.ops.aten._linalg_eigh.default(ref_inp, "L", False)
+
+    with flag_gems.use_gems():
+        res_w, res_v = torch.ops.aten._linalg_eigh.default(inp, "L", False)
+
+    res_w_cpu = utils.to_cpu(res_w, ref_w)
+    torch.testing.assert_close(
+        res_w_cpu.sort().values,
+        ref_w.sort().values,
+        atol=2e-2,
+        rtol=1e-3,
+    )
+    _assert_ascending(res_w)
+    assert res_v.numel() == 0
+
+
 # ---------------------------------------------------------------------------
 # Global-memory round-robin path (n > 64 real, 2n > 128 complex): the large-n
 # Jacobi kernels. Verified by reconstruction + ascending order only; the
