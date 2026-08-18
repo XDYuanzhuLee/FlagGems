@@ -523,7 +523,12 @@ def _symmetrise_by_uplo(A, UPLO):
 
 
 def _jacobi_eigh_real(A, n, compute_v=True):
-    """Real symmetric eigendecomposition via the Jacobi path selected by size.
+    """Real symmetric eigendecomposition via the global-memory Jacobi path.
+
+    Each sweep drives every (p, q) pair through a round-robin ordering. Per
+    step, ROUND/2 disjoint pairs are rotated in parallel through three passes
+    — compute (c, s), right-rotate the columns (A := A J, V := V J), then
+    left-rotate the rows (A := J^T A) — so a sweep completes in O(N) launches.
 
     When compute_v is False, eigenvector computation and storage are skipped;
     eigenvalues do not depend on V.
@@ -541,61 +546,49 @@ def _jacobi_eigh_real(A, n, compute_v=True):
         # needs a real pointer to compile, so a single-element tensor suffices.
         V = torch.empty((1,), dtype=torch.float32, device=A.device)
 
-    if n <= _EIGH_TILE_MAX_N:
-        with torch_device_fn.device(A.device):
-            _jacobi_eigh_tile_kernel[(batch,)](
-                A, V, W, n, sweeps, BLOCK_N=block_n, COMPUTE_V=compute_v, num_warps=4
-            )
-        Ws = W
-    else:
-        # Global-memory Jacobi: each sweep drives every (p, q) pair via a
-        # round-robin ordering. Per step, ROUND/2 disjoint pairs are rotated
-        # in parallel through three passes — compute (c, s), right-rotate the
-        # columns (A := A J, V := V J), then left-rotate the rows (A := J^T A)
-        # — so a sweep completes in O(N) launches instead of O(N^2).
-        round_n = n if n % 2 == 0 else n + 1
-        half = round_n // 2
-        work = torch.empty((batch, n, n), dtype=torch.float32, device=A.device)
-        cs = torch.empty((batch, half, 2), dtype=torch.float32, device=A.device)
-        with torch_device_fn.device(A.device):
-            _jacobi_eigh_global_init_kernel[(batch,)](
-                A, work, V, N=n, BLOCK_N=block_n, COMPUTE_V=compute_v, num_warps=4
-            )
-            for _ in range(sweeps):
-                for step in range(round_n - 1):
-                    _jacobi_eigh_global_cs_kernel[(batch, half)](
-                        work,
-                        cs,
-                        n,
-                        step,
-                        ROUND=round_n,
-                        BLOCK_N=block_n,
-                        num_warps=4,
-                    )
-                    _jacobi_eigh_global_col_kernel[(batch, half)](
-                        work,
-                        V,
-                        cs,
-                        n,
-                        step,
-                        ROUND=round_n,
-                        BLOCK_N=block_n,
-                        COMPUTE_V=compute_v,
-                        num_warps=4,
-                    )
-                    _jacobi_eigh_global_row_kernel[(batch, half)](
-                        work,
-                        cs,
-                        n,
-                        step,
-                        ROUND=round_n,
-                        BLOCK_N=block_n,
-                        num_warps=4,
-                    )
-            _jacobi_eigh_extract_diag_kernel[(batch,)](
-                work, W, n, BLOCK_N=block_n, num_warps=4
-            )
-        Ws = W
+    round_n = n if n % 2 == 0 else n + 1
+    half = round_n // 2
+    work = torch.empty((batch, n, n), dtype=torch.float32, device=A.device)
+    cs = torch.empty((batch, half, 2), dtype=torch.float32, device=A.device)
+    with torch_device_fn.device(A.device):
+        _jacobi_eigh_global_init_kernel[(batch,)](
+            A, work, V, N=n, BLOCK_N=block_n, COMPUTE_V=compute_v, num_warps=4
+        )
+        for _ in range(sweeps):
+            for step in range(round_n - 1):
+                _jacobi_eigh_global_cs_kernel[(batch, half)](
+                    work,
+                    cs,
+                    n,
+                    step,
+                    ROUND=round_n,
+                    BLOCK_N=block_n,
+                    num_warps=4,
+                )
+                _jacobi_eigh_global_col_kernel[(batch, half)](
+                    work,
+                    V,
+                    cs,
+                    n,
+                    step,
+                    ROUND=round_n,
+                    BLOCK_N=block_n,
+                    COMPUTE_V=compute_v,
+                    num_warps=4,
+                )
+                _jacobi_eigh_global_row_kernel[(batch, half)](
+                    work,
+                    cs,
+                    n,
+                    step,
+                    ROUND=round_n,
+                    BLOCK_N=block_n,
+                    num_warps=4,
+                )
+        _jacobi_eigh_extract_diag_kernel[(batch,)](
+            work, W, n, BLOCK_N=block_n, num_warps=4
+        )
+    Ws = W
 
     # Ascending sort of eigenvalues; permute eigenvector columns only when V
     # was computed.
