@@ -53,7 +53,6 @@ from .special_hermite_polynomial_h import (
     special_hermite_polynomial_h,
     special_hermite_polynomial_h_tensor_tensor,
 )
-from .special_logit import special_logit
 from .special_modified_bessel_k1 import (
     special_modified_bessel_k1,
     special_modified_bessel_k1_out,
@@ -107,7 +106,6 @@ __all__ = [
     "special_gammainc",
     "special_hermite_polynomial_h",
     "special_hermite_polynomial_h_tensor_tensor",
-    "special_logit",
     "special_modified_bessel_k1",
     "special_modified_bessel_k1_out",
     "special_shifted_chebyshev_polynomial_w",
