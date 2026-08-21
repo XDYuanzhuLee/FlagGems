@@ -1,38 +1,55 @@
+import contextlib
+
 import pytest
 import torch
 
 import flag_gems
 
 from . import accuracy_utils as utils
-from .conftest import QUICK_MODE
+from .conftest import QUICK_MODE, TO_CPU
 
-# The reference implementation is the native ``torch._sparse_semi_structured_linear``,
-# which requires an NVIDIA GPU whose compute capability the op accepts (8.x: 8.0,
-# 8.6, 8.9). Hopper (9.0) is rejected by the current op despite supporting 2:4, so
-# we probe availability by actually invoking the op on a tiny input rather than
-# guessing from the device capability string. When unavailable, the whole module
-# is skipped -- there is no other faithful reference for the 2:4 semantics.
+# The reference is the native ``torch._sparse_semi_structured_linear`` (CUTLASS
+# backend), which requires an NVIDIA SM8.x GPU. We probe availability by
+# invoking the op on a small input that meets the CUTLASS backend's minimum
+# shape constraint (fp16: N>=32, K>=64), and record the failure reason.
+#
+# When the native op is unavailable on this device, the whole module is skipped.
+# When it is available but a test's weight shape is below the CUTLASS minimum
+# (e.g. (16,32) in QUICK_MODE), that test falls back to the pure-PyTorch 2:4
+# reference (``_pytorch_ref``) instead.
 NATIVE_AVAILABLE = False
+_NATIVE_UNAVAILABLE_REASON = ""
 if torch.cuda.is_available():
     try:
-        _w = torch.randn(16, 16, dtype=torch.float16, device="cuda")
-        _w[:, 2::4] = 0
-        _w[:, 3::4] = 0
-        _s = torch.sparse.to_sparse_semi_structured(_w)
-        torch._sparse_semi_structured_linear(
-            torch.randn(8, 16, dtype=torch.float16, device="cuda"),
-            _s.packed,
-            _s.meta if _s.meta is not None else _s.packed,
-        )
+        with contextlib.ExitStack() as _stk:
+            _stk.callback(
+                setattr,
+                torch.sparse.SparseSemiStructuredTensor,
+                "_FORCE_CUTLASS",
+                torch.sparse.SparseSemiStructuredTensor._FORCE_CUTLASS,
+            )
+            torch.sparse.SparseSemiStructuredTensor._FORCE_CUTLASS = True
+            _w = torch.randn(32, 64, dtype=torch.float16, device="cuda")
+            _w[:, 2::4] = 0
+            _w[:, 3::4] = 0
+            _s = torch.sparse.to_sparse_semi_structured(_w)
+            torch._sparse_semi_structured_linear(
+                torch.randn(8, 64, dtype=torch.float16, device="cuda"),
+                _s.packed,
+                _s.meta,
+            )
         NATIVE_AVAILABLE = True
-    except Exception:
+    except Exception as _e:
         NATIVE_AVAILABLE = False
+        _NATIVE_UNAVAILABLE_REASON = f"{type(_e).__name__}: {_e}"
 
 if not NATIVE_AVAILABLE:
-    pytest.skip(
-        "torch._sparse_semi_structured_linear (native 2:4 reference) is not "
-        "available on this device/build; requires NVIDIA SM8.x.",
-        allow_module_level=True,
+    pytestmark = pytest.mark.skip(
+        reason=(
+            "torch._sparse_semi_structured_linear (native 2:4 reference) is not "
+            "available on this device/build; requires NVIDIA SM8.x. "
+            f"({_NATIVE_UNAVAILABLE_REASON})"
+        )
     )
 
 # The native op only supports fp16 / bf16 on CUDA.
@@ -81,58 +98,14 @@ def _build_2_4_weight(N, K, dtype, device, *, choice=None):
     return w, choice
 
 
-def _native_ref(input, weight, choice, bias=None, activation=None):
-    """Reference via the native op.
-
-    ``input``/``weight`` are the dense 2:4 tensors already on the reference
-    device (CUDA -- the native op has no CPU kernel, so unlike most gems tests
-    we do NOT move the reference to CPU via ``to_reference``). ``choice`` is the
-    (N, K//4) bool pattern used to build ``weight``; the native op derives its
-    own packed+meta from ``weight`` itself, so we pass the dense weight through
-    ``to_sparse_semi_structured`` rather than translating meta formats.
-
-    ``activation`` (when given) is forwarded to the native op, which fuses it
-    into the sparse matmul.
-    """
-    s = torch.sparse.to_sparse_semi_structured(weight)
-    meta = s.meta if s.meta is not None else s.packed
-    out = torch._sparse_semi_structured_linear(
-        input, s.packed, meta, bias=bias, activation=activation
-    )
-    return out
-
-
-@pytest.mark.sparse_semi_structured_linear
-@pytest.mark.parametrize("M, K", SPARSE_LINEAR_SHAPES)
-@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
-def test_sparse_semi_structured_linear(M, K, dtype):
-    """Compare the gems kernel against the native 2:4 op with per-row patterns."""
-    N = K
-
-    torch.manual_seed(12345)
-    input = torch.randn(M, K, dtype=dtype, device=flag_gems.device)
-    weight, choice = _build_2_4_weight(N, K, dtype, flag_gems.device)
-    meta = choice.to(torch.int8)
-
-    # Reference stays on the same CUDA device: native op has no CPU kernel.
-    ref_out = _native_ref(input, weight, choice)
-
-    with flag_gems.use_gems():
-        res_out = flag_gems._sparse_semi_structured_linear(input, weight, meta)
-
-    # Both tensors live on CUDA here; gems_assert_close handles the CPU move.
-    # The 2:4 element-wise select-position accumulation differs from the native
-    # op's tensor-core path in rounding, so use a relaxed tolerance here.
-    atol = 0.1 if dtype in (torch.float16, torch.bfloat16) else 0.02
-    utils.gems_assert_close(res_out, ref_out, dtype, atol=atol)
-
-
 def _pytorch_ref(input, weight, choice, bias=None, activation=None, out_dtype=None):
-    """Pure-PyTorch 2:4 reference for the parts the native op does not expose.
+    """Pure-PyTorch 2:4 reference.
 
-    The native ``_sparse_semi_structured_linear`` has no ``activation`` /
-    ``out_dtype`` arguments, so for those paths we fold the select-position mask
-    into the weight and apply the post-processing with plain PyTorch.
+    Folds the select-position mask into the weight and applies the
+    post-processing (bias / activation / out_dtype) with plain PyTorch in
+    float32. Used for the silu activation, out_dtype, and float32 paths, and
+    as the fallback reference when the native op is unavailable or the weight
+    shape is below the CUTLASS minimum.
     """
     N, K = weight.shape
     K4 = K // 4
@@ -160,6 +133,90 @@ def _pytorch_ref(input, weight, choice, bias=None, activation=None, out_dtype=No
     return out
 
 
+# CUTLASS backend minimum sparse shape for fp16/bf16: N >= 32, K >= 64 (and
+# multiples thereof). Below this the native op + CUTLASS backend cannot run,
+# and _ref falls back to _pytorch_ref.
+_NATIVE_MIN_ROWS = 32
+_NATIVE_MIN_COLS = 64
+
+
+def _native_usable(weight):
+    """Whether the native op + CUTLASS backend can handle this weight shape."""
+    if not NATIVE_AVAILABLE:
+        return False
+    n, k = weight.shape
+    return (
+        n >= _NATIVE_MIN_ROWS
+        and k >= _NATIVE_MIN_COLS
+        and n % _NATIVE_MIN_ROWS == 0
+        and k % _NATIVE_MIN_COLS == 0
+    )
+
+
+def _native_ref(input, weight, choice, bias=None, activation=None):
+    """Reference via the native op, forcing the CUTLASS backend.
+
+    Sets ``_FORCE_CUTLASS`` for this call and restores it afterwards.
+    ``activation`` (when given) is forwarded to the native op, which fuses it
+    into the sparse matmul.
+    """
+    saved = torch.sparse.SparseSemiStructuredTensor._FORCE_CUTLASS
+    torch.sparse.SparseSemiStructuredTensor._FORCE_CUTLASS = True
+    try:
+        s = torch.sparse.to_sparse_semi_structured(weight)
+        out = torch._sparse_semi_structured_linear(
+            input, s.packed, s.meta, bias=bias, activation=activation
+        )
+        return out
+    finally:
+        torch.sparse.SparseSemiStructuredTensor._FORCE_CUTLASS = saved
+
+
+def _ref(input, weight, choice, bias=None, activation=None):
+    """Pick the reference: native op when available & shape fits, else PyTorch."""
+    if _native_usable(weight):
+        return _native_ref(input, weight, choice, bias=bias, activation=activation)
+    return _pytorch_ref(input, weight, choice, bias=bias, activation=activation)
+
+
+def _assert_close(res, ref, dtype, atol):
+    """Compare gems result against the reference.
+
+    The reference is computed on CUDA (the native op has no CPU kernel). Under
+    ``--ref=cpu`` we move both tensors to CPU first, matching the convention in
+    ``test_act_quant`` so ``gems_assert_close``'s ``to_cpu`` sees a CPU reference.
+    """
+    if TO_CPU:
+        ref = ref.to("cpu")
+        res = res.to("cpu")
+    utils.gems_assert_close(res, ref, dtype, atol=atol)
+
+
+@pytest.mark.sparse_semi_structured_linear
+@pytest.mark.parametrize("M, K", SPARSE_LINEAR_SHAPES)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_sparse_semi_structured_linear(M, K, dtype):
+    """Compare the gems kernel against the native 2:4 op with per-row patterns."""
+    N = K
+
+    torch.manual_seed(12345)
+    input = torch.randn(M, K, dtype=dtype, device=flag_gems.device)
+    weight, choice = _build_2_4_weight(N, K, dtype, flag_gems.device)
+    meta = choice.to(torch.int8)
+
+    # Reference stays on the same CUDA device: native op has no CPU kernel.
+    ref_out = _ref(input, weight, choice)
+
+    with flag_gems.use_gems():
+        res_out = flag_gems._sparse_semi_structured_linear(input, weight, meta)
+
+    # Both tensors live on CUDA here; _assert_close moves them to CPU under
+    # --ref=cpu. The 2:4 element-wise select-position accumulation differs from
+    # the native op's tensor-core path in rounding, so use a relaxed tolerance.
+    atol = 0.1 if dtype in (torch.float16, torch.bfloat16) else 0.02
+    _assert_close(res_out, ref_out, dtype, atol=atol)
+
+
 @pytest.mark.sparse_semi_structured_linear
 @pytest.mark.parametrize("M, K", [(32, 64)])
 @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
@@ -173,7 +230,7 @@ def test_sparse_semi_structured_linear_with_bias(M, K, dtype):
     bias = torch.randn(N, dtype=dtype, device=flag_gems.device)
     meta = choice.to(torch.int8)
 
-    ref_out = _native_ref(input, weight, choice, bias=bias)
+    ref_out = _ref(input, weight, choice, bias=bias)
 
     with flag_gems.use_gems():
         res_out = flag_gems._sparse_semi_structured_linear(
@@ -181,7 +238,7 @@ def test_sparse_semi_structured_linear_with_bias(M, K, dtype):
         )
 
     atol = 0.1 if dtype in (torch.float16, torch.bfloat16) else 0.02
-    utils.gems_assert_close(res_out, ref_out, dtype, atol=atol)
+    _assert_close(res_out, ref_out, dtype, atol=atol)
 
 
 @pytest.mark.sparse_semi_structured_linear
@@ -194,13 +251,13 @@ def test_sparse_semi_structured_linear_n_ne_k(M, K, N, dtype):
     weight, choice = _build_2_4_weight(N, K, dtype, flag_gems.device)
     meta = choice.to(torch.int8)
 
-    ref_out = _native_ref(input, weight, choice)
+    ref_out = _ref(input, weight, choice)
 
     with flag_gems.use_gems():
         res_out = flag_gems._sparse_semi_structured_linear(input, weight, meta)
 
     atol = 0.1 if dtype in (torch.float16, torch.bfloat16) else 0.02
-    utils.gems_assert_close(res_out, ref_out, dtype, atol=atol)
+    _assert_close(res_out, ref_out, dtype, atol=atol)
 
 
 @pytest.mark.sparse_semi_structured_linear
@@ -220,7 +277,7 @@ def test_sparse_semi_structured_linear_activation(activation, dtype):
     meta = choice.to(torch.int8)
 
     if activation in ("relu", "gelu"):
-        ref_out = _native_ref(input, weight, choice, activation=activation)
+        ref_out = _ref(input, weight, choice, activation=activation)
     else:
         ref_out = _pytorch_ref(input, weight, choice, activation=activation)
 
@@ -230,7 +287,7 @@ def test_sparse_semi_structured_linear_activation(activation, dtype):
         )
 
     atol = 0.1 if dtype in (torch.float16, torch.bfloat16) else 0.02
-    utils.gems_assert_close(res_out, ref_out, dtype, atol=atol)
+    _assert_close(res_out, ref_out, dtype, atol=atol)
 
 
 @pytest.mark.sparse_semi_structured_linear
@@ -256,7 +313,7 @@ def test_sparse_semi_structured_linear_out_dtype(out_dtype):
         )
 
     assert res_out.dtype == out_dtype
-    utils.gems_assert_close(res_out, ref_out, out_dtype, atol=0.02)
+    _assert_close(res_out, ref_out, out_dtype, atol=0.02)
 
 
 @pytest.mark.sparse_semi_structured_linear
@@ -271,7 +328,7 @@ def test_sparse_semi_structured_linear_with_bias_shapes(M, K, dtype):
     bias = torch.randn(N, dtype=dtype, device=flag_gems.device)
     meta = choice.to(torch.int8)
 
-    ref_out = _native_ref(input, weight, choice, bias=bias)
+    ref_out = _ref(input, weight, choice, bias=bias)
 
     with flag_gems.use_gems():
         res_out = flag_gems._sparse_semi_structured_linear(
@@ -279,7 +336,7 @@ def test_sparse_semi_structured_linear_with_bias_shapes(M, K, dtype):
         )
 
     atol = 0.1 if dtype in (torch.float16, torch.bfloat16) else 0.02
-    utils.gems_assert_close(res_out, ref_out, dtype, atol=atol)
+    _assert_close(res_out, ref_out, dtype, atol=atol)
 
 
 @pytest.mark.sparse_semi_structured_linear
@@ -307,13 +364,13 @@ def test_sparse_semi_structured_linear_non_contiguous_weight(dtype):
     assert not w_nc.is_contiguous()
     meta = choice.to(torch.int8)
 
-    ref_out = _native_ref(input, w_contig, choice)
+    ref_out = _ref(input, w_contig, choice)
 
     with flag_gems.use_gems():
         res_nc = flag_gems._sparse_semi_structured_linear(input, w_nc, meta)
 
     atol = 0.1 if dtype in (torch.float16, torch.bfloat16) else 0.02
-    utils.gems_assert_close(res_nc, ref_out, dtype, atol=atol)
+    _assert_close(res_nc, ref_out, dtype, atol=atol)
 
 
 @pytest.mark.sparse_semi_structured_linear
@@ -332,4 +389,4 @@ def test_sparse_semi_structured_linear_fp32(M, K):
     with flag_gems.use_gems():
         res_out = flag_gems._sparse_semi_structured_linear(input, weight, meta)
 
-    utils.gems_assert_close(res_out, ref_out, torch.float32, atol=0.02)
+    _assert_close(res_out, ref_out, torch.float32, atol=0.02)
