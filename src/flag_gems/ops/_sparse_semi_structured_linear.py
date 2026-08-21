@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
             {"BLOCK_M": 64, "BLOCK_N": 64, "BLOCK_K": 16}, num_warps=8, num_stages=2
         ),
     ],
-    key=["M", "N", "K"],
+    key=["M", "N", "K4"],
     strategy=["log", "log", "log"],
     flagtune_op_name="sparse_semi_structured_linear",
 )
@@ -55,11 +55,11 @@ def _sparse_linear_kernel(
     output_ptr,
     M,
     N,
-    K,
+    K4,
     stride_im,
     stride_ik,
-    stride_wk,
     stride_wn,
+    stride_wk,
     stride_mm,
     stride_mn,
     stride_om,
@@ -69,10 +69,18 @@ def _sparse_linear_kernel(
     BLOCK_K: tl.constexpr,
 ):
     """
-    Kernel for sparse semi-structured linear layer.
+    Kernel for sparse semi-structured (2:4) linear layer.
 
-    The 2:4 sparse format stores 4 elements per group with 2 non-zeros.
-    The meta tensor encodes which elements are valid.
+    Computes ``output = input @ weight.T (+ bias)`` where ``weight`` follows a
+    2:4 sparsity pattern along its K dimension: out of every 4 contiguous K
+    elements exactly 2 are non-zero. ``meta`` selects, per group of 4, which two
+    are kept:
+
+        meta[n, k] != 0  ->  keep weight[n, 4k]     and weight[n, 4k + 1]
+        meta[n, k] == 0  ->  keep weight[n, 4k + 2] and weight[n, 4k + 3]
+
+    ``meta`` has shape ``(N, K // 4)`` and is indexed by both N and K4, so each
+    weight row carries its own independent 2:4 pattern.
     """
     pid = tl.program_id(0)
     pid_m = pid // tl.cdiv(N, BLOCK_N)
@@ -82,32 +90,84 @@ def _sparse_linear_kernel(
     offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
     offs_k = tl.arange(0, BLOCK_K)
 
+    K = K4 * 4
     accumulator = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
 
-    for k in range(0, tl.cdiv(K, BLOCK_K)):
-        # Load input block for current k
-        input_mask = (offs_m < M)[:, None] & (offs_k < K)[None, :]
-        input_ptrs = input_ptr + (
-            offs_m[:, None] * stride_im + offs_k[None, :] * stride_ik
+    num_iters = tl.cdiv(K4, BLOCK_K)
+    for k in range(num_iters):
+        k_offset = k * BLOCK_K
+
+        # --- meta block: shape (BLOCK_N, BLOCK_K), indexed by BOTH N and K4 ---
+        meta_ptrs = meta_ptr + (
+            offs_n[:, None] * stride_mm + (offs_k + k_offset)[None, :] * stride_mn
         )
-        a = tl.load(input_ptrs, mask=input_mask, other=0.0)
+        meta_mask = (offs_n[:, None] < N) & ((offs_k + k_offset)[None, :] < K4)
+        meta = tl.load(meta_ptrs, mask=meta_mask, other=0)
+        meta_f = meta.to(tl.float32)
 
-        # Load weight block: weight[N, K] → load [BLOCK_K, BLOCK_N] block
-        weight_mask = (offs_k[:, None] < K) & (offs_n[None, :] < N)
-        weight_ptrs = weight_ptr + (
-            offs_n[None, :] * stride_wk + offs_k[:, None] * stride_wn
+        # --- input block (dense): a[m, 4k + p] -> shape (BLOCK_M, BLOCK_K, 4) ---
+        in_k_off = (offs_k * 4 + k_offset * 4) * stride_ik
+        in_base = offs_m[:, None] * stride_im + in_k_off[None, :]
+        a0 = tl.load(
+            input_ptr + in_base + 0 * stride_ik,
+            mask=(offs_m[:, None] < M) & ((offs_k * 4 + k_offset * 4 + 0)[None, :] < K),
+            other=0.0,
         )
-        b = tl.load(weight_ptrs, mask=weight_mask, other=0.0)
+        a1 = tl.load(
+            input_ptr + in_base + 1 * stride_ik,
+            mask=(offs_m[:, None] < M) & ((offs_k * 4 + k_offset * 4 + 1)[None, :] < K),
+            other=0.0,
+        )
+        a2 = tl.load(
+            input_ptr + in_base + 2 * stride_ik,
+            mask=(offs_m[:, None] < M) & ((offs_k * 4 + k_offset * 4 + 2)[None, :] < K),
+            other=0.0,
+        )
+        a3 = tl.load(
+            input_ptr + in_base + 3 * stride_ik,
+            mask=(offs_m[:, None] < M) & ((offs_k * 4 + k_offset * 4 + 3)[None, :] < K),
+            other=0.0,
+        )
 
-        # Load meta block for this K slice
-        meta_ptrs = meta_ptr + offs_k * stride_mn
-        meta_block = tl.load(meta_ptrs, mask=(offs_k < K), other=0)
+        # --- weight block (sparse): w[n, 4k + p] -> shape (BLOCK_N, BLOCK_K) ---
+        # weight is (N, K); we need it transposed as (K, N) for the matmul, so we
+        # index with offs_n along the row dim and the K group along the col dim.
+        # Offset for the group start, scaled by the K stride so it honors the
+        # weight's actual layout (including non-contiguous strides).
+        k_group_off = (offs_k * 4 + k_offset * 4) * stride_wk
+        w_base = offs_n[:, None] * stride_wn + k_group_off[None, :]
+        w0 = tl.load(
+            weight_ptr + w_base + 0 * stride_wk,
+            mask=(offs_n[:, None] < N) & ((offs_k * 4 + k_offset * 4 + 0)[None, :] < K),
+            other=0.0,
+        )
+        w1 = tl.load(
+            weight_ptr + w_base + 1 * stride_wk,
+            mask=(offs_n[:, None] < N) & ((offs_k * 4 + k_offset * 4 + 1)[None, :] < K),
+            other=0.0,
+        )
+        w2 = tl.load(
+            weight_ptr + w_base + 2 * stride_wk,
+            mask=(offs_n[:, None] < N) & ((offs_k * 4 + k_offset * 4 + 2)[None, :] < K),
+            other=0.0,
+        )
+        w3 = tl.load(
+            weight_ptr + w_base + 3 * stride_wk,
+            mask=(offs_n[:, None] < N) & ((offs_k * 4 + k_offset * 4 + 3)[None, :] < K),
+            other=0.0,
+        )
 
-        # Apply mask and accumulate
-        masked_weight = tl.where(meta_block[:, None] != 0, b, 0.0)
-        accumulator += tl.dot(a, masked_weight, allow_tf32=False)
-
-        offs_k += BLOCK_K
+        # --- select-position accumulate ---
+        # For each (m, n, k):
+        #   meta!=0 -> a0*w0 + a1*w1   (kept positions 0,1)
+        #   meta==0 -> a2*w2 + a3*w3   (kept positions 2,3)
+        # Shapes: a_p (BM, BK), w_p (BN, BK). Broadcast to (BM, BN, BK) via the
+        # element-wise scheme.
+        meta_exp = meta_f[None, :, :]  # (1, BN, BK)
+        prod01 = a0[:, None, :] * w0[None, :, :] + a1[:, None, :] * w1[None, :, :]
+        prod23 = a2[:, None, :] * w2[None, :, :] + a3[:, None, :] * w3[None, :, :]
+        selected = prod01 * meta_exp + prod23 * (1.0 - meta_exp)
+        accumulator += tl.sum(selected, axis=2)
 
     # Store result
     output_mask = (offs_m < M)[:, None] & (offs_n < N)[None, :]
@@ -126,18 +186,27 @@ def _sparse_semi_structured_linear(
     out_dtype: torch.dtype = None,
 ):
     """
-    Implements sparse semi-structured linear layer.
+    Sparse semi-structured (2:4) linear layer: ``output = input @ weight.T (+ bias)``.
 
-    The 2:4 sparse format stores metadata indicating which elements are valid.
-    This implementation uses the metadata to mask out invalid elements during computation.
+    ``weight`` has shape ``(N, K)`` and obeys a 2:4 sparsity pattern along K: in
+    every group of 4 contiguous K elements exactly 2 are non-zero. ``meta`` has
+    shape ``(N, K // 4)``; for each group ``k`` of weight row ``n``:
+
+        meta[n, k] != 0  ->  keep weight[n, 4k], weight[n, 4k + 1]
+        meta[n, k] == 0  ->  keep weight[n, 4k + 2], weight[n, 4k + 3]
+
+    K must be a multiple of 4. Each weight row carries its own independent 2:4
+    pattern, expressed per-row via the N dimension of ``meta``.
     """
     logger.debug("GEMS SPARSE SEMI STRUCTURED LINEAR")
 
     M, K = input.shape
-    N = weight.shape[0]
-    K_w = weight.shape[1]
+    N, K_w = weight.shape
+    K4 = K // 4
 
     assert K == K_w, f"Incompatible dimensions: input K={K}, weight K={K_w}"
+    assert K % 4 == 0, f"K must be a multiple of 4 for 2:4 sparsity, got K={K}"
+    assert meta.shape == (N, K4), f"Expected meta shape ({N}, {K4}), got {meta.shape}"
     assert input.dtype in (
         torch.float16,
         torch.bfloat16,
@@ -165,7 +234,7 @@ def _sparse_semi_structured_linear(
         output,
         M,
         N,
-        K,
+        K4,
         input.stride(0),
         input.stride(1),
         weight.stride(0),
@@ -189,9 +258,9 @@ def _sparse_semi_structured_linear(
         if activation == "relu":
             output = torch.relu(output)
         elif activation == "silu" or activation == "swish":
-            output = torch.silu(output)
+            output = torch.nn.functional.silu(output)
         elif activation == "gelu":
-            output = torch.gelu(output)
+            output = torch.nn.functional.gelu(output)
         else:
             logger.warning(f"Unknown activation: {activation}")
 
