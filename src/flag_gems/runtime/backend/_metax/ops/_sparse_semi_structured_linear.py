@@ -5,6 +5,30 @@ import torch
 logger = logging.getLogger("flag_gems." + __name__)
 
 
+def _apply_2_4_meta(weight, meta):
+    """Apply the 2:4 select-position meta to a dense weight.
+
+    ``weight``: (N, K). ``meta``: (N, K // 4) truthy -> keep positions 0,1 of each
+    group of 4; falsy -> keep positions 2,3. Returns a dense (N, K) tensor with
+    the non-selected positions zeroed, matching the kernel's semantics.
+    """
+    N, K = weight.shape
+    K4 = K // 4
+    choice = meta.to(torch.bool)
+    wr = weight.view(N, K4, 4)
+    keep = torch.cat(
+        [
+            choice.unsqueeze(2),
+            choice.unsqueeze(2),
+            (~choice).unsqueeze(2),
+            (~choice).unsqueeze(2),
+        ],
+        dim=2,
+    )
+    masked = torch.where(keep, wr, torch.zeros_like(wr))
+    return masked.reshape(N, K)
+
+
 def _sparse_semi_structured_linear(
     input: torch.Tensor,
     weight: torch.Tensor,
@@ -14,11 +38,11 @@ def _sparse_semi_structured_linear(
     out_dtype: torch.dtype = None,
 ):
     """
-    Sparse semi-structured linear layer.
+    Sparse semi-structured (2:4) linear layer, soft implementation.
 
-    This implementation treats the sparse weight as dense for the matmul.
-    The meta tensor is provided for API compatibility but the actual sparse
-    parsing is not implemented (CUTLASS required for proper sparse support).
+    Applies the 2:4 select-position meta to zero out the non-kept positions of
+    ``weight`` and then performs a dense matmul, so the result matches the
+    Triton kernel's semantics (each weight row carries its own 2:4 pattern).
     """
     logger.debug("GEMS_METAX SPARSE SEMI STRUCTURED LINEAR")
 
@@ -27,6 +51,7 @@ def _sparse_semi_structured_linear(
     K_w = weight.shape[1]
 
     assert K == K_w, f"Incompatible dimensions: input K={K}, weight K={K_w}"
+    assert K % 4 == 0, f"K must be a multiple of 4 for 2:4 sparsity, got K={K}"
     assert input.dtype in (
         torch.float16,
         torch.bfloat16,
@@ -39,9 +64,9 @@ def _sparse_semi_structured_linear(
     else:
         output_dtype = input.dtype
 
-    # Compute: output = input @ weight.T (like nn.Linear)
-    # Use float32 accumulation for consistency with the triton kernel.
-    output = torch.matmul(input.float(), weight.t().float())
+    # Apply the per-row 2:4 meta, then dense matmul (float32 accumulation).
+    masked_weight = _apply_2_4_meta(weight, meta)
+    output = torch.matmul(input.float(), masked_weight.t().float())
 
     # Add bias if provided (converted to float32 for consistency)
     if bias is not None:
@@ -63,9 +88,9 @@ def _sparse_semi_structured_linear(
         if activation == "relu":
             output = torch.relu(output)
         elif activation == "silu" or activation == "swish":
-            output = torch.silu(output)
+            output = torch.nn.functional.silu(output)
         elif activation == "gelu":
-            output = torch.gelu(output)
+            output = torch.nn.functional.gelu(output)
         else:
             logger.warning(f"Unknown activation: {activation}")
 
