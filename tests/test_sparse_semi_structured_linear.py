@@ -314,3 +314,22 @@ def test_sparse_semi_structured_linear_non_contiguous_weight(dtype):
 
     atol = 0.1 if dtype in (torch.float16, torch.bfloat16) else 0.02
     utils.gems_assert_close(res_nc, ref_out, dtype, atol=atol)
+
+
+@pytest.mark.sparse_semi_structured_linear
+@pytest.mark.parametrize("M, K", [(16, 64), (32, 128)])
+def test_sparse_semi_structured_linear_fp32(M, K):
+    """float32 is supported by the gems op but not by the native op, so it is
+    validated against a pure-PyTorch 2:4 reference."""
+    N = K
+    torch.manual_seed(12345)
+    input = torch.randn(M, K, dtype=torch.float32, device=flag_gems.device)
+    weight, choice = _build_2_4_weight(N, K, torch.float32, flag_gems.device)
+    meta = choice.to(torch.int8)
+
+    ref_out = _pytorch_ref(input, weight, choice)
+
+    with flag_gems.use_gems():
+        res_out = flag_gems._sparse_semi_structured_linear(input, weight, meta)
+
+    utils.gems_assert_close(res_out, ref_out, torch.float32, atol=0.02)
