@@ -19,9 +19,14 @@ import torch
 import triton
 import triton.language as tl
 
-from flag_gems.utils import libentry, libtuner
+from flag_gems.utils import libentry, libtuner, tl_extra_shim
 
 logger = logging.getLogger(__name__)
+
+# Elementary functions used by the fused activation epilogue. ``erf`` mirrors
+# ``torch.nn.functional.gelu(approximate="none")``; the gelu branch here uses the
+# exact (erf) form to match the default behaviour exercised by the tests.
+erf = tl_extra_shim.erf
 
 
 @libentry()
@@ -52,6 +57,7 @@ def _sparse_linear_kernel(
     input_ptr,
     weight_ptr,
     meta_ptr,
+    bias_ptr,
     output_ptr,
     M,
     N,
@@ -64,6 +70,10 @@ def _sparse_linear_kernel(
     stride_mn,
     stride_om,
     stride_on,
+    HAS_BIAS: tl.constexpr,
+    ACT_RELU: tl.constexpr,
+    ACT_GELU: tl.constexpr,
+    ACT_SILU: tl.constexpr,
     BLOCK_M: tl.constexpr,
     BLOCK_N: tl.constexpr,
     BLOCK_K: tl.constexpr,
@@ -81,6 +91,15 @@ def _sparse_linear_kernel(
 
     ``meta`` has shape ``(N, K // 4)`` and is indexed by both N and K4, so each
     weight row carries its own independent 2:4 pattern.
+
+    The kernel fuses bias, output-dtype cast, and an optional activation into a
+    single epilogue (no extra kernel launch). The order matches the legacy
+    wrapper and the pure-PyTorch reference: accumulate in fp32 -> add bias
+    (fp32) -> cast to the output pointer's element type -> apply activation.
+    ``relu`` runs at the output precision; ``gelu``/``silu`` re-promote to
+    fp32 for the erf/exp computation and cast back to the output precision,
+    matching the float32 reference path. ``HAS_BIAS`` / ``ACT_*`` are
+    compile-time switches so unsupported combinations are never emitted.
     """
     pid = tl.program_id(0)
     pid_m = pid // tl.cdiv(N, BLOCK_N)
@@ -169,12 +188,38 @@ def _sparse_linear_kernel(
         selected = prod01 * meta_exp + prod23 * (1.0 - meta_exp)
         accumulator += tl.sum(selected, axis=2)
 
-    # Store result
+    # --- fused epilogue: bias -> cast -> activation, all in-kernel ---
+    acc = accumulator
+    if HAS_BIAS:
+        bias = tl.load(bias_ptr + offs_n, mask=offs_n < N, other=0.0).to(tl.float32)
+        acc += bias[None, :]
+
+    # Cast to the output dtype, then apply the activation. relu stays at the
+    # output precision; gelu/silu re-promote to fp32 for the erf/exp step and
+    # cast back, matching the float32 reference path. The target type is read
+    # from the output pointer's element type, mirroring the convention in
+    # ``mm``/``_fused_rms_norm`` (no dtype constexpr needed).
+    out_dtype = output_ptr.dtype.element_ty
+    out = acc.to(out_dtype)
+
+    if ACT_RELU:
+        out = tl.where(out > 0, out, 0.0)
+    elif ACT_GELU:
+        # erf-form gelu, equivalent to F.gelu(approximate="none"); the fp32
+        # re-promotion matches the float32 reference and the cast-back keeps
+        # the result at the requested output precision.
+        x = out.to(tl.float32)
+        scale: tl.constexpr = 0.7071067811  # 1 / sqrt(2)
+        out = (0.5 * x * (1.0 + erf(x * scale))).to(out_dtype)
+    elif ACT_SILU:
+        x = out.to(tl.float32)
+        out = (x / (1.0 + tl.exp(-x))).to(out_dtype)
+
     output_mask = (offs_m < M)[:, None] & (offs_n < N)[None, :]
     output_ptrs = output_ptr + (
         offs_m[:, None] * stride_om + offs_n[None, :] * stride_on
     )
-    tl.store(output_ptrs, accumulator, mask=output_mask)
+    tl.store(output_ptrs, out, mask=output_mask)
 
 
 def _sparse_semi_structured_linear(
@@ -213,14 +258,33 @@ def _sparse_semi_structured_linear(
         torch.float32,
     ), f"Unsupported dtype: {input.dtype}"
 
-    # Determine output dtype
+    # Output dtype: explicit out_dtype, else same as input.
     if out_dtype is not None:
         output_dtype = out_dtype
     else:
         output_dtype = input.dtype
 
-    # Allocate output in fp32 for accumulation, convert at the end
-    output = torch.empty((M, N), device=input.device, dtype=torch.float32)
+    # Resolve the activation to compile-time switches for the fused epilogue.
+    act = activation.lower() if activation is not None else None
+    act_relu = act == "relu"
+    act_gelu = act == "gelu"
+    act_silu = act in ("silu", "swish")
+    if activation is not None and not (act_relu or act_gelu or act_silu):
+        raise ValueError(
+            f"Unsupported activation: {activation!r}. "
+            "Expected one of: 'relu', 'gelu', 'silu' (or 'swish'), or None."
+        )
+
+    # Allocate the output at the target dtype; the kernel casts the fp32
+    # accumulator to the output dtype inside the fused epilogue before storing.
+    output = torch.empty((M, N), device=input.device, dtype=output_dtype)
+
+    # Triton expects a pointer for the optional bias; pass a dummy null tensor
+    # when there is none so the kernel's HAS_BIAS=False path never dereferences.
+    if bias is not None:
+        bias_arg = bias
+    else:
+        bias_arg = input  # placeholder, never loaded when HAS_BIAS is False
 
     # Launch kernel with autotuned block sizes
     grid = lambda META: (
@@ -231,6 +295,7 @@ def _sparse_semi_structured_linear(
         input,
         weight,
         meta,
+        bias_arg,
         output,
         M,
         N,
@@ -243,25 +308,10 @@ def _sparse_semi_structured_linear(
         meta.stride(1),
         output.stride(0),
         output.stride(1),
+        bias is not None,
+        act_relu,
+        act_gelu,
+        act_silu,
     )
-
-    # Add bias if provided
-    if bias is not None:
-        output = output + bias.float()
-
-    # Convert to output dtype
-    if output_dtype != torch.float32:
-        output = output.to(output_dtype)
-
-    # Apply activation if specified
-    if activation is not None:
-        if activation == "relu":
-            output = torch.relu(output)
-        elif activation == "silu" or activation == "swish":
-            output = torch.nn.functional.silu(output)
-        elif activation == "gelu":
-            output = torch.nn.functional.gelu(output)
-        else:
-            logger.warning(f"Unknown activation: {activation}")
 
     return output
