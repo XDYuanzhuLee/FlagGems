@@ -59,6 +59,25 @@ def _reflect_int_index(idx, n, align_corners: tl.constexpr):
         return (x_mod - 0.5).to(tl.int32)
 
 
+@triton.jit
+def _reflect_coord(coord, n, align_corners: tl.constexpr):
+    # Reflect a continuous (pixel-space) coordinate into the valid range.
+    # align_corners=True:  period 2*(n-1), reflect over [0, n-1].
+    # align_corners=False: period 2*n, reflect over [-0.5, n-0.5] (shift by
+    #   0.5, reflect over [0, n], shift back), matching PyTorch grid_sampler.
+    if align_corners:
+        p = 2 * (n - 1)
+        # p is 0 only when n == 1; in that case every coord maps to 0.
+        ref = tl.where(p == 0, 0.0, coord - tl.floor(coord / p) * p)
+        return tl.where(ref >= n, p - ref, ref)
+    else:
+        p = 2 * n
+        c = coord + 0.5
+        c = c - tl.floor(c / p) * p
+        c = tl.where(c > n, p - c, c)
+        return c - 0.5
+
+
 @libentry()
 @libtuner(
     configs=runtime.get_tuned_config("grid_sampler_2d"),
@@ -103,12 +122,8 @@ def grid_sampler_2d_kernel(
 
     if interpolation_mode == 0:  # Bilinear
         if padding_mode == 2:  # Reflection: reflect fractional coords first
-            px = 2 * IW - 2
-            py = 2 * IH - 2
-            x_ref = x - tl.floor(x / px) * px
-            x_ref = tl.where(x_ref >= IW, px - x_ref, x_ref)
-            y_ref = y - tl.floor(y / py) * py
-            y_ref = tl.where(y_ref >= IH, py - y_ref, y_ref)
+            x_ref = _reflect_coord(x, IW, align_corners)
+            y_ref = _reflect_coord(y, IH, align_corners)
             x0 = tl.floor(x_ref).to(tl.int32)
             y0 = tl.floor(y_ref).to(tl.int32)
             x1 = x0 + 1
@@ -151,11 +166,11 @@ def grid_sampler_2d_kernel(
             y0_valid = True
             x1_valid = True
             y1_valid = True
-        else:  # Reflection
-            x0_clamped = tl.minimum(tl.maximum(x0, 0), IW - 1)
-            y0_clamped = tl.minimum(tl.maximum(y0, 0), IH - 1)
-            x1_clamped = tl.minimum(tl.maximum(x1, 0), IW - 1)
-            y1_clamped = tl.minimum(tl.maximum(y1, 0), IH - 1)
+        else:  # Reflection: reflect each integer tap independently.
+            x0_clamped = _reflect_int_index(x0.to(tl.float32), IW, align_corners)
+            y0_clamped = _reflect_int_index(y0.to(tl.float32), IH, align_corners)
+            x1_clamped = _reflect_int_index(x1.to(tl.float32), IW, align_corners)
+            y1_clamped = _reflect_int_index(y1.to(tl.float32), IH, align_corners)
             x0_valid = True
             y0_valid = True
             x1_valid = True
@@ -199,14 +214,8 @@ def grid_sampler_2d_kernel(
 
     elif interpolation_mode == 1:  # Nearest
         if padding_mode == 2:  # Reflection: reflect fractional coords first
-            px = 2 * IW - 2
-            py = 2 * IH - 2
-            x_ref = x - tl.floor(x / px) * px
-            x_ref = tl.where(x_ref >= IW, px - x_ref, x_ref)
-            y_ref = y - tl.floor(y / py) * py
-            y_ref = tl.where(y_ref >= IH, py - y_ref, y_ref)
-            x = x_ref
-            y = y_ref
+            x = _reflect_coord(x, IW, align_corners)
+            y = _reflect_coord(y, IH, align_corners)
         # Round to nearest even (matching PyTorch's nearbyint)
         x_floor = tl.floor(x)
         y_floor = tl.floor(y)
@@ -233,9 +242,9 @@ def grid_sampler_2d_kernel(
             x_nearest = tl.minimum(tl.maximum(x_nearest, 0), IW - 1)
             y_nearest = tl.minimum(tl.maximum(y_nearest, 0), IH - 1)
             pixel_mask = mask
-        else:  # Reflection
-            x_nearest = tl.minimum(tl.maximum(x_nearest, 0), IW - 1)
-            y_nearest = tl.minimum(tl.maximum(y_nearest, 0), IH - 1)
+        else:  # Reflection: reflect the rounded index independently.
+            x_nearest = _reflect_int_index(x_nearest.to(tl.float32), IW, align_corners)
+            y_nearest = _reflect_int_index(y_nearest.to(tl.float32), IH, align_corners)
             pixel_mask = mask
 
         offset = ((n * C + c) * IH + y_nearest) * IW + x_nearest
