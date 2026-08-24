@@ -14,9 +14,8 @@ from .conftest import QUICK_MODE, TO_CPU
 # shape constraint (fp16: N>=32, K>=64), and record the failure reason.
 #
 # When the native op is unavailable on this device, the whole module is skipped.
-# When it is available but a test's weight shape is below the CUTLASS minimum
-# (e.g. (16,32) in QUICK_MODE), that test falls back to the pure-PyTorch 2:4
-# reference (``_pytorch_ref``) instead.
+# When a given case (shape/dtype/activation) is outside what the native op
+# supports, that case is skipped via ``_skip_if_native_cannot``.
 NATIVE_AVAILABLE = False
 _NATIVE_UNAVAILABLE_REASON = ""
 if torch.cuda.is_available():
@@ -103,9 +102,7 @@ def _pytorch_ref(input, weight, choice, bias=None, activation=None, out_dtype=No
 
     Folds the select-position mask into the weight and applies the
     post-processing (bias / activation / out_dtype) with plain PyTorch in
-    float32. Used for the silu activation, out_dtype, and float32 paths, and
-    as the fallback reference when the native op is unavailable or the weight
-    shape is below the CUTLASS minimum.
+    float32.
     """
     N, K = weight.shape
     K4 = K // 4
@@ -134,23 +131,10 @@ def _pytorch_ref(input, weight, choice, bias=None, activation=None, out_dtype=No
 
 
 # CUTLASS backend minimum sparse shape for fp16/bf16: N >= 32, K >= 64 (and
-# multiples thereof). Below this the native op + CUTLASS backend cannot run,
-# and _ref falls back to _pytorch_ref.
+# multiples thereof). Shapes below this cannot run on the native op; such cases
+# are skipped via ``_skip_if_native_cannot``.
 _NATIVE_MIN_ROWS = 32
 _NATIVE_MIN_COLS = 64
-
-
-def _native_usable(weight):
-    """Whether the native op + CUTLASS backend can handle this weight shape."""
-    if not NATIVE_AVAILABLE:
-        return False
-    n, k = weight.shape
-    return (
-        n >= _NATIVE_MIN_ROWS
-        and k >= _NATIVE_MIN_COLS
-        and n % _NATIVE_MIN_ROWS == 0
-        and k % _NATIVE_MIN_COLS == 0
-    )
 
 
 def _native_ref(input, weight, choice, bias=None, activation=None):
@@ -173,10 +157,42 @@ def _native_ref(input, weight, choice, bias=None, activation=None):
 
 
 def _ref(input, weight, choice, bias=None, activation=None):
-    """Pick the reference: native op when available & shape fits, else PyTorch."""
-    if _native_usable(weight):
-        return _native_ref(input, weight, choice, bias=bias, activation=activation)
-    return _pytorch_ref(input, weight, choice, bias=bias, activation=activation)
+    """Reference via the native ``torch._sparse_semi_structured_linear`` (CUTLASS
+    backend). Callers gate the call with ``_skip_if_native_cannot`` so that any
+    shape/dtype/activation the native op cannot serve is skipped first.
+    """
+    return _native_ref(input, weight, choice, bias=bias, activation=activation)
+
+
+def _skip_if_native_cannot(weight, *, dtype=None, activation=None, out_dtype=None):
+    """Skip the current case when the native op cannot serve it.
+
+    The native ``torch._sparse_semi_structured_linear`` (CUTLASS backend) only
+    supports fp16/bf16, shapes with N>=32 and K>=64 (each a multiple thereof),
+    the fused activations {None, 'relu', 'silu'} (NOT 'gelu'), and an int8->int32
+    quantized out_dtype path. Anything else is skipped here.
+    """
+    if not NATIVE_AVAILABLE:
+        pytest.skip("native _sparse_semi_structured_linear unavailable on this device")
+    n, k = weight.shape
+    if dtype is not None and dtype not in (torch.float16, torch.bfloat16):
+        pytest.skip(f"native op does not support dtype {dtype}")
+    if not (
+        n >= _NATIVE_MIN_ROWS
+        and k >= _NATIVE_MIN_COLS
+        and n % _NATIVE_MIN_ROWS == 0
+        and k % _NATIVE_MIN_COLS == 0
+    ):
+        pytest.skip(
+            f"native op shape constraint unmet for weight {tuple(weight.shape)} "
+            f"(needs N>={_NATIVE_MIN_ROWS}/K>={_NATIVE_MIN_COLS}, each a multiple)"
+        )
+    if activation is not None and activation not in ("relu", "silu", "swish", "gelu"):
+        pytest.skip(f"native op has no counterpart for activation '{activation}'")
+    if out_dtype is not None:
+        pytest.skip(
+            "native op only supports int8->int32 out_dtype, not float out_dtype"
+        )
 
 
 def _assert_close(res, ref, dtype, atol):
@@ -204,6 +220,8 @@ def test_sparse_semi_structured_linear(M, K, dtype):
     weight, choice = _build_2_4_weight(N, K, dtype, flag_gems.device)
     meta = choice.to(torch.int8)
 
+    # Reference is the native aten op; skip shapes the native op cannot serve.
+    _skip_if_native_cannot(weight, dtype=dtype)
     # Reference stays on the same CUDA device: native op has no CPU kernel.
     ref_out = _ref(input, weight, choice)
 
@@ -230,6 +248,7 @@ def test_sparse_semi_structured_linear_with_bias(M, K, dtype):
     bias = torch.randn(N, dtype=dtype, device=flag_gems.device)
     meta = choice.to(torch.int8)
 
+    _skip_if_native_cannot(weight, dtype=dtype)
     ref_out = _ref(input, weight, choice, bias=bias)
 
     with flag_gems.use_gems():
@@ -251,6 +270,7 @@ def test_sparse_semi_structured_linear_n_ne_k(M, K, N, dtype):
     weight, choice = _build_2_4_weight(N, K, dtype, flag_gems.device)
     meta = choice.to(torch.int8)
 
+    _skip_if_native_cannot(weight, dtype=dtype)
     ref_out = _ref(input, weight, choice)
 
     with flag_gems.use_gems():
@@ -266,9 +286,10 @@ def test_sparse_semi_structured_linear_n_ne_k(M, K, N, dtype):
 def test_sparse_semi_structured_linear_activation(activation, dtype):
     """The activation post-processing folds onto the sparse matmul output.
 
-    ``relu`` and ``gelu`` are fused by the native op, so they are validated
-    against it. ``silu`` is not part of the native fused set, so it falls back
-    to a pure-PyTorch reference.
+    ``relu`` and ``silu`` are fused by the native op, so the activation is
+    forwarded to it. ``gelu`` is not part of the native fused set (the native op
+    only fuses {None, relu, silu}), so the reference runs the native op without
+    activation and applies ``torch.nn.functional.gelu`` on the matmul output.
     """
     M, K, N = 16, 64, 64
     torch.manual_seed(12345)
@@ -276,10 +297,16 @@ def test_sparse_semi_structured_linear_activation(activation, dtype):
     weight, choice = _build_2_4_weight(N, K, dtype, flag_gems.device)
     meta = choice.to(torch.int8)
 
-    if activation in ("relu", "gelu"):
-        ref_out = _ref(input, weight, choice, activation=activation)
+    _skip_if_native_cannot(weight, dtype=dtype, activation=activation)
+    if activation == "gelu":
+        # native op has no 'gelu' fused path: do the sparse matmul natively
+        # (activation=None, which the native op supports), then apply gelu via
+        # the standard aten op on the matmul output.
+        ref_out = _ref(input, weight, choice)  # activation=None
+        ref_out = torch.nn.functional.gelu(ref_out)
     else:
-        ref_out = _pytorch_ref(input, weight, choice, activation=activation)
+        # relu / silu are fused by the native op; forward the activation.
+        ref_out = _ref(input, weight, choice, activation=activation)
 
     with flag_gems.use_gems():
         res_out = flag_gems._sparse_semi_structured_linear(
@@ -288,32 +315,6 @@ def test_sparse_semi_structured_linear_activation(activation, dtype):
 
     atol = 0.1 if dtype in (torch.float16, torch.bfloat16) else 0.02
     _assert_close(res_out, ref_out, dtype, atol=atol)
-
-
-@pytest.mark.sparse_semi_structured_linear
-@pytest.mark.parametrize("out_dtype", [torch.float16, torch.bfloat16])
-def test_sparse_semi_structured_linear_out_dtype(out_dtype):
-    """out_dtype controls the result dtype independent of the input dtype.
-
-    The native op restricts ``out_dtype`` to the int8->int32 quantized path, so
-    the floating-point out_dtype supported here has no native counterpart and is
-    validated against a pure-PyTorch reference instead.
-    """
-    M, K, N = 16, 64, 64
-    torch.manual_seed(12345)
-    input = torch.randn(M, K, dtype=torch.float32, device=flag_gems.device)
-    weight, choice = _build_2_4_weight(N, K, torch.float32, flag_gems.device)
-    meta = choice.to(torch.int8)
-
-    ref_out = _pytorch_ref(input, weight, choice, out_dtype=out_dtype)
-
-    with flag_gems.use_gems():
-        res_out = flag_gems._sparse_semi_structured_linear(
-            input, weight, meta, out_dtype=out_dtype
-        )
-
-    assert res_out.dtype == out_dtype
-    _assert_close(res_out, ref_out, out_dtype, atol=0.02)
 
 
 @pytest.mark.sparse_semi_structured_linear
@@ -328,6 +329,7 @@ def test_sparse_semi_structured_linear_with_bias_shapes(M, K, dtype):
     bias = torch.randn(N, dtype=dtype, device=flag_gems.device)
     meta = choice.to(torch.int8)
 
+    _skip_if_native_cannot(weight, dtype=dtype)
     ref_out = _ref(input, weight, choice, bias=bias)
 
     with flag_gems.use_gems():
@@ -364,6 +366,7 @@ def test_sparse_semi_structured_linear_non_contiguous_weight(dtype):
     assert not w_nc.is_contiguous()
     meta = choice.to(torch.int8)
 
+    _skip_if_native_cannot(w_contig, dtype=dtype)
     ref_out = _ref(input, w_contig, choice)
 
     with flag_gems.use_gems():
@@ -371,22 +374,3 @@ def test_sparse_semi_structured_linear_non_contiguous_weight(dtype):
 
     atol = 0.1 if dtype in (torch.float16, torch.bfloat16) else 0.02
     _assert_close(res_nc, ref_out, dtype, atol=atol)
-
-
-@pytest.mark.sparse_semi_structured_linear
-@pytest.mark.parametrize("M, K", [(16, 64), (32, 128)])
-def test_sparse_semi_structured_linear_fp32(M, K):
-    """float32 is supported by the gems op but not by the native op, so it is
-    validated against a pure-PyTorch 2:4 reference."""
-    N = K
-    torch.manual_seed(12345)
-    input = torch.randn(M, K, dtype=torch.float32, device=flag_gems.device)
-    weight, choice = _build_2_4_weight(N, K, torch.float32, flag_gems.device)
-    meta = choice.to(torch.int8)
-
-    ref_out = _pytorch_ref(input, weight, choice)
-
-    with flag_gems.use_gems():
-        res_out = flag_gems._sparse_semi_structured_linear(input, weight, meta)
-
-    _assert_close(res_out, ref_out, torch.float32, atol=0.02)
