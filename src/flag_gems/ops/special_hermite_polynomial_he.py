@@ -31,12 +31,12 @@ def hermite_he_func(x, n):
     # He_0(x) = 1
     # He_1(x) = x
     # He_{n+1}(x) = x*He_n(x) - n*He_{n-1}(x)
-    x_f32 = x.to(tl.float32)
+    x_fp = x  # keep input precision: fp32 stays fp32, fp64 stays fp64
     n_i32 = n.to(tl.int32)
 
     # Compute He_0 and He_1
     he_0 = 1.0
-    he_1 = x_f32
+    he_1 = x_fp
 
     # Use explicit formulas for n=0,1,2,3,4,5
     # For n > 5, unroll a few more iterations of the recurrence
@@ -48,34 +48,30 @@ def hermite_he_func(x, n):
     n_is_5 = n_i32 == 5
 
     # He_2 = x*He_1 - 1*He_0 = x^2 - 1
-    he_2 = x_f32 * x_f32 - 1.0
+    he_2 = x_fp * x_fp - 1.0
     # He_3 = x*He_2 - 2*He_1 = x*(x^2-1) - 2x = x^3 - 3x
-    he_3 = x_f32 * x_f32 * x_f32 - 3.0 * x_f32
+    he_3 = x_fp * x_fp * x_fp - 3.0 * x_fp
     # He_4 = x*He_3 - 3*He_2 = x*(x^3-3x) - 3*(x^2-1) = x^4 - 6x^2 + 3
-    he_4 = x_f32 * x_f32 * x_f32 * x_f32 - 6.0 * x_f32 * x_f32 + 3.0
+    he_4 = x_fp * x_fp * x_fp * x_fp - 6.0 * x_fp * x_fp + 3.0
     # He_5 = x*He_4 - 4*He_3 = x*(x^4-6x^2+3) - 4*(x^3-3x) = x^5 - 10x^3 + 15x
-    he_5 = (
-        x_f32 * x_f32 * x_f32 * x_f32 * x_f32
-        - 10.0 * x_f32 * x_f32 * x_f32
-        + 15.0 * x_f32
-    )
+    he_5 = x_fp * x_fp * x_fp * x_fp * x_fp - 10.0 * x_fp * x_fp * x_fp + 15.0 * x_fp
     # He_6 = x*He_5 - 5*He_4 = x*(x^5-10x^3+15x) - 5*(x^4-6x^2+3)
     he_6 = (
-        x_f32 * x_f32 * x_f32 * x_f32 * x_f32 * x_f32
-        - 10.0 * x_f32 * x_f32 * x_f32 * x_f32
-        + 15.0 * x_f32 * x_f32
-        - 5.0 * x_f32 * x_f32 * x_f32 * x_f32
-        + 30.0 * x_f32 * x_f32
+        x_fp * x_fp * x_fp * x_fp * x_fp * x_fp
+        - 10.0 * x_fp * x_fp * x_fp * x_fp
+        + 15.0 * x_fp * x_fp
+        - 5.0 * x_fp * x_fp * x_fp * x_fp
+        + 30.0 * x_fp * x_fp
         - 15.0
     )
     # He_7 = x*He_6 - 6*He_5
-    he_7 = x_f32 * he_6 - 6.0 * he_5
+    he_7 = x_fp * he_6 - 6.0 * he_5
     # He_8 = x*He_7 - 7*He_6
-    he_8 = x_f32 * he_7 - 7.0 * he_6
+    he_8 = x_fp * he_7 - 7.0 * he_6
     # He_9 = x*He_8 - 8*He_7
-    he_9 = x_f32 * he_8 - 8.0 * he_7
+    he_9 = x_fp * he_8 - 8.0 * he_7
     # He_10 = x*He_9 - 9*He_8
-    he_10 = x_f32 * he_9 - 9.0 * he_8
+    he_10 = x_fp * he_9 - 9.0 * he_8
 
     result = tl.where(
         n_is_0,
@@ -114,7 +110,7 @@ def hermite_he_func(x, n):
                                                 # He_{n+1} = x*He_n - n*He_{n-1}
                                                 # Since we can't loop dynamically in Triton,
                                                 # we compute a few more iterations
-                                                x_f32 * he_10 - 10.0 * he_9,
+                                                x_fp * he_10 - 10.0 * he_9,
                                             ),
                                         ),
                                     ),
@@ -133,31 +129,27 @@ def hermite_he_func(x, n):
 @triton.jit
 def hermite_he_func_scalar_n(x, n):
     # Same as above but n is a scalar
-    x_f32 = x.to(tl.float32)
+    x_fp = x  # keep input precision: fp32 stays fp32, fp64 stays fp64
     n_i32 = n.to(tl.int32)
 
     he_0 = 1.0
-    he_1 = x_f32
-    he_2 = x_f32 * x_f32 - 1.0
-    he_3 = x_f32 * x_f32 * x_f32 - 3.0 * x_f32
-    he_4 = x_f32 * x_f32 * x_f32 * x_f32 - 6.0 * x_f32 * x_f32 + 3.0
-    he_5 = (
-        x_f32 * x_f32 * x_f32 * x_f32 * x_f32
-        - 10.0 * x_f32 * x_f32 * x_f32
-        + 15.0 * x_f32
-    )
+    he_1 = x_fp
+    he_2 = x_fp * x_fp - 1.0
+    he_3 = x_fp * x_fp * x_fp - 3.0 * x_fp
+    he_4 = x_fp * x_fp * x_fp * x_fp - 6.0 * x_fp * x_fp + 3.0
+    he_5 = x_fp * x_fp * x_fp * x_fp * x_fp - 10.0 * x_fp * x_fp * x_fp + 15.0 * x_fp
     he_6 = (
-        x_f32 * x_f32 * x_f32 * x_f32 * x_f32 * x_f32
-        - 10.0 * x_f32 * x_f32 * x_f32 * x_f32
-        + 15.0 * x_f32 * x_f32
-        - 5.0 * x_f32 * x_f32 * x_f32 * x_f32
-        + 30.0 * x_f32 * x_f32
+        x_fp * x_fp * x_fp * x_fp * x_fp * x_fp
+        - 10.0 * x_fp * x_fp * x_fp * x_fp
+        + 15.0 * x_fp * x_fp
+        - 5.0 * x_fp * x_fp * x_fp * x_fp
+        + 30.0 * x_fp * x_fp
         - 15.0
     )
-    he_7 = x_f32 * he_6 - 6.0 * he_5
-    he_8 = x_f32 * he_7 - 7.0 * he_6
-    he_9 = x_f32 * he_8 - 8.0 * he_7
-    he_10 = x_f32 * he_9 - 9.0 * he_8
+    he_7 = x_fp * he_6 - 6.0 * he_5
+    he_8 = x_fp * he_7 - 7.0 * he_6
+    he_9 = x_fp * he_8 - 8.0 * he_7
+    he_10 = x_fp * he_9 - 9.0 * he_8
 
     result = tl.where(
         n_i32 == 0,
@@ -192,7 +184,7 @@ def hermite_he_func_scalar_n(x, n):
                                             tl.where(
                                                 n_i32 == 10,
                                                 he_10,
-                                                x_f32 * he_10 - 10.0 * he_9,
+                                                x_fp * he_10 - 10.0 * he_9,
                                             ),
                                         ),
                                     ),

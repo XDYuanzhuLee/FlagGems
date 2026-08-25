@@ -5,21 +5,25 @@ import flag_gems
 
 from . import accuracy_utils as utils
 
-# Hermite polynomials use float32 intermediates and unbounded inputs (randn),
-# so accumulated floating-point errors grow with the degree n. The generic and
-# MetaX kernels evaluate He_n via recurrence, while the Iluvatar kernel uses a
-# fully-explicit polynomial expansion that accumulates more float32 truncation
-# error at high degrees, so a wider atol is required for Iluvatar.
+# Hermite polynomials use unbounded inputs (randn); |He_n(x)| grows with n and
+# |x|, reaching ~1e6 at n=10, so absolute error tracks the fp32 representability
+# limit. gems_assert_close applies atol plus rtol=RESOLUTION[dtype]; rtol covers
+# the large-value tail, so atol only bounds the residual max(|res-ref| -
+# rtol*|ref|), which reaches ~0.17 at scalar n=10 for float32. atol is set with
+# a ~6x margin to keep n=10 from flaking. float64 keeps input precision and is
+# accurate enough that rtol alone covers every n. The Iluvatar kernel uses a
+# fully explicit polynomial expansion that accrues more truncation error, so it
+# keeps a wider float32 tolerance.
 if flag_gems.vendor_name == "iluvatar":
-    ATOL = 1.5
+    ATOL = {torch.float32: 2.0, torch.float64: 1e-2}
 else:
-    ATOL = 0.5
+    ATOL = {torch.float32: 1.0, torch.float64: 1e-3}
 
 
 @pytest.mark.special_hermite_polynomial_he
 @pytest.mark.parametrize("shape", utils.POINTWISE_SHAPES)
 # CUDA does not support half/bfloat16 for this special function
-@pytest.mark.parametrize("dtype", [torch.float32])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 def test_special_hermite_polynomial_he(shape, dtype):
     inp1 = torch.randn(shape, dtype=dtype, device=flag_gems.device)
     # n is a tensor with small integer values (degree of polynomial)
@@ -39,9 +43,9 @@ def test_special_hermite_polynomial_he(shape, dtype):
 
     if flag_gems.vendor_name == "iluvatar":
         res_out = res_out.to("cpu")
-    utils.gems_assert_close(res_out, ref_out, dtype, equal_nan=True, atol=ATOL)
+    utils.gems_assert_close(res_out, ref_out, dtype, equal_nan=True, atol=ATOL[dtype])
 
-    # Also test scalar n path
+    # Also test scalar n path (n=0..10, where n=10 is the worst case)
     for n in range(0, 11):
         ref_out = torch.special.hermite_polynomial_he(ref_inp1, n)
         with flag_gems.use_gems():
@@ -49,4 +53,6 @@ def test_special_hermite_polynomial_he(shape, dtype):
 
         if flag_gems.vendor_name == "iluvatar":
             res_out = res_out.to("cpu")
-        utils.gems_assert_close(res_out, ref_out, dtype, equal_nan=True, atol=ATOL)
+        utils.gems_assert_close(
+            res_out, ref_out, dtype, equal_nan=True, atol=ATOL[dtype]
+        )
