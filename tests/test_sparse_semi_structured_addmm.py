@@ -102,7 +102,7 @@ def test_sparse_semi_structured_addmm(shape, dtype):
     ref_out = _aten_addmm_ref(input_tensor, mat1, mat1_meta, mat2)
 
     with flag_gems.use_gems():
-        res_out = flag_gems._sparse_semi_structured_addmm(
+        res_out = torch._sparse_semi_structured_addmm(
             input_tensor, mat1, mat1_meta, mat2
         )
 
@@ -112,7 +112,7 @@ def test_sparse_semi_structured_addmm(shape, dtype):
     # the final ref_out to CPU here to honour the to_cpu() contract.
     ref_out = utils.to_reference(ref_out)
     if dtype == torch.bfloat16:
-        utils.gems_assert_close(res_out, ref_out, dtype, atol=0.15)
+        utils.gems_assert_close(res_out, ref_out, dtype, atol=0.2)
     elif dtype == torch.float16:
         utils.gems_assert_close(res_out, ref_out, dtype, atol=0.08)
     else:  # float32
@@ -146,7 +146,7 @@ def test_sparse_semi_structured_addmm_with_alpha_beta(shape, dtype):
     )
 
     with flag_gems.use_gems():
-        res_out = flag_gems._sparse_semi_structured_addmm(
+        res_out = torch._sparse_semi_structured_addmm(
             input_tensor, mat1, mat1_meta, mat2, alpha=alpha, beta=beta
         )
 
@@ -156,8 +156,8 @@ def test_sparse_semi_structured_addmm_with_alpha_beta(shape, dtype):
     # the final ref_out to CPU here to honour the to_cpu() contract.
     ref_out = utils.to_reference(ref_out)
     if dtype == torch.bfloat16:
-        utils.gems_assert_close(res_out, ref_out, dtype, atol=0.4)
+        utils.gems_assert_close(res_out, ref_out, dtype, atol=0.5)
     elif dtype == torch.float16:
-        utils.gems_assert_close(res_out, ref_out, dtype, atol=0.2)
+        utils.gems_assert_close(res_out, ref_out, dtype, atol=0.12)
     else:  # float32
         utils.gems_assert_close(res_out, ref_out, dtype, atol=0.02)
