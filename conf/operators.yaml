@@ -6117,7 +6117,7 @@ ops:
       - LinearAlg
     stages:
       - alpha: '5.4'
-  - id: linalg_eigh
+  - id: _linalg_eigh
     description: Computes the eigenvalues and eigenvectors of a symmetric or Hermitian
       matrix.
     for:
