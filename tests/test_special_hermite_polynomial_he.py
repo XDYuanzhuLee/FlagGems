@@ -5,14 +5,16 @@ import flag_gems
 
 from . import accuracy_utils as utils
 
-# He_n(x) is computed in float32 intermediates regardless of input dtype, so
-# both float32 and float64 results carry float32-precision error. |He_n(x)|
-# reaches ~1e6 at n=10, so a per-dtype atol is needed to bound the residual.
-# iluvatar keeps a wider float32 atol for its kernel's truncation error.
+# He_n(x) is evaluated in the input dtype: fp32 in fp32, fp64 in fp64, matching
+# the native torch operator. fp64 results retain full fp64 accuracy (residual
+# ~1e-9), so a tight atol suffices; fp32 results carry float32-precision error,
+# and |He_n(x)| reaches ~1e6 at n=10, so a per-dtype atol bounds the float32
+# rounding residual. The iluvatar backend has no fp64 support and evaluates in
+# float32 intermediates; it keeps wider atol for its truncation error.
 if flag_gems.vendor_name == "iluvatar":
     ATOL = {torch.float32: 2.0, torch.float64: 0.5}
 else:
-    ATOL = {torch.float32: 1.0, torch.float64: 0.5}
+    ATOL = {torch.float32: 1.0, torch.float64: 1e-3}
 
 
 @pytest.mark.special_hermite_polynomial_he

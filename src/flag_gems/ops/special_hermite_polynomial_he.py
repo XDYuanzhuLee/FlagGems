@@ -28,138 +28,32 @@ logger = logging.getLogger(__name__)
 @triton.jit
 def hermite_he_func(x, n):
     # Compute He_n(x) (probabilist's Hermite polynomial)
-    # He_0(x) = 1
-    # He_1(x) = x
-    # He_{n+1}(x) = x*He_n(x) - n*He_{n-1}(x)
-    # Compute in float32; result is cast back to the input dtype below.
-    x_f32 = x.to(tl.float32)
+    # He_0(x) = 1, He_1(x) = x, He_{n+1}(x) = x*He_n(x) - n*He_{n-1}(x)
+    # Evaluated in the input dtype (fp32 in fp32, fp64 in fp64), matching the
+    # native torch operator, so fp64 results retain full fp64 accuracy.
+    # n is validated to be in [0, 10] by the caller, so the fallback branch of
+    # the final tl.where is unreachable.
     n_i32 = n.to(tl.int32)
 
-    # Compute He_0 and He_1
+    x2 = x * x
+    x3 = x2 * x
+    x4 = x2 * x2
+    x5 = x4 * x
+
+    # He_0..He_5 via explicit closed forms.
     he_0 = 1.0
-    he_1 = x_f32
-
-    # Use explicit formulas for n=0,1,2,3,4,5
-    # For n > 5, unroll a few more iterations of the recurrence
-    n_is_0 = n_i32 == 0
-    n_is_1 = n_i32 == 1
-    n_is_2 = n_i32 == 2
-    n_is_3 = n_i32 == 3
-    n_is_4 = n_i32 == 4
-    n_is_5 = n_i32 == 5
-
-    # He_2 = x*He_1 - 1*He_0 = x^2 - 1
-    he_2 = x_f32 * x_f32 - 1.0
-    # He_3 = x*He_2 - 2*He_1 = x*(x^2-1) - 2x = x^3 - 3x
-    he_3 = x_f32 * x_f32 * x_f32 - 3.0 * x_f32
-    # He_4 = x*He_3 - 3*He_2 = x*(x^3-3x) - 3*(x^2-1) = x^4 - 6x^2 + 3
-    he_4 = x_f32 * x_f32 * x_f32 * x_f32 - 6.0 * x_f32 * x_f32 + 3.0
-    # He_5 = x*He_4 - 4*He_3 = x*(x^4-6x^2+3) - 4*(x^3-3x) = x^5 - 10x^3 + 15x
-    he_5 = (
-        x_f32 * x_f32 * x_f32 * x_f32 * x_f32
-        - 10.0 * x_f32 * x_f32 * x_f32
-        + 15.0 * x_f32
-    )
-    # He_6 = x*He_5 - 5*He_4 = x*(x^5-10x^3+15x) - 5*(x^4-6x^2+3)
-    he_6 = (
-        x_f32 * x_f32 * x_f32 * x_f32 * x_f32 * x_f32
-        - 10.0 * x_f32 * x_f32 * x_f32 * x_f32
-        + 15.0 * x_f32 * x_f32
-        - 5.0 * x_f32 * x_f32 * x_f32 * x_f32
-        + 30.0 * x_f32 * x_f32
-        - 15.0
-    )
-    # He_7 = x*He_6 - 6*He_5
-    he_7 = x_f32 * he_6 - 6.0 * he_5
-    # He_8 = x*He_7 - 7*He_6
-    he_8 = x_f32 * he_7 - 7.0 * he_6
-    # He_9 = x*He_8 - 8*He_7
-    he_9 = x_f32 * he_8 - 8.0 * he_7
-    # He_10 = x*He_9 - 9*He_8
-    he_10 = x_f32 * he_9 - 9.0 * he_8
-
-    result = tl.where(
-        n_is_0,
-        he_0,
-        tl.where(
-            n_is_1,
-            he_1,
-            tl.where(
-                n_is_2,
-                he_2,
-                tl.where(
-                    n_is_3,
-                    he_3,
-                    tl.where(
-                        n_is_4,
-                        he_4,
-                        tl.where(
-                            n_is_5,
-                            he_5,
-                            tl.where(
-                                n_i32 == 6,
-                                he_6,
-                                tl.where(
-                                    n_i32 == 7,
-                                    he_7,
-                                    tl.where(
-                                        n_i32 == 8,
-                                        he_8,
-                                        tl.where(
-                                            n_i32 == 9,
-                                            he_9,
-                                            tl.where(
-                                                n_i32 == 10,
-                                                he_10,
-                                                # For n > 10, use recurrence iteratively
-                                                # He_{n+1} = x*He_n - n*He_{n-1}
-                                                # Since we can't loop dynamically in Triton,
-                                                # we compute a few more iterations
-                                                x_f32 * he_10 - 10.0 * he_9,
-                                            ),
-                                        ),
-                                    ),
-                                ),
-                            ),
-                        ),
-                    ),
-                ),
-            ),
-        ),
-    )
-    return result.to(x.dtype)
-
-
-@pointwise_dynamic(is_tensor=[True, False], promotion_methods=[(0, 1, "DEFAULT")])
-@triton.jit
-def hermite_he_func_scalar_n(x, n):
-    # Same as above but n is a scalar
-    # Compute in float32; result is cast back to the input dtype below.
-    x_f32 = x.to(tl.float32)
-    n_i32 = n.to(tl.int32)
-
-    he_0 = 1.0
-    he_1 = x_f32
-    he_2 = x_f32 * x_f32 - 1.0
-    he_3 = x_f32 * x_f32 * x_f32 - 3.0 * x_f32
-    he_4 = x_f32 * x_f32 * x_f32 * x_f32 - 6.0 * x_f32 * x_f32 + 3.0
-    he_5 = (
-        x_f32 * x_f32 * x_f32 * x_f32 * x_f32
-        - 10.0 * x_f32 * x_f32 * x_f32
-        + 15.0 * x_f32
-    )
-    he_6 = (
-        x_f32 * x_f32 * x_f32 * x_f32 * x_f32 * x_f32
-        - 10.0 * x_f32 * x_f32 * x_f32 * x_f32
-        + 15.0 * x_f32 * x_f32
-        - 5.0 * x_f32 * x_f32 * x_f32 * x_f32
-        + 30.0 * x_f32 * x_f32
-        - 15.0
-    )
-    he_7 = x_f32 * he_6 - 6.0 * he_5
-    he_8 = x_f32 * he_7 - 7.0 * he_6
-    he_9 = x_f32 * he_8 - 8.0 * he_7
-    he_10 = x_f32 * he_9 - 9.0 * he_8
+    he_1 = x
+    he_2 = x2 - 1.0
+    he_3 = x3 - 3.0 * x
+    he_4 = x4 - 6.0 * x2 + 3.0
+    he_5 = x5 - 10.0 * x3 + 15.0 * x
+    # He_6..He_10 via the recurrence, which is numerically more stable than the
+    # fully expanded polynomial form.
+    he_6 = x * he_5 - 5.0 * he_4
+    he_7 = x * he_6 - 6.0 * he_5
+    he_8 = x * he_7 - 7.0 * he_6
+    he_9 = x * he_8 - 8.0 * he_7
+    he_10 = x * he_9 - 9.0 * he_8
 
     result = tl.where(
         n_i32 == 0,
@@ -191,11 +85,7 @@ def hermite_he_func_scalar_n(x, n):
                                         tl.where(
                                             n_i32 == 9,
                                             he_9,
-                                            tl.where(
-                                                n_i32 == 10,
-                                                he_10,
-                                                x_f32 * he_10 - 10.0 * he_9,
-                                            ),
+                                            he_10,
                                         ),
                                     ),
                                 ),
@@ -206,7 +96,82 @@ def hermite_he_func_scalar_n(x, n):
             ),
         ),
     )
-    return result.to(x.dtype)
+    return result
+
+
+@pointwise_dynamic(is_tensor=[True, False], promotion_methods=[(0, 1, "DEFAULT")])
+@triton.jit
+def hermite_he_func_scalar_n(x, n):
+    # Compute He_n(x) (probabilist's Hermite polynomial) with a scalar degree n.
+    # He_0(x) = 1, He_1(x) = x, He_{n+1}(x) = x*He_n(x) - n*He_{n-1}(x)
+    # Evaluated in the input dtype (fp32 in fp32, fp64 in fp64), matching the
+    # native torch operator, so fp64 results retain full fp64 accuracy.
+    # n is validated to be in [0, 10] by the caller, so the fallback branch of
+    # the final tl.where is unreachable.
+    n_i32 = n.to(tl.int32)
+
+    x2 = x * x
+    x3 = x2 * x
+    x4 = x2 * x2
+    x5 = x4 * x
+
+    # He_0..He_5 via explicit closed forms.
+    he_0 = 1.0
+    he_1 = x
+    he_2 = x2 - 1.0
+    he_3 = x3 - 3.0 * x
+    he_4 = x4 - 6.0 * x2 + 3.0
+    he_5 = x5 - 10.0 * x3 + 15.0 * x
+    # He_6..He_10 via the recurrence, which is numerically more stable than the
+    # fully expanded polynomial form.
+    he_6 = x * he_5 - 5.0 * he_4
+    he_7 = x * he_6 - 6.0 * he_5
+    he_8 = x * he_7 - 7.0 * he_6
+    he_9 = x * he_8 - 8.0 * he_7
+    he_10 = x * he_9 - 9.0 * he_8
+
+    result = tl.where(
+        n_i32 == 0,
+        he_0,
+        tl.where(
+            n_i32 == 1,
+            he_1,
+            tl.where(
+                n_i32 == 2,
+                he_2,
+                tl.where(
+                    n_i32 == 3,
+                    he_3,
+                    tl.where(
+                        n_i32 == 4,
+                        he_4,
+                        tl.where(
+                            n_i32 == 5,
+                            he_5,
+                            tl.where(
+                                n_i32 == 6,
+                                he_6,
+                                tl.where(
+                                    n_i32 == 7,
+                                    he_7,
+                                    tl.where(
+                                        n_i32 == 8,
+                                        he_8,
+                                        tl.where(
+                                            n_i32 == 9,
+                                            he_9,
+                                            he_10,
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    return result
 
 
 def special_hermite_polynomial_he(x, n):
