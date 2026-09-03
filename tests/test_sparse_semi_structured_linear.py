@@ -225,8 +225,7 @@ def test_sparse_semi_structured_linear(M, K, dtype):
     # Reference stays on the same CUDA device: native op has no CPU kernel.
     ref_out = _ref(input, weight, choice)
 
-    with flag_gems.use_gems():
-        res_out = flag_gems._sparse_semi_structured_linear(input, weight, meta)
+    res_out = flag_gems._sparse_semi_structured_linear(input, weight, meta)
 
     # Both tensors live on CUDA here; _assert_close moves them to CPU under
     # --ref=cpu. The 2:4 element-wise select-position accumulation differs from
@@ -251,10 +250,7 @@ def test_sparse_semi_structured_linear_with_bias(M, K, dtype):
     _skip_if_native_cannot(weight, dtype=dtype)
     ref_out = _ref(input, weight, choice, bias=bias)
 
-    with flag_gems.use_gems():
-        res_out = flag_gems._sparse_semi_structured_linear(
-            input, weight, meta, bias=bias
-        )
+    res_out = flag_gems._sparse_semi_structured_linear(input, weight, meta, bias=bias)
 
     atol = 0.1 if dtype in (torch.float16, torch.bfloat16) else 0.02
     _assert_close(res_out, ref_out, dtype, atol=atol)
@@ -273,8 +269,7 @@ def test_sparse_semi_structured_linear_n_ne_k(M, K, N, dtype):
     _skip_if_native_cannot(weight, dtype=dtype)
     ref_out = _ref(input, weight, choice)
 
-    with flag_gems.use_gems():
-        res_out = flag_gems._sparse_semi_structured_linear(input, weight, meta)
+    res_out = flag_gems._sparse_semi_structured_linear(input, weight, meta)
 
     atol = 0.1 if dtype in (torch.float16, torch.bfloat16) else 0.02
     _assert_close(res_out, ref_out, dtype, atol=atol)
@@ -308,10 +303,9 @@ def test_sparse_semi_structured_linear_activation(activation, dtype):
         # relu / silu are fused by the native op; forward the activation.
         ref_out = _ref(input, weight, choice, activation=activation)
 
-    with flag_gems.use_gems():
-        res_out = flag_gems._sparse_semi_structured_linear(
-            input, weight, meta, activation=activation
-        )
+    res_out = flag_gems._sparse_semi_structured_linear(
+        input, weight, meta, activation=activation
+    )
 
     atol = 0.1 if dtype in (torch.float16, torch.bfloat16) else 0.02
     _assert_close(res_out, ref_out, dtype, atol=atol)
@@ -332,10 +326,7 @@ def test_sparse_semi_structured_linear_with_bias_shapes(M, K, dtype):
     _skip_if_native_cannot(weight, dtype=dtype)
     ref_out = _ref(input, weight, choice, bias=bias)
 
-    with flag_gems.use_gems():
-        res_out = flag_gems._sparse_semi_structured_linear(
-            input, weight, meta, bias=bias
-        )
+    res_out = flag_gems._sparse_semi_structured_linear(input, weight, meta, bias=bias)
 
     atol = 0.1 if dtype in (torch.float16, torch.bfloat16) else 0.02
     _assert_close(res_out, ref_out, dtype, atol=atol)
@@ -369,8 +360,7 @@ def test_sparse_semi_structured_linear_non_contiguous_weight(dtype):
     _skip_if_native_cannot(w_contig, dtype=dtype)
     ref_out = _ref(input, w_contig, choice)
 
-    with flag_gems.use_gems():
-        res_nc = flag_gems._sparse_semi_structured_linear(input, w_nc, meta)
+    res_nc = flag_gems._sparse_semi_structured_linear(input, w_nc, meta)
 
     atol = 0.1 if dtype in (torch.float16, torch.bfloat16) else 0.02
     _assert_close(res_nc, ref_out, dtype, atol=atol)
