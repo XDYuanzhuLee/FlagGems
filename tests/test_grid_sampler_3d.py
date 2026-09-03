@@ -40,10 +40,9 @@ def test_grid_sampler_3d(
         ref_inp, ref_grid, interpolation_mode, padding_mode, align_corners
     )
 
-    with flag_gems.use_gems():
-        res_out = torch.ops.aten.grid_sampler_3d(
-            inp, grid, interpolation_mode, padding_mode, align_corners
-        )
+    res_out = flag_gems.grid_sampler_3d(
+        inp, grid, interpolation_mode, padding_mode, align_corners
+    )
 
     # Tolerances aligned with the 2D grid_sample test suite (ATOL_DICT).
     # float16/bfloat16 values measured on NVIDIA H20 with output size (2,2,2):
@@ -101,9 +100,8 @@ def test_grid_sampler_3d_varied_output_sizes(
         ref_inp, ref_grid, interpolation_mode, padding_mode, align_corners
     )
 
-    with flag_gems.use_gems():
-        res_out = torch.ops.aten.grid_sampler_3d(
-            inp, grid, interpolation_mode, padding_mode, align_corners
-        )
+    res_out = flag_gems.grid_sampler_3d(
+        inp, grid, interpolation_mode, padding_mode, align_corners
+    )
 
     utils.gems_assert_close(res_out, ref_out, dtype, atol=1e-5)
