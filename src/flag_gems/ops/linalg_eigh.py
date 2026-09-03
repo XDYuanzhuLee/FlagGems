@@ -741,10 +741,11 @@ def linalg_eigh(A, UPLO="L", compute_v=True):
         v2 = torch.stack([d_vec, ev2 - a_elem], dim=1)
 
         small_d = torch.abs(d_vec) < 1e-10
-        v1[small_d, 0] = 1.0
-        v1[small_d, 1] = 0.0
-        v2[small_d, 0] = 0.0
-        v2[small_d, 1] = 1.0
+        # Override the degenerate rows (d ~ 0) with the standard basis so the
+        # eigenvectors stay well-defined.
+        mask = small_d.unsqueeze(1)
+        v1 = torch.where(mask, torch.tensor([1.0, 0.0], device=A_flat.device), v1)
+        v2 = torch.where(mask, torch.tensor([0.0, 1.0], device=A_flat.device), v2)
 
         v1 = v1 / v1.norm(dim=1, keepdim=True)
         v2 = v2 / v2.norm(dim=1, keepdim=True)
