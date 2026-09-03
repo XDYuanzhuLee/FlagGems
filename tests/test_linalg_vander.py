@@ -54,8 +54,7 @@ def test_linalg_vander(shape, dtype):
     )
     ref_out = torch.linalg.vander(ref_x)
 
-    with flag_gems.use_gems():
-        res_out = torch.linalg.vander(x)
+    res_out = flag_gems.linalg_vander(x)
 
     utils.gems_assert_close(res_out, ref_out, dtype)
 
@@ -83,8 +82,7 @@ def test_linalg_vander_with_N(shape, N, dtype):
     )
     ref_out = torch.linalg.vander(ref_x, N=N)
 
-    with flag_gems.use_gems():
-        res_out = torch.linalg.vander(x, N=N)
+    res_out = flag_gems.linalg_vander(x, N=N)
 
     utils.gems_assert_close(res_out, ref_out, dtype)
 
@@ -100,8 +98,7 @@ def test_linalg_vander_complex(shape, dtype):
 
     ref_out = torch.linalg.vander(ref_x)
 
-    with flag_gems.use_gems():
-        res_out = torch.linalg.vander(x)
+    res_out = flag_gems.linalg_vander(x)
 
     _assert_vander_close(res_out, ref_out, dtype)
 
@@ -117,7 +114,6 @@ def test_linalg_vander_with_N_complex(shape, N, dtype):
 
     ref_out = torch.linalg.vander(ref_x, N=N)
 
-    with flag_gems.use_gems():
-        res_out = torch.linalg.vander(x, N=N)
+    res_out = flag_gems.linalg_vander(x, N=N)
 
     _assert_vander_close(res_out, ref_out, dtype)
