@@ -16,10 +16,40 @@ from contextlib import contextmanager
 
 import pytest
 import torch
+from _pytest.mark.structures import Mark, MarkDecorator
 
 import flag_gems
 
 from . import accuracy_utils as utils
+
+# ``_linalg_eigh`` starts with an underscore, and ``pytest.mark`` refuses to
+# generate a marker via attribute access for such names. Register it directly
+# on the MarkGenerator so ``@pytest.mark._linalg_eigh`` and ``-m _linalg_eigh``
+# both work.
+setattr(
+    pytest.mark,
+    "_linalg_eigh",
+    MarkDecorator(Mark("_linalg_eigh", (), {}, _ispytest=True), _ispytest=True),
+)
+
+
+@contextmanager
+def _gems_eigh_dispatch():
+    """Temporarily dispatch the eigh aten ops to FlagGems for the block.
+
+    Registers ``_linalg_eigh`` and ``linalg_eigh`` onto a private
+    ``torch.library`` handle and tears the registration down on exit, so
+    calls *outside* the block (the reference computation) keep dispatching to
+    native aten while calls *inside* the block run on FlagGems.
+    """
+    lib = torch.library.Library("aten", "IMPL")
+    flag_gems.only_enable(lib=lib, include=["_linalg_eigh", "linalg_eigh"])
+    try:
+        yield
+    finally:
+        if torch.__version__ >= "2.5":
+            lib._destroy()
+        del lib
 
 
 @contextmanager
@@ -235,7 +265,7 @@ def test_linalg_eigh_2x2_kernel(shape, dtype):
     ref_inp = utils.to_reference(inp)
     ref_out = torch.linalg.eigh(ref_inp)
 
-    with flag_gems.use_gems():
+    with _gems_eigh_dispatch():
         res_out = torch.linalg.eigh(inp)
 
     utils.gems_assert_close(res_out[0], ref_out[0], dtype)
@@ -256,7 +286,7 @@ def test_linalg_eigh_jacobi(shape, dtype):
     ref_inp = utils.to_reference(inp)
     ref_out = torch.linalg.eigh(ref_inp)
 
-    with flag_gems.use_gems():
+    with _gems_eigh_dispatch():
         res_out = torch.linalg.eigh(inp)
 
     # Eigenvalues element-wise (Jacobi tolerance), plus reconstruction.
@@ -278,7 +308,7 @@ def test_linalg_eigh_complex(shape, dtype):
     ref_inp = utils.to_reference(inp)
     ref_out = torch.linalg.eigh(ref_inp)
 
-    with flag_gems.use_gems():
+    with _gems_eigh_dispatch():
         res_out = torch.linalg.eigh(inp)
 
     # Eigenvalues of a Hermitian matrix are real.
@@ -300,7 +330,7 @@ def test_linalg_eigh_batch_2x2_kernel(shape, dtype):
     ref_inp = utils.to_reference(inp)
     ref_out = torch.linalg.eigh(ref_inp)
 
-    with flag_gems.use_gems():
+    with _gems_eigh_dispatch():
         res_out = torch.linalg.eigh(inp)
 
     utils.gems_assert_close(res_out[0], ref_out[0], dtype)
@@ -321,7 +351,7 @@ def test_linalg_eigh_batch_jacobi(shape, dtype):
     ref_inp = utils.to_reference(inp)
     ref_out = torch.linalg.eigh(ref_inp)
 
-    with flag_gems.use_gems():
+    with _gems_eigh_dispatch():
         res_out = torch.linalg.eigh(inp)
 
     utils.gems_assert_close(res_out[0], ref_out[0], dtype, atol=EIG_EVAL_ATOL[dtype])
@@ -342,7 +372,7 @@ def test_linalg_eigh_trivial(shape, dtype):
     ref_inp = utils.to_reference(inp)
     ref_out = torch.linalg.eigh(ref_inp)
 
-    with flag_gems.use_gems():
+    with _gems_eigh_dispatch():
         res_out = torch.linalg.eigh(inp)
 
     utils.gems_assert_close(res_out[0], ref_out[0], dtype)
@@ -363,7 +393,7 @@ def test_linalg_eigh_batch_trivial(shape, dtype):
     ref_inp = utils.to_reference(inp)
     ref_out = torch.linalg.eigh(ref_inp)
 
-    with flag_gems.use_gems():
+    with _gems_eigh_dispatch():
         res_out = torch.linalg.eigh(inp)
 
     utils.gems_assert_close(res_out[0], ref_out[0], dtype)
@@ -383,7 +413,7 @@ def test_linalg_eigh_2x2_low_precision(shape, dtype):
     reconstruction only."""
     inp = make_symmetric_matrix(shape, dtype, flag_gems.device)
 
-    with flag_gems.use_gems():
+    with _gems_eigh_dispatch():
         res_out = torch.linalg.eigh(inp)
 
     _check_eigh_decomposition(inp, res_out[0], res_out[1], atol=1e-2)
@@ -403,7 +433,7 @@ def test_linalg_eigh_trivial_complex(shape, dtype):
     ref_inp = utils.to_reference(inp)
     ref_out = torch.linalg.eigh(ref_inp)
 
-    with flag_gems.use_gems():
+    with _gems_eigh_dispatch():
         res_out = torch.linalg.eigh(inp)
 
     _assert_close(res_out[0], ref_out[0], res_out[0].dtype)
@@ -425,7 +455,7 @@ def test_linalg_eigh_batch_complex(shape, dtype):
     ref_inp = utils.to_reference(inp)
     ref_out = torch.linalg.eigh(ref_inp)
 
-    with flag_gems.use_gems():
+    with _gems_eigh_dispatch():
         res_out = torch.linalg.eigh(inp)
 
     _assert_close(res_out[0], ref_out[0], res_out[0].dtype, atol=5e-4)
@@ -447,7 +477,7 @@ def test_linalg_eigh_uplo_upper(shape, dtype):
     ref_inp = utils.to_reference(inp)
     ref_out = torch.linalg.eigh(ref_inp, UPLO="U")
 
-    with flag_gems.use_gems():
+    with _gems_eigh_dispatch():
         res_out = torch.linalg.eigh(inp, UPLO="U")
 
     utils.gems_assert_close(res_out[0], ref_out[0], dtype, atol=EIG_EVAL_ATOL[dtype])
@@ -469,7 +499,7 @@ def test_linalg_eigh_uplo_upper_complex(shape, dtype):
     ref_inp = utils.to_reference(inp)
     ref_out = torch.linalg.eigh(ref_inp, UPLO="U")
 
-    with flag_gems.use_gems():
+    with _gems_eigh_dispatch():
         res_out = torch.linalg.eigh(inp, UPLO="U")
 
     _assert_close(res_out[0], ref_out[0], res_out[0].dtype, atol=5e-4)
@@ -483,6 +513,7 @@ def test_linalg_eigh_uplo_upper_complex(shape, dtype):
 
 
 @pytest.mark.linalg_eigh
+@pytest.mark._linalg_eigh
 @pytest.mark.parametrize(
     "shape",
     EIG_2X2_SHAPES + EIG_JACOBI_TILE_SHAPES,
@@ -499,7 +530,7 @@ def test_underlying_linalg_eigh(shape, dtype):
     ref_inp = utils.to_reference(inp)
     ref_w, ref_v = torch.ops.aten._linalg_eigh.default(ref_inp, "L", True)
 
-    with flag_gems.use_gems():
+    with _gems_eigh_dispatch():
         res_w, res_v = torch.ops.aten._linalg_eigh.default(inp, "L", True)
 
     utils.gems_assert_close(res_w, ref_w, dtype, atol=EIG_EVAL_ATOL[dtype])
@@ -520,7 +551,7 @@ def test_underlying_linalg_eigh_no_vectors(shape, dtype):
     ref_inp = utils.to_reference(inp)
     ref_w, _ = torch.ops.aten._linalg_eigh.default(ref_inp, "L", False)
 
-    with flag_gems.use_gems():
+    with _gems_eigh_dispatch():
         res_w, res_v = torch.ops.aten._linalg_eigh.default(inp, "L", False)
 
     utils.gems_assert_close(res_w, ref_w, dtype, atol=EIG_EVAL_ATOL[dtype])
@@ -542,7 +573,7 @@ def test_underlying_linalg_eigh_no_vectors_2x2(shape, dtype):
     ref_inp = utils.to_reference(inp)
     ref_w, _ = torch.ops.aten._linalg_eigh.default(ref_inp, "L", False)
 
-    with flag_gems.use_gems():
+    with _gems_eigh_dispatch():
         res_w, res_v = torch.ops.aten._linalg_eigh.default(inp, "L", False)
 
     utils.gems_assert_close(res_w, ref_w, dtype)
@@ -567,7 +598,7 @@ def test_underlying_linalg_eigh_no_vectors_global(shape, dtype):
     ref_inp = utils.to_reference(inp)
     ref_w, _ = torch.ops.aten._linalg_eigh.default(ref_inp, "L", False)
 
-    with flag_gems.use_gems():
+    with _gems_eigh_dispatch():
         res_w, res_v = torch.ops.aten._linalg_eigh.default(inp, "L", False)
 
     res_w_cpu = utils.to_cpu(res_w, ref_w)
@@ -599,7 +630,7 @@ def test_underlying_linalg_eigh_no_vectors_complex_global(shape, dtype):
     ref_inp = utils.to_reference(inp)
     ref_w, _ = torch.ops.aten._linalg_eigh.default(ref_inp, "L", False)
 
-    with flag_gems.use_gems():
+    with _gems_eigh_dispatch():
         res_w, res_v = torch.ops.aten._linalg_eigh.default(inp, "L", False)
 
     res_w_cpu = utils.to_cpu(res_w, ref_w)
@@ -634,7 +665,7 @@ def test_linalg_eigh_jacobi_global(shape, dtype):
     ref_inp = utils.to_reference(inp)
     ref_out = torch.linalg.eigh(ref_inp)
 
-    with flag_gems.use_gems():
+    with _gems_eigh_dispatch():
         res_out = torch.linalg.eigh(inp)
 
     _check_eigh_decomposition(inp, res_out[0], res_out[1], atol=1e-1)
@@ -663,7 +694,7 @@ def test_linalg_eigh_complex_global(shape, dtype):
     ref_inp = utils.to_reference(inp)
     ref_out = torch.linalg.eigh(ref_inp)
 
-    with flag_gems.use_gems():
+    with _gems_eigh_dispatch():
         res_out = torch.linalg.eigh(inp)
 
     # Eigenvalues of a Hermitian matrix are real.
@@ -682,7 +713,7 @@ def test_linalg_eigh_ascending_order(dtype):
     }[dtype]
     for shape in shapes:
         inp = make_symmetric_matrix(shape, dtype, flag_gems.device)
-        with flag_gems.use_gems():
+        with _gems_eigh_dispatch():
             res_out = torch.linalg.eigh(inp)
         _assert_ascending(res_out[0])
 
@@ -692,7 +723,7 @@ def test_linalg_eigh_nonsquare_raises():
     """A non-square input must raise ValueError on the Gems path."""
     A = torch.randn(3, 5, dtype=torch.float32, device=flag_gems.device)
     with pytest.raises(ValueError):
-        with flag_gems.use_gems():
+        with _gems_eigh_dispatch():
             torch.linalg.eigh(A)
 
 
@@ -709,7 +740,7 @@ def test_linalg_eigh_non_contiguous(dtype):
     ref_inp = utils.to_reference(view)
     ref_out = torch.linalg.eigh(ref_inp)
 
-    with flag_gems.use_gems():
+    with _gems_eigh_dispatch():
         res_out = torch.linalg.eigh(view)
 
     if dtype == torch.complex64:
