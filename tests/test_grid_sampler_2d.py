@@ -52,10 +52,9 @@ def test_grid_sampler_2d(dtype, shape, align_corners, padding_mode, interpolatio
         ref_in, ref_grid, ref_code, pad_code, align_corners
     )
 
-    with flag_gems.use_gems():
-        res_out = torch.ops.aten.grid_sampler_2d(
-            input_t, grid, ref_code, pad_code, align_corners
-        )
+    res_out = flag_gems.grid_sampler_2d(
+        input_t, grid, ref_code, pad_code, align_corners
+    )
 
     utils.gems_assert_close(res_out, ref_out, dtype)
 
@@ -87,10 +86,9 @@ def test_grid_sampler_2d_oh_ne_iw(
         ref_in, ref_grid, ref_code, pad_code, align_corners
     )
 
-    with flag_gems.use_gems():
-        res_out = torch.ops.aten.grid_sampler_2d(
-            input_t, grid, ref_code, pad_code, align_corners
-        )
+    res_out = flag_gems.grid_sampler_2d(
+        input_t, grid, ref_code, pad_code, align_corners
+    )
 
     utils.gems_assert_close(res_out, ref_out, dtype)
 
@@ -134,10 +132,9 @@ def test_grid_sampler_2d_nearest_half_integer(dtype, align_corners, padding_mode
         ref_in, ref_grid, ref_code, pad_code, align_corners
     )
 
-    with flag_gems.use_gems():
-        res_out = torch.ops.aten.grid_sampler_2d(
-            input_t, grid, ref_code, pad_code, align_corners
-        )
+    res_out = flag_gems.grid_sampler_2d(
+        input_t, grid, ref_code, pad_code, align_corners
+    )
 
     utils.gems_assert_close(res_out, ref_out, dtype)
 
@@ -163,9 +160,8 @@ def test_grid_sampler_2d_dim_one_reflection(dtype, align_corners):
         ref_in, ref_grid, ref_code, pad_code, align_corners
     )
 
-    with flag_gems.use_gems():
-        res_out = torch.ops.aten.grid_sampler_2d(
-            input_t, grid, ref_code, pad_code, align_corners
-        )
+    res_out = flag_gems.grid_sampler_2d(
+        input_t, grid, ref_code, pad_code, align_corners
+    )
 
     utils.gems_assert_close(res_out, ref_out, dtype)
