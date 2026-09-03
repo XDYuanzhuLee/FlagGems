@@ -50,9 +50,9 @@ def test_fft_irfftn(shape, dtype):
     # Reference output from PyTorch
     ref_out = utils.to_reference(torch.fft.irfftn(inp_complex, s=shape))
 
-    # Our implementation
-    with flag_gems.use_gems():
-        res_out = torch.fft.irfftn(inp_complex, s=shape)
+    # Our implementation (call the registered Gems op directly, matching the
+    # KernelGen test convention that avoids flag_gems.use_gems() contexts).
+    res_out = flag_gems.fft_irfftn(inp_complex, s=shape)
 
     # Output is always float32, compare with float32 tolerance
     utils.gems_assert_close(res_out, ref_out, torch.float32, atol=1e-3)
@@ -91,8 +91,7 @@ def test_fft_irfftn_complex32(shape):
 
     ref_out = utils.to_reference(torch.fft.irfftn(inp_complex, s=shape))
 
-    with flag_gems.use_gems():
-        res_out = torch.fft.irfftn(inp_complex, s=shape)
+    res_out = flag_gems.fft_irfftn(inp_complex, s=shape)
 
     assert res_out.dtype == torch.float16, f"expected float16, got {res_out.dtype}"
     utils.gems_assert_close(res_out, ref_out, torch.float16, atol=5e-2)
@@ -117,8 +116,7 @@ def test_fft_irfftn_complex128(shape):
 
     ref_out = utils.to_reference(torch.fft.irfftn(inp_complex, s=shape))
 
-    with flag_gems.use_gems():
-        res_out = torch.fft.irfftn(inp_complex, s=shape)
+    res_out = flag_gems.fft_irfftn(inp_complex, s=shape)
 
     assert res_out.dtype == torch.float64, f"expected float64, got {res_out.dtype}"
     utils.gems_assert_close(res_out, ref_out, torch.float64, atol=1e-9)
@@ -133,7 +131,6 @@ def test_fft_irfftn_default_s(shape):
     inp_complex = torch.fft.rfftn(inp_real)
 
     ref_out = utils.to_reference(torch.fft.irfftn(inp_complex))
-    with flag_gems.use_gems():
-        res_out = torch.fft.irfftn(inp_complex)
+    res_out = flag_gems.fft_irfftn(inp_complex)
 
     utils.gems_assert_close(res_out, ref_out, torch.float32, atol=1e-3)
