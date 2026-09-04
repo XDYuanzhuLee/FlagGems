@@ -101,7 +101,7 @@ def test_sparse_semi_structured_addmm(shape, dtype):
 
     ref_out = _aten_addmm_ref(input_tensor, mat1, mat1_meta, mat2)
 
-    res_out = flag_gems.ops._sparse_semi_structured_addmm(
+    res_out = flag_gems._sparse_semi_structured_addmm(
         input_tensor, mat1, mat1_meta, mat2
     )
 
@@ -144,7 +144,7 @@ def test_sparse_semi_structured_addmm_with_alpha_beta(shape, dtype):
         input_tensor, mat1, mat1_meta, mat2, alpha=alpha, beta=beta
     )
 
-    res_out = flag_gems.ops._sparse_semi_structured_addmm(
+    res_out = flag_gems._sparse_semi_structured_addmm(
         input_tensor, mat1, mat1_meta, mat2, alpha=alpha, beta=beta
     )
 
