@@ -150,13 +150,12 @@ def special_hermite_polynomial_he(x, n):
         # n is a scalar
         return special_hermite_polynomial_he_tensor_scalar(x, n)
     elif isinstance(n, torch.Tensor):
-        # x is a scalar - reuse the tensor-tensor kernel; the scalar broadcasts.
-        # Cast n to an integer tensor first: a float n specialization (e.g. the
-        # scalar-x test passing n as float32) hits an internal mlir-opt error in
-        # the MetaX Triton compiler, while integer n compiles fine.
-        n = n.to(torch.int64)
+        # x is a scalar - materialize it as a tensor with n's shape and dtype,
+        # then reuse the tensor-tensor kernel. The kernel requires equal-shape
+        # inputs; full_like also yields an output dtype matching the native
+        # operator (fp64 output when n is fp64).
         return special_hermite_polynomial_he_tensor_tensor(
-            torch.tensor(float(x), dtype=torch.float32, device=n.device), n
+            torch.full_like(n, float(x)), n
         )
     else:
         # Both scalar - compute via the recurrence in plain Python, then wrap
