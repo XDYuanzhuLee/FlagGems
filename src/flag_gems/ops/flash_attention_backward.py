@@ -23,7 +23,8 @@ import triton.language as tl
 
 try:
     from triton.knobs import autotuning as _autotuning_knobs
-except ImportError:
+except (ImportError, ModuleNotFoundError):
+    # Triton < 3.6 does not have triton.knobs module
     _autotuning_knobs = None
 
 logger = logging.getLogger(__name__)
@@ -40,7 +41,12 @@ def _disable_aabs_for_small_seqlen(seqlen_q, seqlen_k):
     "Input shapes should have M >= 1, N >= 1 and K >= 16" (decode: seqlen 1).
     Fall back to the plain (non-adjusted) configs for such shapes.
     """
-    if min(seqlen_q, seqlen_k) >= 16 or _autotuning_knobs is None:
+    # If triton.knobs is not available (Triton < 3.6), skip the workaround
+    if _autotuning_knobs is None:
+        yield
+        return
+
+    if min(seqlen_q, seqlen_k) >= 16:
         yield
         return
     previous = _autotuning_knobs.adjust_block_size
