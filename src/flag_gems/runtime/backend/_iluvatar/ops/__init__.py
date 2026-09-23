@@ -209,7 +209,6 @@ __all__ = [
     "special_chebyshev_polynomial_w_out",
     "special_gammainc",
     "special_hermite_polynomial_h",
-    "special_hermite_polynomial_h",
     "special_hermite_polynomial_he",
     "special_legendre_polynomial_p",
     "special_modified_bessel_k0",
