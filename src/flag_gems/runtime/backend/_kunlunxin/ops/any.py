@@ -17,12 +17,15 @@ import logging
 import torch
 import triton
 import triton.language as tl
+from _kunlunxin.utils.codegen_config_utils import CodeGenConfig
 
 from flag_gems.runtime import torch_device_fn
-from flag_gems.utils import dim_compress, libentry
+from flag_gems.utils import libentry
 from flag_gems.utils import triton_lang_extension as ext
 
 from ..utils.block_size_utils import get_block_size_1d
+from ..utils.pointwise_dynamic import pointwise_dynamic
+from ..utils.tle_copy import tle_copy
 
 logger = logging.getLogger(__name__)
 
@@ -34,18 +37,22 @@ cluster_num = 12
 core_num = 64
 buf_len_per_core = 2048
 vector_size = 16
-# Threshold on the reduced-axis length N for the `max_kernel_dim` (N>=256) path.
-# max_kernel_dim upcasts on load, so an explicit `inp.to(torch.float)` is only worth
-# it for large N: there the extra (contiguous, cheap) cast lets the kernel read fp32,
-# which is markedly faster on XPU than reading fp16/bf16 and converting in-kernel.
-# For small/mid N the cast's fixed launch overhead (pathological _to_copy kernel)
-# dominates, so we feed `inp` directly and skip the cast entirely.
-# NOTE: a dtype-aware variant (bf16/bool crossing over at 4096 instead of 8192) was
-# tried and REJECTED — isolated kernel micro-benchmarks suggested a ~28% bool win at
-# N=4096, but per-process end-to-end measurement through this operator showed it to be
-# an artifact (bool nocast/precast identical, bf16 within noise). A single uniform
-# threshold is correct; see harness/solution/any_dim_perf_fix.md.
-large_n_precast = 8192
+
+config_ = CodeGenConfig(
+    512,
+    (65536, 65536, 65536),
+    32,
+    True,
+    prefer_1d_tile=True,
+    buffer_size_limit=4096,
+    kunlunAutoGrid=True,
+)
+
+
+@pointwise_dynamic(is_tensor=[True], promotion_methods=[(0, "DEFAULT")], config=config_)
+@triton.jit
+def _any_permute_copy_pw(src):
+    return src
 
 
 def heur_m_block_size(args):
@@ -59,6 +66,11 @@ def heur_n_block_size(args):
 @triton.jit
 def reduce_any(a, b):
     return a or b
+
+
+@triton.jit
+def reduce_or_i32(a, b):
+    return a | b
 
 
 @libentry()
@@ -133,6 +145,38 @@ def max_kernel_dim(
 
 @libentry()
 @triton.jit
+def any_word_stage1(in_ptr, mid, n_words, BLOCK_SIZE: tl.constexpr):
+    """Stage 1 (int32-word bitmap path) of the global-any reduction.
+
+    Reads the input as raw int32 words (valid whenever element_size divides 4:
+    word != 0  <=>  at least one element in that word is nonzero, bit-exact).
+    Maps the word to 0 (zero word) / INT32_MAX (nonzero word) with an integer
+    select, then reduces each chunk with an int32 max -> INT32_MAX iff the
+    chunk contains any nonzero element. Integer-only pipeline (no fcmp->i1
+    per-element converts and no i1 OR-tree), which is markedly faster on XPU.
+    Masked tail lanes load `other=0` (a zero word) and cannot create a false
+    positive. `mid` receives INT32_MAX / 0 per chunk."""
+    pid = ext.program_id(0)
+    offs = pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
+    w = tl.load(in_ptr + offs, mask=offs < n_words, other=0)
+    m = tl.max(tl.where(w == 0, 0, 2147483647), axis=0)
+    tl.store(mid + pid, m)
+
+
+@libentry()
+@triton.jit
+def any_word_stage2(mid, out, MID_SIZE, BLOCK_MID: tl.constexpr):
+    """Stage 2: single program reduces the per-chunk int32 flags; masked
+    lanes load 0 (matches the "zero chunk" encoding) and cannot flip the
+    result. Outputs boolean (mx == INT32_MAX)."""
+    offs = tl.arange(0, BLOCK_MID)
+    m = tl.load(mid + offs, mask=offs < MID_SIZE, other=0)
+    mx = tl.max(m, axis=0)
+    tl.store(out, mx == 2147483647)
+
+
+@libentry()
+@triton.jit
 def any_kernel_1(
     inp,
     mid,
@@ -149,17 +193,40 @@ def any_kernel_1(
     offset = pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
     mask = offset < n_elements
     val = tl.load(inp + offset, mask=mask, other=0)
-    # Nonzero test `val != 0` (matches the proven-correct sibling `all()` and the
-    # pre-fix baseline). NaN -> True (correct, torch counts NaN as nonzero).
-    # Known edge: XPU codegen mis-evaluates float `!=` on -0.0 as True, so -0.0 is
-    # reported nonzero (torch counts -0.0 as zero). This is a *pre-existing* baseline
-    # quirk, NOT introduced here. The sign-split `(val>0)|(val<0)` would fix -0.0 but
-    # regress NaN to False -> a net functional degradation, so we keep `!= 0`.
-    # On XPU only one of {-0.0, NaN} can be correct; NaN matters more and stays
-    # baseline-correct. No test exercises NaN/-0.0.
     nz = tl.where(mask, val != 0, False)
     any_val = tl.reduce(nz, axis=0, combine_fn=reduce_any)
     tl.store(mid + pid, any_val)
+
+
+@libentry()
+@triton.jit
+def any_kernel_dim_v2(
+    inp,
+    out,
+    M,
+    N,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    NEED_MASK: tl.constexpr,
+):
+    pid = ext.program_id(0)
+    rows = pid * BLOCK_M + tl.arange(0, BLOCK_M)[:, None]
+    inp = inp + rows * N
+    out = out + rows
+
+    _any = tl.zeros([BLOCK_M, BLOCK_N], dtype=tl.int1)
+    for off in range(0, N, BLOCK_N):
+        cols = off + tl.arange(0, BLOCK_N)[None, :]
+        if NEED_MASK:
+            a = tl.load(inp + cols, (rows < M) and (cols < N), other=0.0)
+        else:
+            a = tl.load(inp + cols)
+        _any = _any or (a != 0)
+    any = tl.reduce(_any, axis=1, combine_fn=reduce_any)
+    if NEED_MASK:
+        tl.store(out, any[:, None], rows < M)
+    else:
+        tl.store(out, any[:, None])
 
 
 @libentry()
@@ -174,18 +241,77 @@ def any_kernel_2(mid, out, MID_SIZE, BLOCK_MID: tl.constexpr):
     tl.store(out, any_val)
 
 
-# Per-row 2-stage split reduction for any_dims (see any_dims note below).
-# `max_kernel_dim` / `any_kernel_dim` only parallelize over M (grid=cdiv(M,BLOCK_M)),
-# so when the reduced dims cover most of the tensor and M is tiny (e.g. dim=[0,1] on a
-# 3D tensor -> M=kept-dim ~= 100), the whole N reduction is serialized inside a-few
-# programs looping over N -> catastrophic (e.g. [64,512,512] 11.5ms, [100,65536,100]
-# 441ms). These two kernels launch grid=(M, cdiv(N,BLOCK_N)) so the N axis is ALSO
-# parallelized: stage1 reduces each contiguous BLOCK_N chunk of a row into `mid`,
-# stage2 reduces the per-chunk bools of each row.
-# BLOCK_N is capped at 8192: with a row base offset pid_m*N (pid_m>0) a fp32 tile of
-# 65536 lanes MIS-REDUCES on XPU (verified: [512,32768]/[100,25600] fp32 wrong at
-# BLOCK_N=65536, correct and stable at 8192). The pure global any() path (M==1, pid_m==0)
-# is unaffected and keeps its larger blocks, so only the M>1 path uses these kernels.
+@libentry()
+@triton.jit
+def any_row_word_stage1_kernel(
+    in_ptr,
+    mid,
+    N_WORDS,
+    N_CHUNKS,
+    BLOCK_W: tl.constexpr,
+    MAG: tl.constexpr,
+    NEED_MASK: tl.constexpr,
+    DIRECT: tl.constexpr,
+    RAW_I32: tl.constexpr,
+):
+    """Per-row stage 1 on the int32-word bitmap (see `any_word_stage1`).
+
+    Same idiom as the global-any fast path: OR-reduce the packed int32 words of
+    one row.  `OR_w (w & MAG) == (OR_w w) & MAG`, so a zero result means every
+    element of every reduced word was zero -- no per-element fcmp/i1 convert and
+    no i1 OR-tree, which is markedly faster on XPU (`any_row_stage1_kernel`
+    below is the slow i1 variant; the select+`tl.max` variant is ~2.8x slower).
+
+    `MAG` clears the sign bits of each packed float lane (`0x7fff7fff` for
+    16-bit elements, `0x7fffffff` for 32-bit, `-1` for integers/bool where a
+    zero word already means "all elements zero"), so a `-0.0` lane still reads
+    as zero and the result stays bit-exact with the elementwise `!= 0` test.
+
+    `NEED_MASK` is False whenever `N_WORDS % BLOCK_W == 0`; the runtime
+    `off < N_WORDS` predicate otherwise defeats the widest vectorisation on
+    XPU and costs ~2x on the very case this fixes.
+
+    `DIRECT` writes the finished result straight into `out` (the single-chunk
+    case, `mid` is the output then) and skips the stage-2 launch, which is a
+    pure fixed cost of ~90 us here -- larger than the reduction itself.
+
+    `RAW_I32` keeps the raw int32 OR (instead of a bool) so the caller can
+    split one word back into its 4 packed bytes (the 1-byte-dtype path, where
+    the word axis groups a *kept* axis and each byte is a separate output).
+    """
+    pid_m = ext.program_id(0)
+    pid_c = ext.program_id(1)
+    off = pid_c * BLOCK_W + tl.arange(0, BLOCK_W)
+    if NEED_MASK:
+        w = tl.load(in_ptr + pid_m * N_WORDS + off, mask=off < N_WORDS, other=0)
+    else:
+        w = tl.load(in_ptr + pid_m * N_WORDS + off)
+    m = tl.reduce(w & MAG, axis=0, combine_fn=reduce_or_i32)
+    if DIRECT:
+        if RAW_I32:
+            tl.store(mid + pid_m, m)
+        else:
+            tl.store(mid + pid_m, m != 0)
+    else:
+        tl.store(mid + pid_m * N_CHUNKS + pid_c, m)
+
+
+@libentry()
+@triton.jit
+def any_row_word_stage2_kernel(
+    mid, out, MID_N, BLOCK_MID: tl.constexpr, RAW_I32: tl.constexpr
+):
+    """Stage 2: fold the per-chunk int32 flags of one row into a bool."""
+    pid_m = ext.program_id(0)
+    off = tl.arange(0, BLOCK_MID)
+    val = tl.load(mid + pid_m * MID_N + off, mask=off < MID_N, other=0)
+    m = tl.reduce(val, axis=0, combine_fn=reduce_or_i32)
+    if RAW_I32:
+        tl.store(out + pid_m, m)
+    else:
+        tl.store(out + pid_m, m != 0)
+
+
 @libentry()
 @triton.jit
 def any_row_stage1_kernel(inp, mid, N, N_CHUNKS, BLOCK_N: tl.constexpr):
@@ -211,9 +337,93 @@ def any_row_stage2_kernel(mid, out, MID_N, BLOCK_MID: tl.constexpr):
     tl.store(out + pid_m, any_val)
 
 
-def _any_dims_reduce(inp, M, N, out_shape):
+_ROW_WORD_MAX = 32768
+
+
+def _row_word_mag(dtype, elem_size):
+    """Sign-clearing mask for the packed lanes of one int32 word, or None when
+    the word bitmap cannot be made bit-exact with an elementwise `!= 0`.
+
+    A raw `word != 0` test is exact for integer/bool payloads (the only zero
+    pattern is all-zero bits) but not for floats, where `-0.0` has the sign bit
+    set; masking the sign bit of every lane restores exactness.  `-1` is the
+    no-op mask for the integer/bool case."""
+    is_fp = dtype.is_floating_point
+    if callable(is_fp):  # torch.dtype exposes it as a property in most builds
+        is_fp = is_fp()
+    if is_fp:
+        if elem_size == 4:
+            return 0x7FFFFFFF
+        if elem_size == 2:
+            return 0x7FFF7FFF
+        return None  # f8 / f64: lane packing / sign layout not handled here
+    if elem_size in (1, 2, 4):
+        return -1
+    return None
+
+
+def _any_dims_reduce(inp, M, N, out_shape, raw_i32=False):
     """Reduce a contiguous [M, N] view over its N axis (per row), returning a bool
-    tensor of shape `out_shape` (reduced dims already collapsed to 1)."""
+    tensor of shape `out_shape` (reduced dims already collapsed to 1).
+
+    With `raw_i32` the per-row OR is returned as a raw int32 tensor of shape
+    [M] instead of a bool (used by the 1-byte-dtype path, where each byte of
+    the word is a distinct output)."""
+    elem_size = inp.element_size()
+    mag = (
+        _row_word_mag(inp.dtype, elem_size)
+        if inp.is_contiguous() and inp.data_ptr() % 4 == 0
+        else None
+    )
+    if mag is not None and (N * elem_size) % 4 == 0:
+        n_words = N * elem_size // 4
+        BLOCK_W = min(triton.next_power_of_2(n_words), _ROW_WORD_MAX)
+        n_chunks = triton.cdiv(n_words, BLOCK_W)
+        need_mask = n_words % BLOCK_W != 0
+        view = inp.reshape(-1).view(torch.uint8).view(torch.int32).reshape(M, n_words)
+        out = torch.empty(
+            M, dtype=torch.int32 if raw_i32 else torch.bool, device=inp.device
+        )
+        if n_chunks == 1:
+            with torch_device_fn.device(inp.device):
+                any_row_word_stage1_kernel[(M, 1)](
+                    view,
+                    out,
+                    n_words,
+                    1,
+                    BLOCK_W=BLOCK_W,
+                    MAG=mag,
+                    NEED_MASK=need_mask,
+                    DIRECT=True,
+                    RAW_I32=raw_i32,
+                    buffer_size_limit=2048,
+                )
+            return out.reshape(out_shape)
+        mid = torch.empty((M, n_chunks), dtype=torch.int32, device=inp.device)
+        with torch_device_fn.device(inp.device):
+            any_row_word_stage1_kernel[(M, n_chunks)](
+                view,
+                mid,
+                n_words,
+                n_chunks,
+                BLOCK_W=BLOCK_W,
+                MAG=mag,
+                NEED_MASK=need_mask,
+                DIRECT=False,
+                RAW_I32=raw_i32,
+                buffer_size_limit=2048,
+            )
+            any_row_word_stage2_kernel[(M,)](
+                mid,
+                out,
+                n_chunks,
+                BLOCK_MID=triton.next_power_of_2(n_chunks),
+                RAW_I32=raw_i32,
+                buffer_size_limit=2048,
+            )
+        return out.reshape(out_shape)
+
+    # generic i1 OR-tree path (any byte alignment / layout / dtype)
     BLOCK_N = 8192
     n_chunks = triton.cdiv(N, BLOCK_N)
     out = torch.empty(M, dtype=torch.bool, device=inp.device)
@@ -237,12 +447,39 @@ def _any_dims_reduce(inp, M, N, out_shape):
 def any(inp):
     logger.debug("GEMS_KUNLUNXIN ANY")
     n_elements = inp.numel()
-    block_size = get_block_size_1d(n_elements, inp.element_size())
+    elem = inp.element_size()
+    bytes_total = n_elements * elem
+
+    if inp.is_contiguous() and bytes_total % 4 == 0:
+        view = inp.reshape(-1).view(torch.uint8).view(torch.int32)
+        n_words = view.numel()
+        block_size = get_block_size_1d(n_words, 4)
+        mid_size = triton.cdiv(n_words, block_size)
+        block_mid = triton.next_power_of_2(mid_size)
+        # empty_strided (not registered by gems) -> native allocator,
+        # avoids the per-call gems empty tax on the mid/out buffers.
+        mid = torch.empty_strided(
+            (mid_size,), (1,), dtype=torch.int32, device=inp.device
+        )
+        out = torch.empty_strided((), (), dtype=torch.bool, device=inp.device)
+        with torch_device_fn.device(inp.device):
+            any_word_stage1[(mid_size, 1)](
+                view, mid, n_words, block_size, buffer_size_limit=2048
+            )
+            if mid_size == 1:
+                return (mid == 2147483647).reshape([])
+            any_word_stage2[(1, 1)](
+                mid, out, mid_size, block_mid, buffer_size_limit=2048
+            )
+        return out
+
+    # generic elementwise two-stage path (any byte alignment / layout)
+    block_size = get_block_size_1d(n_elements, elem)
     mid_size = triton.cdiv(n_elements, block_size)
     block_mid = triton.next_power_of_2(mid_size)
 
-    mid = torch.empty((mid_size,), dtype=torch.bool, device=inp.device)
-    out = torch.empty([], dtype=torch.bool, device=inp.device)
+    mid = torch.empty_strided((mid_size,), (1,), dtype=torch.bool, device=inp.device)
+    out = torch.empty_strided((), (), dtype=torch.bool, device=inp.device)
     with torch_device_fn.device(inp.device):
         any_kernel_1[(mid_size, 1)](
             inp, mid, n_elements, block_size, buffer_size_limit=2048
@@ -251,6 +488,113 @@ def any(inp):
             return mid.reshape([])
         any_kernel_2[(1, 1)](mid, out, mid_size, block_mid, buffer_size_limit=2048)
     return out
+
+
+def _permute_contig(permuted):
+    """Materialise a strided permute view as a contiguous tensor.
+
+    Uses this file's tle idiom instead of `Tensor.contiguous()`: under
+    `use_gems` a `contiguous()` on a permuted view dispatches to the vendor
+    copy_, which moves it at ~1.4 GB/s (22.9 ms for the 33.5 MB
+    (64,512,512) any_dims case), while tle_copy expresses the same transpose
+    directly at ~880 GB/s (0.038 ms)."""
+    new_shape = tuple(permuted.shape)
+    strides = [1] * len(new_shape)
+    for i in range(len(new_shape) - 2, -1, -1):
+        strides[i] = strides[i + 1] * new_shape[i + 1]
+    # empty_strided is not registered by gems -> native allocator.
+    dst = torch.empty_strided(
+        new_shape,
+        tuple(strides),
+        dtype=permuted.dtype,
+        device=permuted.device,
+    )
+    if tle_copy(permuted, dst):
+        return dst
+    try:
+        _any_permute_copy_pw(permuted, out0=dst)
+        return dst
+    except Exception:  # noqa: BLE001
+        logger.warning(
+            "GEMS_KUNLUNXIN ANY: tle/pointwise permute copy failed for "
+            "shape=%s strides=%s dtype=%s; using contiguous()",
+            tuple(permuted.shape),
+            permuted.stride(),
+            permuted.dtype,
+        )
+    return permuted.contiguous()
+
+
+def _move_dim_last_contig(inp, dim):
+    if dim == inp.ndim - 1 and inp.is_contiguous():
+        return inp
+    order = [i for i in range(inp.ndim) if i != dim] + [dim]
+    permuted = inp.permute(order)
+    if permuted.is_contiguous():
+        return permuted
+    return _permute_contig(permuted)
+
+
+def _dims_last_contig(inp, dims):
+    """Drop-in replacement for the shared `utils.dim_compress`.
+
+    Same layout (batch dims first in their original order, reduced dims last
+    sorted by descending stride, materialised contiguous), so the output is
+    bit-identical to `dim_compress`, but the copy goes through `_permute_contig`
+    (tle) instead of `Tensor.contiguous()`. The shared helper cannot be changed
+    here -- it is used by many other operators -- and its `.contiguous()` is the
+    22.9 ms/1.4 GB/s part of the (64,512,512) any_dims regression.
+
+    The descending-stride order is load-bearing for throughput as well: it is
+    what makes the tle transpose land on the fast path (an ascending order for
+    the 3D reduced-prefix case was measured at 8.05 ms)."""
+    dset = set(dims)
+    order = [i for i in range(inp.ndim) if i not in dset]
+    order += sorted(dims, key=lambda i: inp.stride()[i], reverse=True)
+    permuted = inp.permute(order)
+    if permuted.is_contiguous():
+        return permuted
+    return _permute_contig(permuted)
+
+
+def _byte_word_compress(inp, dims):
+    """1-byte-input variant of `_dims_last_contig` (see it for the layout).
+
+    `tle_copy` refuses 1-byte-element transposes (its SDNN trans kernel faults
+    on them -- see `tle_copy`), so a 1-byte `_permute_contig` drops to the
+    pointwise kernel, measured at ~3.1 ms for the (64,512,512) dim=[0,1] case
+    versus 0.038 ms for the same transpose in a 4-byte dtype.  Viewing the
+    innermost (contiguous) axis as int32 words makes it a 4-byte transpose
+    again -- the same trick the reduce already uses on the *reduced* axis.
+
+    The innermost axis is always the last one.  When it is a *reduced* axis,
+    packing four of its elements into a word is harmless (`word != 0` still
+    means "some element non-zero"), so the word tensor feeds
+    `_any_dims_reduce` unchanged.  When it is a *kept* axis -- the
+    (64,512,512) dim=[0,1] case -- a word's four bytes are four distinct
+    outputs, so the reduce must return the raw int32 OR and the caller splits
+    it byte-wise: exact, because an int32 OR is a per-byte-position OR, and
+    because the innermost kept axis varies fastest, `view(uint8)` reproduces
+    the flat output order exactly.
+
+    Returns `(word_tensor, expand)` or None when the word view is not
+    expressible (leaving the caller on the generic path).
+    """
+    if inp.element_size() != 1 or inp.ndim == 0 or not inp.is_contiguous():
+        return None
+    last = inp.ndim - 1
+    if inp.shape[last] % 4 != 0 or inp.storage_offset() % 4 != 0:
+        return None
+    if _row_word_mag(inp.dtype, 1) is None:
+        return None
+    words = inp.view(torch.int32)
+    dset = set(dims)
+    order = [i for i in range(words.ndim) if i not in dset]
+    order += sorted(dims, key=lambda i: words.stride()[i], reverse=True)
+    permuted = words.permute(order)
+    if not permuted.is_contiguous():
+        permuted = _permute_contig(permuted)
+    return permuted, last not in dset
 
 
 def any_dim(inp, dim=None, keepdim=False):
@@ -263,27 +607,50 @@ def any_dim(inp, dim=None, keepdim=False):
     else:
         assert dim >= -inp.ndim and dim < inp.ndim, "Invalid dim"
         dim = dim % inp.ndim
-        inp = dim_compress(inp, dim)
         N = shape[dim]
         shape[dim] = 1
-        M = inp.numel() // N
 
-        if N >= vector_size * vector_size:
-            # according to api, op == any, use max to calculate.
-            # max_kernel_dim already upcasts on load; only pre-cast for large N
-            # (see `large_n_precast` note above) where fp32 reads pay off.
-            kin = inp.to(torch.float) if N >= large_n_precast else inp
-            outf = torch.empty(shape, dtype=torch.float, device=inp.device)
+        # Contiguous [M, N] view with the reduced dim last (see helper).
+        if dim == inp.ndim - 1 and inp.is_contiguous():
+            inpc = inp
+        else:
+            inpc = _move_dim_last_contig(inp, dim)
+        M = inpc.numel() // N
 
-            grid = lambda meta: (triton.cdiv(M, meta["BLOCK_M"]),)
+        if inp.dtype == torch.bool:
+            if N <= 512:
+                block_m, block_n = 64, triton.next_power_of_2(N)
+            elif N <= 4096:
+                block_m, block_n = 64, 512
+            else:
+                block_m, block_n = 8, 4096
+            need_mask = (M % block_m != 0) or (N % block_n != 0)
+            out = torch.empty(shape, dtype=torch.bool, device=inp.device)
+            grid = (triton.cdiv(M, block_m),)
             with torch_device_fn.device(inp.device):
-                max_kernel_dim[grid](kin, outf, M, N, buffer_size_limit=2048)
+                any_kernel_dim_v2[grid](
+                    inpc,
+                    out,
+                    M,
+                    N,
+                    BLOCK_M=block_m,
+                    BLOCK_N=block_n,
+                    NEED_MASK=need_mask,
+                    buffer_size_limit=2048,
+                )
+        elif N >= vector_size * vector_size:
+            outf = torch.empty(shape, dtype=torch.float, device=inp.device)
+            block_m = triton.next_power_of_2(min(triton.cdiv(M, cluster_num), core_num))
+            grid = (triton.cdiv(M, block_m),)
+            with torch_device_fn.device(inp.device):
+                max_kernel_dim[grid](inpc, outf, M, N, buffer_size_limit=2048)
             out = outf.to(torch.bool)
         else:
             out = torch.empty(shape, dtype=torch.bool, device=inp.device)
-            grid = lambda meta: (triton.cdiv(M, meta["BLOCK_M"]),)
+            block_m = triton.next_power_of_2(min(triton.cdiv(M, cluster_num), core_num))
+            grid = (triton.cdiv(M, block_m),)
             with torch_device_fn.device(inp.device):
-                any_kernel_dim[grid](inp, out, M, N, buffer_size_limit=2048)
+                any_kernel_dim[grid](inpc, out, M, N, buffer_size_limit=2048)
 
         if not keepdim:
             out = out.squeeze(dim=dim)
@@ -299,26 +666,39 @@ def any_dims(inp, dim=None, keepdim=False):
 
     shape = list(inp.shape)
     dim = [d % inp.ndim for d in dim]
-    inp = dim_compress(inp, dim)
-    N = 1
+    n_red = 1
     for i in dim:
-        N *= shape[i]
-        shape[i] = 1
-    M = inp.numel() // N
-
-    # Per-row 2-stage split reduction: parallelizes the N axis on top of M, so the
-    # small-M / huge-N cases produced by dim=[0,1] (2D -> M=1; 3D -> M=kept-dim) no
-    # longer serialize the entire reduction in a-few programs. Replaces the old
-    # max_kernel_dim / any_kernel_dim (grid=cdiv(M,BLOCK_M)) path, which pinned huge
-    # shapes at ~11-570ms. `inp` is contiguous after dim_compress -> [M, N] row view.
-    if M == 1:
-        # All elements reduced -> a global any(); its two-stage reduction (proven,
-        # well-tested) parallelizes over chunks and keeps its larger, correct blocks
-        # (the pid_m==0 path is immune to the fp32 large-block mis-reduction).
-        res = any(inp)
-        out = res.reshape(shape)
+        n_red *= shape[i]
+    byte_words = (
+        _byte_word_compress(inp, dim)
+        if inp.numel() > 0 and n_red > 0 and inp.numel() // n_red > 1
+        else None
+    )
+    if byte_words is not None:
+        words, expand = byte_words
+        shape1 = list(shape)
+        for i in dim:
+            shape1[i] = 1
+        n_red_w = n_red if expand else n_red // 4
+        M = words.numel() // n_red_w
+        if expand:
+            o = _any_dims_reduce(words, M, n_red_w, [M], raw_i32=True)
+            out = (o.view(torch.uint8) != 0).reshape(shape1)
+        else:
+            out = _any_dims_reduce(words, M, n_red_w, shape1)
     else:
-        out = _any_dims_reduce(inp, M, N, shape)
+        inp = _dims_last_contig(inp, dim)
+        N = 1
+        for i in dim:
+            N *= shape[i]
+            shape[i] = 1
+        M = inp.numel() // N
+
+        if M == 1:
+            res = any(inp)
+            out = res.reshape(shape)
+        else:
+            out = _any_dims_reduce(inp, M, N, shape)
 
     if not keepdim:
         out = out.squeeze(dim=dim)
