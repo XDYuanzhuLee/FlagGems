@@ -17,8 +17,10 @@
 The user-facing ``torch.linalg.eigh`` (``aten::linalg_eigh``) and the
 underlying ``aten::_linalg_eigh`` (distinguished by its ``compute_v``
 argument) are both registered to FlagGems and share the same Triton
-paths. The ``test_underlying_*`` cases below exercise ``compute_v``
-directly.
+paths. The Gems results are obtained by calling ``flag_gems.linalg_eigh``
+and ``flag_gems._linalg_eigh`` directly, while the reference is computed
+with the native ``torch.linalg.eigh`` / ``torch.ops.aten._linalg_eigh``.
+The ``test_underlying_*`` cases below exercise ``compute_v`` directly.
 """
 
 from contextlib import contextmanager
@@ -79,25 +81,6 @@ EIG_UPLO_U_COMPLEX_SHAPES = [(3, 3), (5, 5)]
 # lower trailing precision than cuSOLVER, so the element-wise eigenvalue check
 # uses a looser atol than the reconstruction check.
 EIG_EVAL_ATOL = {torch.float32: 5e-4, torch.complex64: 5e-4}
-
-
-@contextmanager
-def gems_eigh_dispatch():
-    """Temporarily dispatch the eigh aten ops to FlagGems for the block.
-
-    Registers ``_linalg_eigh`` and ``linalg_eigh`` onto a private
-    ``torch.library`` handle and tears the registration down on exit, so
-    calls *outside* the block (the reference computation) keep dispatching to
-    native aten while calls *inside* the block run on FlagGems.
-    """
-    lib = torch.library.Library("aten", "IMPL")
-    flag_gems.only_enable(lib=lib, include=["_linalg_eigh", "linalg_eigh"])
-    try:
-        yield
-    finally:
-        if torch.__version__ >= "2.5":
-            lib._destroy()
-        del lib
 
 
 @contextmanager
@@ -235,7 +218,6 @@ def assert_ascending(eigenvalues, atol=1e-4):
 _assert_ascending = assert_ascending
 _assert_close = assert_close
 _check_eigh_decomposition = check_eigh_decomposition
-_gems_eigh_dispatch = gems_eigh_dispatch
 _symmetrise = symmetrise
 
 
@@ -258,8 +240,7 @@ def test_linalg_eigh_2x2_kernel(shape, dtype):
     ref_inp = utils.to_reference(inp)
     ref_out = torch.linalg.eigh(ref_inp)
 
-    with _gems_eigh_dispatch():
-        res_out = torch.linalg.eigh(inp)
+    res_out = flag_gems.linalg_eigh(inp)
 
     utils.gems_assert_close(res_out[0], ref_out[0], dtype)
     _check_eigh_decomposition(inp, res_out[0], res_out[1])
@@ -279,8 +260,7 @@ def test_linalg_eigh_jacobi(shape, dtype):
     ref_inp = utils.to_reference(inp)
     ref_out = torch.linalg.eigh(ref_inp)
 
-    with _gems_eigh_dispatch():
-        res_out = torch.linalg.eigh(inp)
+    res_out = flag_gems.linalg_eigh(inp)
 
     # Eigenvalues element-wise (Jacobi tolerance), plus reconstruction.
     utils.gems_assert_close(res_out[0], ref_out[0], dtype, atol=EIG_EVAL_ATOL[dtype])
@@ -301,8 +281,7 @@ def test_linalg_eigh_complex(shape, dtype):
     ref_inp = utils.to_reference(inp)
     ref_out = torch.linalg.eigh(ref_inp)
 
-    with _gems_eigh_dispatch():
-        res_out = torch.linalg.eigh(inp)
+    res_out = flag_gems.linalg_eigh(inp)
 
     # Eigenvalues of a Hermitian matrix are real.
     _assert_close(res_out[0], ref_out[0], res_out[0].dtype, atol=5e-4)
@@ -323,8 +302,7 @@ def test_linalg_eigh_batch_2x2_kernel(shape, dtype):
     ref_inp = utils.to_reference(inp)
     ref_out = torch.linalg.eigh(ref_inp)
 
-    with _gems_eigh_dispatch():
-        res_out = torch.linalg.eigh(inp)
+    res_out = flag_gems.linalg_eigh(inp)
 
     utils.gems_assert_close(res_out[0], ref_out[0], dtype)
     _check_eigh_decomposition(inp, res_out[0], res_out[1])
@@ -344,8 +322,7 @@ def test_linalg_eigh_batch_jacobi(shape, dtype):
     ref_inp = utils.to_reference(inp)
     ref_out = torch.linalg.eigh(ref_inp)
 
-    with _gems_eigh_dispatch():
-        res_out = torch.linalg.eigh(inp)
+    res_out = flag_gems.linalg_eigh(inp)
 
     utils.gems_assert_close(res_out[0], ref_out[0], dtype, atol=EIG_EVAL_ATOL[dtype])
     _check_eigh_decomposition(inp, res_out[0], res_out[1])
@@ -365,8 +342,7 @@ def test_linalg_eigh_trivial(shape, dtype):
     ref_inp = utils.to_reference(inp)
     ref_out = torch.linalg.eigh(ref_inp)
 
-    with _gems_eigh_dispatch():
-        res_out = torch.linalg.eigh(inp)
+    res_out = flag_gems.linalg_eigh(inp)
 
     utils.gems_assert_close(res_out[0], ref_out[0], dtype)
     _check_eigh_decomposition(inp, res_out[0], res_out[1])
@@ -386,8 +362,7 @@ def test_linalg_eigh_batch_trivial(shape, dtype):
     ref_inp = utils.to_reference(inp)
     ref_out = torch.linalg.eigh(ref_inp)
 
-    with _gems_eigh_dispatch():
-        res_out = torch.linalg.eigh(inp)
+    res_out = flag_gems.linalg_eigh(inp)
 
     utils.gems_assert_close(res_out[0], ref_out[0], dtype)
     _check_eigh_decomposition(inp, res_out[0], res_out[1])
@@ -408,8 +383,7 @@ def test_linalg_eigh_2x2_low_precision(shape, dtype):
     (eps ~ 7.8e-3, quantization step ~2e-2 at |w| ~ 4) needs 2e-2."""
     inp = make_symmetric_matrix(shape, dtype, flag_gems.device)
 
-    with _gems_eigh_dispatch():
-        res_out = torch.linalg.eigh(inp)
+    res_out = flag_gems.linalg_eigh(inp)
 
     atol = 2e-2 if dtype == torch.bfloat16 else 1e-2
     _check_eigh_decomposition(inp, res_out[0], res_out[1], atol=atol)
@@ -429,8 +403,7 @@ def test_linalg_eigh_trivial_complex(shape, dtype):
     ref_inp = utils.to_reference(inp)
     ref_out = torch.linalg.eigh(ref_inp)
 
-    with _gems_eigh_dispatch():
-        res_out = torch.linalg.eigh(inp)
+    res_out = flag_gems.linalg_eigh(inp)
 
     _assert_close(res_out[0], ref_out[0], res_out[0].dtype)
     if res_out[1].numel() > 0:
@@ -451,8 +424,7 @@ def test_linalg_eigh_batch_complex(shape, dtype):
     ref_inp = utils.to_reference(inp)
     ref_out = torch.linalg.eigh(ref_inp)
 
-    with _gems_eigh_dispatch():
-        res_out = torch.linalg.eigh(inp)
+    res_out = flag_gems.linalg_eigh(inp)
 
     _assert_close(res_out[0], ref_out[0], res_out[0].dtype, atol=5e-4)
     _check_eigh_decomposition(inp, res_out[0], res_out[1])
@@ -473,8 +445,7 @@ def test_linalg_eigh_uplo_upper(shape, dtype):
     ref_inp = utils.to_reference(inp)
     ref_out = torch.linalg.eigh(ref_inp, UPLO="U")
 
-    with _gems_eigh_dispatch():
-        res_out = torch.linalg.eigh(inp, UPLO="U")
+    res_out = flag_gems.linalg_eigh(inp, UPLO="U")
 
     utils.gems_assert_close(res_out[0], ref_out[0], dtype, atol=EIG_EVAL_ATOL[dtype])
     # Reconstruction against the symmetrised matrix (eigh uses one triangle).
@@ -495,8 +466,7 @@ def test_linalg_eigh_uplo_upper_complex(shape, dtype):
     ref_inp = utils.to_reference(inp)
     ref_out = torch.linalg.eigh(ref_inp, UPLO="U")
 
-    with _gems_eigh_dispatch():
-        res_out = torch.linalg.eigh(inp, UPLO="U")
+    res_out = flag_gems.linalg_eigh(inp, UPLO="U")
 
     _assert_close(res_out[0], ref_out[0], res_out[0].dtype, atol=5e-4)
     _check_eigh_decomposition(_symmetrise(inp, "U"), res_out[0], res_out[1])
@@ -523,18 +493,13 @@ def test_linalg_eigh_jacobi_global(shape, dtype):
     ref_inp = utils.to_reference(inp)
     ref_out = torch.linalg.eigh(ref_inp)
 
-    with _gems_eigh_dispatch():
-        res_out = torch.linalg.eigh(inp)
+    res_out = flag_gems.linalg_eigh(inp)
 
     _check_eigh_decomposition(inp, res_out[0], res_out[1], atol=1e-1)
     _assert_ascending(res_out[0])
     # Eigenvalue set agrees with the reference to the global-path tolerance.
-    res_w = utils.to_cpu(res_out[0], ref_out[0])
-    torch.testing.assert_close(
-        res_w.sort().values,
-        ref_out[0].sort().values,
-        atol=2e-2,
-        rtol=1e-3,
+    utils.gems_assert_close(
+        res_out[0].sort().values, ref_out[0].sort().values, torch.float32, atol=2e-2
     )
 
 
@@ -552,8 +517,7 @@ def test_linalg_eigh_complex_global(shape, dtype):
     ref_inp = utils.to_reference(inp)
     ref_out = torch.linalg.eigh(ref_inp)
 
-    with _gems_eigh_dispatch():
-        res_out = torch.linalg.eigh(inp)
+    res_out = flag_gems.linalg_eigh(inp)
 
     # Eigenvalues of a Hermitian matrix are real.
     _assert_close(res_out[0], ref_out[0], res_out[0].dtype, atol=2e-2)
@@ -571,8 +535,7 @@ def test_linalg_eigh_ascending_order(dtype):
     }[dtype]
     for shape in shapes:
         inp = make_symmetric_matrix(shape, dtype, flag_gems.device)
-        with _gems_eigh_dispatch():
-            res_out = torch.linalg.eigh(inp)
+        res_out = flag_gems.linalg_eigh(inp)
         _assert_ascending(res_out[0])
 
 
@@ -581,8 +544,7 @@ def test_linalg_eigh_nonsquare_raises():
     """A non-square input must raise ValueError on the Gems path."""
     A = torch.randn(3, 5, dtype=torch.float32, device=flag_gems.device)
     with pytest.raises(ValueError):
-        with _gems_eigh_dispatch():
-            torch.linalg.eigh(A)
+        flag_gems.linalg_eigh(A)
 
 
 @pytest.mark.linalg_eigh
@@ -598,8 +560,7 @@ def test_linalg_eigh_non_contiguous(dtype):
     ref_inp = utils.to_reference(view)
     ref_out = torch.linalg.eigh(ref_inp)
 
-    with _gems_eigh_dispatch():
-        res_out = torch.linalg.eigh(view)
+    res_out = flag_gems.linalg_eigh(view)
 
     if dtype == torch.complex64:
         _assert_close(res_out[0], ref_out[0], res_out[0].dtype, atol=5e-4)
@@ -632,8 +593,7 @@ def test_underlying_linalg_eigh(shape, dtype):
     ref_inp = utils.to_reference(inp)
     ref_w, ref_v = torch.ops.aten._linalg_eigh.default(ref_inp, "L", True)
 
-    with _gems_eigh_dispatch():
-        res_w, res_v = torch.ops.aten._linalg_eigh.default(inp, "L", True)
+    res_w, res_v = flag_gems._linalg_eigh(inp, "L", True)
 
     utils.gems_assert_close(res_w, ref_w, dtype, atol=EIG_EVAL_ATOL[dtype])
     _check_eigh_decomposition(inp, res_w, res_v)
@@ -653,8 +613,7 @@ def test_underlying_linalg_eigh_no_vectors(shape, dtype):
     ref_inp = utils.to_reference(inp)
     ref_w, _ = torch.ops.aten._linalg_eigh.default(ref_inp, "L", False)
 
-    with _gems_eigh_dispatch():
-        res_w, res_v = torch.ops.aten._linalg_eigh.default(inp, "L", False)
+    res_w, res_v = flag_gems._linalg_eigh(inp, "L", False)
 
     utils.gems_assert_close(res_w, ref_w, dtype, atol=EIG_EVAL_ATOL[dtype])
     # Eigenvectors tensor is empty when compute_v=False.
@@ -675,8 +634,7 @@ def test_underlying_linalg_eigh_no_vectors_2x2(shape, dtype):
     ref_inp = utils.to_reference(inp)
     ref_w, _ = torch.ops.aten._linalg_eigh.default(ref_inp, "L", False)
 
-    with _gems_eigh_dispatch():
-        res_w, res_v = torch.ops.aten._linalg_eigh.default(inp, "L", False)
+    res_w, res_v = flag_gems._linalg_eigh(inp, "L", False)
 
     utils.gems_assert_close(res_w, ref_w, dtype)
     assert res_v.numel() == 0
@@ -700,15 +658,10 @@ def test_underlying_linalg_eigh_no_vectors_global(shape, dtype):
     ref_inp = utils.to_reference(inp)
     ref_w, _ = torch.ops.aten._linalg_eigh.default(ref_inp, "L", False)
 
-    with _gems_eigh_dispatch():
-        res_w, res_v = torch.ops.aten._linalg_eigh.default(inp, "L", False)
+    res_w, res_v = flag_gems._linalg_eigh(inp, "L", False)
 
-    res_w_cpu = utils.to_cpu(res_w, ref_w)
-    torch.testing.assert_close(
-        res_w_cpu.sort().values,
-        ref_w.sort().values,
-        atol=2e-2,
-        rtol=1e-3,
+    utils.gems_assert_close(
+        res_w.sort().values, ref_w.sort().values, torch.float32, atol=2e-2
     )
     _assert_ascending(res_w)
     assert res_v.numel() == 0
@@ -732,15 +685,10 @@ def test_underlying_linalg_eigh_no_vectors_complex_global(shape, dtype):
     ref_inp = utils.to_reference(inp)
     ref_w, _ = torch.ops.aten._linalg_eigh.default(ref_inp, "L", False)
 
-    with _gems_eigh_dispatch():
-        res_w, res_v = torch.ops.aten._linalg_eigh.default(inp, "L", False)
+    res_w, res_v = flag_gems._linalg_eigh(inp, "L", False)
 
-    res_w_cpu = utils.to_cpu(res_w, ref_w)
-    torch.testing.assert_close(
-        res_w_cpu.sort().values,
-        ref_w.sort().values,
-        atol=2e-2,
-        rtol=1e-3,
+    utils.gems_assert_close(
+        res_w.sort().values, ref_w.sort().values, torch.float32, atol=2e-2
     )
     _assert_ascending(res_w)
     assert res_v.numel() == 0
