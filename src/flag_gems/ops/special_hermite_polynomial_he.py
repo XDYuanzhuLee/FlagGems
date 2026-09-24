@@ -19,227 +19,84 @@ import torch
 import triton
 import triton.language as tl
 
+from flag_gems.runtime import device as runtime_device
 from flag_gems.utils import pointwise_dynamic
 
 logger = logging.getLogger(__name__)
 
 
-@pointwise_dynamic(is_tensor=[True, True], promotion_methods=[(0, 1, "DEFAULT")])
 @triton.jit
-def hermite_he_func(x, n):
-    # Compute He_n(x) (probabilist's Hermite polynomial)
-    # He_0(x) = 1, He_1(x) = x, He_{n+1}(x) = x*He_n(x) - n*He_{n-1}(x)
-    # Evaluated in the input dtype (fp32 in fp32, fp64 in fp64), matching the
-    # native torch operator, so fp64 results retain full fp64 accuracy.
-    # n is validated to be in [0, 10] by the caller, so the fallback branch of
-    # the final tl.where is unreachable.
+def _hermite_he_recurrence(x, n):
+    # He_0(x) = 1, He_1(x) = x, He_k(x) = x*He_{k-1}(x) - (k-1)*He_{k-2}(x).
+    # The caller validates n to be in [0, 10], so every degree is evaluated and
+    # the one matching n is selected.
     n_i32 = n.to(tl.int32)
-
-    x2 = x * x
-    x3 = x2 * x
-    x4 = x2 * x2
-    x5 = x4 * x
-
-    # He_0..He_5 via explicit closed forms.
     he_0 = 1.0
     he_1 = x
-    he_2 = x2 - 1.0
-    he_3 = x3 - 3.0 * x
-    he_4 = x4 - 6.0 * x2 + 3.0
-    he_5 = x5 - 10.0 * x3 + 15.0 * x
-    # He_6..He_10 via the recurrence, which is numerically more stable than the
-    # fully expanded polynomial form.
+    he_2 = x * he_1 - 1.0 * he_0
+    he_3 = x * he_2 - 2.0 * he_1
+    he_4 = x * he_3 - 3.0 * he_2
+    he_5 = x * he_4 - 4.0 * he_3
     he_6 = x * he_5 - 5.0 * he_4
     he_7 = x * he_6 - 6.0 * he_5
     he_8 = x * he_7 - 7.0 * he_6
     he_9 = x * he_8 - 8.0 * he_7
     he_10 = x * he_9 - 9.0 * he_8
 
-    result = tl.where(
-        n_i32 == 0,
-        he_0,
-        tl.where(
-            n_i32 == 1,
-            he_1,
-            tl.where(
-                n_i32 == 2,
-                he_2,
-                tl.where(
-                    n_i32 == 3,
-                    he_3,
-                    tl.where(
-                        n_i32 == 4,
-                        he_4,
-                        tl.where(
-                            n_i32 == 5,
-                            he_5,
-                            tl.where(
-                                n_i32 == 6,
-                                he_6,
-                                tl.where(
-                                    n_i32 == 7,
-                                    he_7,
-                                    tl.where(
-                                        n_i32 == 8,
-                                        he_8,
-                                        tl.where(
-                                            n_i32 == 9,
-                                            he_9,
-                                            he_10,
-                                        ),
-                                    ),
-                                ),
-                            ),
-                        ),
-                    ),
-                ),
-            ),
-        ),
-    )
+    result = he_10
+    result = tl.where(n_i32 == 9, he_9, result)
+    result = tl.where(n_i32 == 8, he_8, result)
+    result = tl.where(n_i32 == 7, he_7, result)
+    result = tl.where(n_i32 == 6, he_6, result)
+    result = tl.where(n_i32 == 5, he_5, result)
+    result = tl.where(n_i32 == 4, he_4, result)
+    result = tl.where(n_i32 == 3, he_3, result)
+    result = tl.where(n_i32 == 2, he_2, result)
+    result = tl.where(n_i32 == 1, he_1, result)
+    result = tl.where(n_i32 == 0, he_0, result)
     return result
+
+
+# Each input combination has two variants. Both evaluate the recurrence in a
+# single dtype: _fp64 computes in float64 for full accuracy, while the default
+# one computes in float32 so it stays usable on devices without float64 support.
+# The output is stored into the buffer implied by input promotion either way.
+
+
+@pointwise_dynamic(is_tensor=[True, True], promotion_methods=[(0, 1, "DEFAULT")])
+@triton.jit
+def hermite_he_func(x, n):
+    return _hermite_he_recurrence(x.to(tl.float32), n)
+
+
+@pointwise_dynamic(is_tensor=[True, True], promotion_methods=[(0, 1, "DEFAULT")])
+@triton.jit
+def hermite_he_func_fp64(x, n):
+    return _hermite_he_recurrence(x.to(tl.float64), n)
 
 
 @pointwise_dynamic(is_tensor=[True, False], promotion_methods=[(0, 1, "DEFAULT")])
 @triton.jit
 def hermite_he_func_scalar_n(x, n):
-    # Compute He_n(x) (probabilist's Hermite polynomial) with a scalar degree n.
-    # He_0(x) = 1, He_1(x) = x, He_{n+1}(x) = x*He_n(x) - n*He_{n-1}(x)
-    # Evaluated in the input dtype (fp32 in fp32, fp64 in fp64), matching the
-    # native torch operator, so fp64 results retain full fp64 accuracy.
-    # n is validated to be in [0, 10] by the caller, so the fallback branch of
-    # the final tl.where is unreachable.
-    n_i32 = n.to(tl.int32)
+    return _hermite_he_recurrence(x.to(tl.float32), n)
 
-    x2 = x * x
-    x3 = x2 * x
-    x4 = x2 * x2
-    x5 = x4 * x
 
-    # He_0..He_5 via explicit closed forms.
-    he_0 = 1.0
-    he_1 = x
-    he_2 = x2 - 1.0
-    he_3 = x3 - 3.0 * x
-    he_4 = x4 - 6.0 * x2 + 3.0
-    he_5 = x5 - 10.0 * x3 + 15.0 * x
-    # He_6..He_10 via the recurrence, which is numerically more stable than the
-    # fully expanded polynomial form.
-    he_6 = x * he_5 - 5.0 * he_4
-    he_7 = x * he_6 - 6.0 * he_5
-    he_8 = x * he_7 - 7.0 * he_6
-    he_9 = x * he_8 - 8.0 * he_7
-    he_10 = x * he_9 - 9.0 * he_8
-
-    result = tl.where(
-        n_i32 == 0,
-        he_0,
-        tl.where(
-            n_i32 == 1,
-            he_1,
-            tl.where(
-                n_i32 == 2,
-                he_2,
-                tl.where(
-                    n_i32 == 3,
-                    he_3,
-                    tl.where(
-                        n_i32 == 4,
-                        he_4,
-                        tl.where(
-                            n_i32 == 5,
-                            he_5,
-                            tl.where(
-                                n_i32 == 6,
-                                he_6,
-                                tl.where(
-                                    n_i32 == 7,
-                                    he_7,
-                                    tl.where(
-                                        n_i32 == 8,
-                                        he_8,
-                                        tl.where(
-                                            n_i32 == 9,
-                                            he_9,
-                                            he_10,
-                                        ),
-                                    ),
-                                ),
-                            ),
-                        ),
-                    ),
-                ),
-            ),
-        ),
-    )
-    return result
+@pointwise_dynamic(is_tensor=[True, False], promotion_methods=[(0, 1, "DEFAULT")])
+@triton.jit
+def hermite_he_func_scalar_n_fp64(x, n):
+    return _hermite_he_recurrence(x.to(tl.float64), n)
 
 
 @pointwise_dynamic(is_tensor=[False, True], promotion_methods=[(0, 1, "DEFAULT")])
 @triton.jit
 def hermite_he_func_scalar_x(x, n):
-    # Compute He_n(x) (probabilist's Hermite polynomial) with a scalar x.
-    # Same recurrence as hermite_he_func; n is validated to be in [0, 10] by
-    # the caller, so the fallback branch of the final tl.where is unreachable.
-    n_i32 = n.to(tl.int32)
+    return _hermite_he_recurrence(x.to(tl.float32), n)
 
-    x2 = x * x
-    x3 = x2 * x
-    x4 = x2 * x2
-    x5 = x4 * x
 
-    # He_0..He_5 via explicit closed forms.
-    he_0 = 1.0
-    he_1 = x
-    he_2 = x2 - 1.0
-    he_3 = x3 - 3.0 * x
-    he_4 = x4 - 6.0 * x2 + 3.0
-    he_5 = x5 - 10.0 * x3 + 15.0 * x
-    # He_6..He_10 via the recurrence, which is numerically more stable than the
-    # fully expanded polynomial form.
-    he_6 = x * he_5 - 5.0 * he_4
-    he_7 = x * he_6 - 6.0 * he_5
-    he_8 = x * he_7 - 7.0 * he_6
-    he_9 = x * he_8 - 8.0 * he_7
-    he_10 = x * he_9 - 9.0 * he_8
-
-    result = tl.where(
-        n_i32 == 0,
-        he_0,
-        tl.where(
-            n_i32 == 1,
-            he_1,
-            tl.where(
-                n_i32 == 2,
-                he_2,
-                tl.where(
-                    n_i32 == 3,
-                    he_3,
-                    tl.where(
-                        n_i32 == 4,
-                        he_4,
-                        tl.where(
-                            n_i32 == 5,
-                            he_5,
-                            tl.where(
-                                n_i32 == 6,
-                                he_6,
-                                tl.where(
-                                    n_i32 == 7,
-                                    he_7,
-                                    tl.where(
-                                        n_i32 == 8,
-                                        he_8,
-                                        tl.where(n_i32 == 9, he_9, he_10),
-                                    ),
-                                ),
-                            ),
-                        ),
-                    ),
-                ),
-            ),
-        ),
-    )
-    return result
+@pointwise_dynamic(is_tensor=[False, True], promotion_methods=[(0, 1, "DEFAULT")])
+@triton.jit
+def hermite_he_func_scalar_x_fp64(x, n):
+    return _hermite_he_recurrence(x.to(tl.float64), n)
 
 
 def special_hermite_polynomial_he(x, n):
@@ -271,12 +128,21 @@ def special_hermite_polynomial_he(x, n):
                 f"special_hermite_polynomial_he only supports n in [0, 10], got n={n}"
             )
 
+    if runtime_device.support_fp64:
+        tensor_tensor = hermite_he_func_fp64
+        tensor_scalar = hermite_he_func_scalar_n_fp64
+        scalar_tensor = hermite_he_func_scalar_x_fp64
+    else:
+        tensor_tensor = hermite_he_func
+        tensor_scalar = hermite_he_func_scalar_n
+        scalar_tensor = hermite_he_func_scalar_x
+
     if isinstance(x, torch.Tensor) and isinstance(n, torch.Tensor):
-        return hermite_he_func(x, n)
+        return tensor_tensor(x, n)
     elif isinstance(x, torch.Tensor):
-        return hermite_he_func_scalar_n(x, n)
+        return tensor_scalar(x, n)
     elif isinstance(n, torch.Tensor):
-        return hermite_he_func_scalar_x(x, n)
+        return scalar_tensor(x, n)
     else:
         # Both scalar - compute via the recurrence in plain Python, then wrap
         # the result in a tensor (no torch compute API).

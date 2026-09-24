@@ -4,125 +4,72 @@ import torch
 import triton
 import triton.language as tl
 
+from flag_gems.runtime import device as runtime_device
 from flag_gems.utils import pointwise_dynamic, tl_extra_shim  # noqa: F401
 
 logger = logging.getLogger("flag_gems." + __name__)
 
 
-@pointwise_dynamic(is_tensor=[True, True], promotion_methods=[(0, "INT_TO_FLOAT")])
 @triton.jit
-def special_hermite_polynomial_he_tensor_tensor(x, n):
-    # Probabilist's Hermite polynomial He_n(x)
-    # Recurrence: He_{n+1}(x) = x*He_n(x) - n*He_{n-1}(x)
-    # He_0(x) = 1
-    # He_1(x) = x
-    # He_2(x) = x^2 - 1
-    # He_3(x) = x^3 - 3*x
-    # He_4(x) = x^4 - 6*x^2 + 3
-    # He_5(x) = x^5 - 10*x^3 + 15*x
-
-    n_int = n.to(tl.int32)
-    # Evaluate in the input dtype (fp32 in fp32, fp64 in fp64), matching the
-    # native torch operator, so fp64 results retain full fp64 accuracy.
-    x2 = x * x
-    x3 = x2 * x
-    x4 = x2 * x2
-    x5 = x4 * x
-
-    # Base case n = 0
-    result_0 = tl.where(n_int == 0, 1.0, 0.0)
-
-    # Base case n = 1
-    result_1 = tl.where(n_int == 1, x, 0.0)
-
-    # He_2 = x^2 - 1
-    he_2 = x2 - 1.0
-
-    # He_3 = x^3 - 3*x
-    he_3 = x3 - 3.0 * x
-
-    # He_4 = x^4 - 6*x^2 + 3
-    he_4 = x4 - 6.0 * x2 + 3.0
-
-    # He_5 = x^5 - 10*x^3 + 15*x
-    he_5 = x5 - 10.0 * x3 + 15.0 * x
-
-    # He_6 through He_10: recurrence He_{n+1} = x*He_n - n*He_{n-1}
+def _hermite_he_recurrence(x, n):
+    # He_0(x) = 1, He_1(x) = x, He_k(x) = x*He_{k-1}(x) - (k-1)*He_{k-2}(x).
+    # The caller validates n to be in [0, 10], so every degree is evaluated and
+    # the one matching n is selected.
+    n_i32 = n.to(tl.int32)
+    he_0 = 1.0
+    he_1 = x
+    he_2 = x * he_1 - 1.0 * he_0
+    he_3 = x * he_2 - 2.0 * he_1
+    he_4 = x * he_3 - 3.0 * he_2
+    he_5 = x * he_4 - 4.0 * he_3
     he_6 = x * he_5 - 5.0 * he_4
     he_7 = x * he_6 - 6.0 * he_5
     he_8 = x * he_7 - 7.0 * he_6
     he_9 = x * he_8 - 8.0 * he_7
     he_10 = x * he_9 - 9.0 * he_8
 
-    # Combine all cases. n is validated to be in [0, 10] by the caller, so the
-    # final branch is unreachable.
-    result = result_0
-    result = tl.where(n_int == 1, result_1, result)
-    result = tl.where(n_int == 2, he_2, result)
-    result = tl.where(n_int == 3, he_3, result)
-    result = tl.where(n_int == 4, he_4, result)
-    result = tl.where(n_int == 5, he_5, result)
-    result = tl.where(n_int == 6, he_6, result)
-    result = tl.where(n_int == 7, he_7, result)
-    result = tl.where(n_int == 8, he_8, result)
-    result = tl.where(n_int == 9, he_9, result)
-    result = tl.where(n_int == 10, he_10, result)
-
+    result = he_10
+    result = tl.where(n_i32 == 9, he_9, result)
+    result = tl.where(n_i32 == 8, he_8, result)
+    result = tl.where(n_i32 == 7, he_7, result)
+    result = tl.where(n_i32 == 6, he_6, result)
+    result = tl.where(n_i32 == 5, he_5, result)
+    result = tl.where(n_i32 == 4, he_4, result)
+    result = tl.where(n_i32 == 3, he_3, result)
+    result = tl.where(n_i32 == 2, he_2, result)
+    result = tl.where(n_i32 == 1, he_1, result)
+    result = tl.where(n_i32 == 0, he_0, result)
     return result
+
+
+# Each kernel has two variants. Both evaluate the recurrence in a single dtype:
+# the _fp64 one computes in float64 for full accuracy, while the default one
+# computes in float32 so it stays usable on devices without float64 support.
+# The output is stored into the buffer implied by input promotion either way.
+
+
+@pointwise_dynamic(is_tensor=[True, True], promotion_methods=[(0, "INT_TO_FLOAT")])
+@triton.jit
+def special_hermite_polynomial_he_tensor_tensor(x, n):
+    return _hermite_he_recurrence(x.to(tl.float32), n)
+
+
+@pointwise_dynamic(is_tensor=[True, True], promotion_methods=[(0, "INT_TO_FLOAT")])
+@triton.jit
+def special_hermite_polynomial_he_tensor_tensor_fp64(x, n):
+    return _hermite_he_recurrence(x.to(tl.float64), n)
 
 
 @pointwise_dynamic(is_tensor=[True, False], promotion_methods=[(0, "INT_TO_FLOAT")])
 @triton.jit
 def special_hermite_polynomial_he_tensor_scalar(x, n):
-    # Probabilist's Hermite polynomial He_n(x) with scalar n
-    n_int = n.to(tl.int32)
-    # Evaluate in the input dtype (fp32 in fp32, fp64 in fp64), matching the
-    # native torch operator, so fp64 results retain full fp64 accuracy.
-    x2 = x * x
-    x3 = x2 * x
-    x4 = x2 * x2
-    x5 = x4 * x
+    return _hermite_he_recurrence(x.to(tl.float32), n)
 
-    # Base case n = 0
-    result_0 = tl.where(n_int == 0, 1.0, 0.0)
 
-    # Base case n = 1
-    result_1 = tl.where(n_int == 1, x, 0.0)
-
-    # He_2 = x^2 - 1
-    he_2 = x2 - 1.0
-
-    # He_3 = x^3 - 3*x
-    he_3 = x3 - 3.0 * x
-
-    # He_4 = x^4 - 6*x^2 + 3
-    he_4 = x4 - 6.0 * x2 + 3.0
-
-    # He_5 = x^5 - 10*x^3 + 15*x
-    he_5 = x5 - 10.0 * x3 + 15.0 * x
-
-    # He_6 through He_10: recurrence He_{n+1} = x*He_n - n*He_{n-1}
-    he_6 = x * he_5 - 5.0 * he_4
-    he_7 = x * he_6 - 6.0 * he_5
-    he_8 = x * he_7 - 7.0 * he_6
-    he_9 = x * he_8 - 8.0 * he_7
-    he_10 = x * he_9 - 9.0 * he_8
-
-    # Combine all cases. n is validated to be in [0, 10] by the caller, so the
-    # final branch is unreachable.
-    result = result_0
-    result = tl.where(n_int == 1, result_1, result)
-    result = tl.where(n_int == 2, he_2, result)
-    result = tl.where(n_int == 3, he_3, result)
-    result = tl.where(n_int == 4, he_4, result)
-    result = tl.where(n_int == 5, he_5, result)
-    result = tl.where(n_int == 6, he_6, result)
-    result = tl.where(n_int == 7, he_7, result)
-    result = tl.where(n_int == 8, he_8, result)
-    result = tl.where(n_int == 9, he_9, result)
-    result = tl.where(n_int == 10, he_10, result)
-
-    return result
+@pointwise_dynamic(is_tensor=[True, False], promotion_methods=[(0, "INT_TO_FLOAT")])
+@triton.jit
+def special_hermite_polynomial_he_tensor_scalar_fp64(x, n):
+    return _hermite_he_recurrence(x.to(tl.float64), n)
 
 
 def special_hermite_polynomial_he(x, n):
@@ -144,19 +91,24 @@ def special_hermite_polynomial_he(x, n):
                 f"special_hermite_polynomial_he only supports n in [0, 10], got n={n}"
             )
 
+    if runtime_device.support_fp64:
+        tensor_tensor = special_hermite_polynomial_he_tensor_tensor_fp64
+        tensor_scalar = special_hermite_polynomial_he_tensor_scalar_fp64
+    else:
+        tensor_tensor = special_hermite_polynomial_he_tensor_tensor
+        tensor_scalar = special_hermite_polynomial_he_tensor_scalar
+
     if isinstance(x, torch.Tensor) and isinstance(n, torch.Tensor):
-        return special_hermite_polynomial_he_tensor_tensor(x, n)
+        return tensor_tensor(x, n)
     elif isinstance(x, torch.Tensor):
         # n is a scalar
-        return special_hermite_polynomial_he_tensor_scalar(x, n)
+        return tensor_scalar(x, n)
     elif isinstance(n, torch.Tensor):
         # x is a scalar - materialize it as a tensor with n's shape and dtype,
         # then reuse the tensor-tensor kernel. The kernel requires equal-shape
         # inputs; full_like also yields an output dtype matching the native
         # operator (fp64 output when n is fp64).
-        return special_hermite_polynomial_he_tensor_tensor(
-            torch.full_like(n, float(x)), n
-        )
+        return tensor_tensor(torch.full_like(n, float(x)), n)
     else:
         # Both scalar - compute via the recurrence in plain Python, then wrap
         # the result in a tensor (no torch compute API).

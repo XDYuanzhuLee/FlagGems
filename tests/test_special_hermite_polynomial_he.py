@@ -5,16 +5,18 @@ import flag_gems
 
 from . import accuracy_utils as utils
 
-# He_n(x) is evaluated in the input dtype: fp32 in fp32, fp64 in fp64, matching
-# the native torch operator. fp64 results retain full fp64 accuracy (residual
-# ~1e-9), so a tight atol suffices; fp32 results carry float32-precision error,
-# and |He_n(x)| reaches ~1e6 at n=10, so a per-dtype atol bounds the float32
-# rounding residual. The iluvatar backend has no fp64 support and evaluates in
-# float32 intermediates; it keeps wider atol for its truncation error.
+# On devices with float64 support the kernel evaluates He_n(x) in float64 and
+# stores into the output buffer, so results match the float64 reference to a
+# tight atol for both fp32 and fp64 outputs. Devices without float64 support
+# fall back to a float32 evaluation, whose accuracy is limited by float32
+# precision: |He_n(x)| reaches ~1e6 at n=10, so those backends keep a wide atol.
 if flag_gems.vendor_name == "iluvatar":
+    # The iluvatar kernel evaluates in float32 intermediates.
     ATOL = {torch.float32: 2.0, torch.float64: 0.5}
+elif utils.fp64_is_supported:
+    ATOL = {torch.float32: 1e-3, torch.float64: 1e-3}
 else:
-    ATOL = {torch.float32: 1.0, torch.float64: 1e-3}
+    ATOL = {torch.float32: 0.5, torch.float64: 0.5}
 
 
 @pytest.mark.special_hermite_polynomial_he
@@ -62,7 +64,14 @@ def test_special_hermite_polynomial_he_scalar_x(dtype):
     inp2 = torch.randint(0, 11, (16,), device=flag_gems.device).to(dtype)
     x = -2.5
 
-    ref_out = torch.special.hermite_polynomial_he(x, utils.to_reference(inp2))
+    # On iluvatar the reference runs on CPU, since the device-side reference
+    # kernel cannot be compiled for float64 there.
+    if flag_gems.vendor_name == "iluvatar":
+        ref_inp2 = utils.to_reference(inp2).to("cpu")
+    else:
+        ref_inp2 = utils.to_reference(inp2)
+
+    ref_out = torch.special.hermite_polynomial_he(x, ref_inp2)
     res_out = flag_gems.special_hermite_polynomial_he(x, inp2)
 
     if flag_gems.vendor_name == "iluvatar":
